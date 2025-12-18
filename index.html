@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Player</title>
+    <title>Aurora Player (Smart Analysis)</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
@@ -13,7 +13,7 @@
             --bg-1: #e0c3fc; --bg-2: #8ec5fc;
             --text-main: #2c3e50; --text-sub: rgba(44, 62, 80, 0.6);
             --glass: rgba(255, 255, 255, 0.4);
-            --glass-strong: rgba(255, 255, 255, 0.9);
+            --glass-strong: rgba(255, 255, 255, 0.95);
             --border: rgba(255, 255, 255, 0.6);
             --accent: #2980b9;
         }
@@ -40,19 +40,30 @@
         .glass-btn {
             background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border);
             padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; color: var(--text-main);
-            display: flex; align-items: center; gap: 5px; transition: 0.2s; outline: none;
+            display: flex; align-items: center; gap: 5px; transition: 0.2s; outline: none; white-space: nowrap;
         }
         .glass-btn:hover { background: #fff; transform: translateY(-2px); }
 
-        .loop-panel {
+        /* 通用面板样式 */
+        .panel-float {
             position: absolute; top: 70px; right: 20px; background: var(--glass-strong); padding: 20px; border-radius: 15px;
-            border: 1px solid var(--border); width: 300px; transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+            border: 1px solid var(--border); width: 320px; 
+            transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
             z-index: 90; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 12px;
         }
-        .loop-panel.show { transform: translateX(0); }
-        .loop-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; }
-        .loop-input { width: 80px; border: 1px solid #ccc; border-radius: 5px; padding: 4px; text-align: center; font-family: monospace; }
+        .panel-float.show { transform: translateX(0); }
         
+        .panel-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; }
+        .panel-input { width: 80px; border: 1px solid #ccc; border-radius: 5px; padding: 4px; text-align: center; font-family: monospace; }
+        .panel-title { margin: 0; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; font-size: 1rem; font-weight: bold; }
+
+        /* 分析面板特别样式 */
+        #analyze-panel { right: 350px; width: 300px; } /* 放在循环面板左边 */
+        #analyze-panel:not(.show) { transform: translateX(calc(100% + 370px)); } /* 确保能完全滑出屏幕 */
+        .analyze-btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px; }
+        .big-btn { width: 100%; justify-content: center; background: var(--accent); color: white; border: none; }
+        .big-btn:hover { background: #1a5276; }
+
         .main-container { width: 85vw; height: 80vh; display: grid; grid-template-columns: 450px 1fr; gap: 80px; position: relative; z-index: 10; }
         .left-panel { display: flex; flex-direction: column; justify-content: center; position: relative; }
         .cover-wrapper { width: 100%; padding-bottom: 100%; position: relative; margin-bottom: 40px; filter: drop-shadow(0 20px 30px rgba(0,0,0,0.1)); }
@@ -122,7 +133,6 @@
         }
         .log-warn { color: yellow; } .log-err { color: #ff5555; font-weight: bold; } .log-suc { color: #55ff55; font-weight: bold; }
 
-        /* 音量控制 */
         .vol-container { position: relative; display: flex; align-items: center; justify-content: center; }
         .vol-popup {
             position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%);
@@ -134,7 +144,6 @@
             box-shadow: 0 5px 20px rgba(0,0,0,0.1);
         }
         .vol-popup.show { opacity: 1; pointer-events: all; bottom: 70px; }
-        
         input[type=range].vol-range {
             writing-mode: bt-lr; -webkit-appearance: slider-vertical;
             width: 4px; height: 90px; background: rgba(0,0,0,0.1);
@@ -145,9 +154,8 @@
 <body id="body">
     
     <div id="debug-console"><div>> Debugger Ready.</div></div>
-    
     <canvas id="visual-canvas"></canvas>
-    <div class="drag-mask"><h1>投喂音乐</h1><p>MP3 / FLAC / OGG / SLI (Native)</p></div>
+    <div class="drag-mask"><h1>投喂音乐</h1><p>MP3 / FLAC / OGG / SLI</p></div>
 
     <div class="top-bar">
         <div class="tool-group">
@@ -160,17 +168,48 @@
             <button id="toggle-debug" class="glass-btn">🐞 Debug</button>
         </div>
         <div class="tool-group">
+            <button id="toggle-analyze" class="glass-btn">🔍 智能分析</button>
             <button id="toggle-loop-panel" class="glass-btn">🔁 循环设定</button>
             <button id="toggle-list" class="glass-btn">📜 播放列表</button>
         </div>
     </div>
 
-    <div class="loop-panel" id="loop-panel">
-        <h4 style="margin:0; border-bottom:1px solid rgba(0,0,0,0.1); padding-bottom:10px;">Loop Controller</h4>
-        <div class="loop-row"><span>开启循环</span><input type="checkbox" id="loop-enable"></div>
-        <div class="loop-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="loop-input" value="44100" step="100"></div>
-        <div class="loop-row"><span>Start (A)</span><input type="number" id="loop-start" class="loop-input" step="0.001" value="0"></div>
-        <div class="loop-row"><span>End (B)</span><input type="number" id="loop-end" class="loop-input" step="0.001" value="0"></div>
+    <div class="panel-float" id="analyze-panel">
+        <h4 class="panel-title">Loop Analyzer (智能对齐分析)</h4>
+        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+            不知道在哪里设置循环点？试试智能分析！<br>
+            1. 粗略设置 A/B 点 (前后误差<2s)<br>
+            2. 点击“开始匹配”会自动寻找最佳接缝哦！
+        </div>
+        <div class="panel-row">
+            <span>Rough Start (A)</span>
+            <input type="number" id="ana-start" class="panel-input" step="0.1" placeholder="0.0">
+        </div>
+        <div class="panel-row">
+            <span>Rough End (B)</span>
+            <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0">
+        </div>
+        
+        <div class="analyze-btn-group">
+            <button class="glass-btn" onclick="capturePoint('a')">📍 定位 A</button>
+            <button class="glass-btn" onclick="capturePoint('b')">📍 定位 B</button>
+        </div>
+        <div class="analyze-btn-group">
+            <button class="glass-btn" onclick="previewPoint('a')">🔊 试听 A</button>
+            <button class="glass-btn" onclick="previewPoint('b')">🔊 试听 B</button>
+        </div>
+        
+        <button class="glass-btn big-btn" onclick="runAnalysis()" style="margin-top:10px;">✨ 开始精确匹配</button>
+        <button class="glass-btn big-btn" onclick="exportSLI()" style="margin-top:8px; background:#27ae60;">💾 导出 .sli 文件</button>
+        <div id="ana-msg" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
+    </div>
+
+    <div class="loop-panel panel-float" id="loop-panel">
+        <h4 class="panel-title">Loop Controller</h4>
+        <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable"></div>
+        <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100"></div>
+        <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0"></div>
+        <div class="panel-row"><span>End (B)</span><input type="number" id="loop-end" class="panel-input" step="0.001" value="0"></div>
         <div style="display:flex; gap:10px; margin-top:5px;">
             <button class="glass-btn" style="flex:1; justify-content:center;" onclick="setLoopPoint('a')">Set A</button>
             <button class="glass-btn" style="flex:1; justify-content:center;" onclick="setLoopPoint('b')">Set B</button>
@@ -215,14 +254,9 @@
                 <button class="btn" id="prev-btn"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
                 <button class="btn btn-play" id="play-btn"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
                 <button class="btn" id="next-btn"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
-                
                 <div class="vol-container">
-                    <div class="vol-popup" id="vol-popup">
-                        <input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1">
-                    </div>
-                    <button class="btn" id="vol-btn" title="Volume">
-                        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-                    </button>
+                    <div class="vol-popup" id="vol-popup"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
+                    <button class="btn" id="vol-btn" title="Volume"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
                 </div>
             </div>
         </div>
@@ -262,10 +296,174 @@
             baseRateInput: document.getElementById('base-rate'), loopMsg: document.getElementById('loop-msg'),
             markerA: document.getElementById('marker-a'), markerB: document.getElementById('marker-b'),
             modeBtn: document.getElementById('mode-btn'), loadTip: document.getElementById('loading-tip'),
-            volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range')
+            volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range'),
+            // Analyze UI
+            anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMsg: document.getElementById('ana-msg')
         };
         const colorThief = new ColorThief();
         const canvasCtx = el.canvas.getContext('2d');
+
+        // --- 核心：自动波形匹配算法 ---
+        function runAnalysis() {
+            if (!audioBuffer) { el.anaMsg.textContent = "Please load audio first!"; return; }
+            
+            const roughA = parseFloat(el.anaStart.value);
+            const roughB = parseFloat(el.anaEnd.value);
+            if (isNaN(roughA) || isNaN(roughB) || roughB <= roughA) {
+                el.anaMsg.textContent = "Invalid range (A must < B)"; return;
+            }
+
+            el.anaMsg.textContent = "Analyzing... (This may take a moment)";
+            el.anaMsg.style.color = "var(--accent)";
+
+            // 让 UI 渲染一帧后再计算，防卡死
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    try {
+                        const result = findBestMatch(audioBuffer, roughA, roughB);
+                        if (result) {
+                            applyLoop(result.start, result.end);
+                            el.anaMsg.textContent = `Matched! Confidence: ${(1-result.diff).toFixed(3)}`;
+                            el.anaMsg.style.color = "#27ae60";
+                            log(`Auto-Loop Found: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s`, 'success');
+                        } else {
+                            el.anaMsg.textContent = "No good match found in range.";
+                            el.anaMsg.style.color = "red";
+                        }
+                    } catch (e) {
+                        el.anaMsg.textContent = "Error: " + e.message;
+                        console.error(e);
+                    }
+                }, 50);
+            });
+        }
+
+        // 寻找最佳循环点 (核心算法)
+        function findBestMatch(buffer, timeA, timeB) {
+            const channel = buffer.getChannelData(0); // 只取左声道分析，通常足够
+            const sr = buffer.sampleRate;
+            
+            // 搜索参数
+            const searchRadius = 2.0; // 在 A 前后 2秒 搜索
+            const windowSize = Math.floor(0.3 * sr); // 对比窗口：0.3秒（短窗口找精确接缝）
+            
+            // 1. 确定 B 点作为“模板” (Template)
+            // 通常循环末尾比较固定，我们取 B 点前面的一小段作为指纹
+            const centerB = Math.floor(timeB * sr);
+            const templateStart = centerB - windowSize;
+            if (templateStart < 0 || centerB >= channel.length) throw new Error("B point out of bounds");
+            
+            // 2. 确定 A 点搜索范围
+            const centerA = Math.floor(timeA * sr);
+            const searchStart = Math.max(0, centerA - Math.floor(searchRadius * sr));
+            const searchEnd = Math.min(centerB - windowSize * 2, centerA + Math.floor(searchRadius * sr)); // A不能超过B
+            
+            let bestOffset = -1;
+            let minDiff = Infinity;
+
+            // 3. 暴力扫描 (MSE)
+            // 粗略扫描 Step=10，窗口内每3个采样取1个
+            const coarseStep = 10;
+            for (let i = searchStart; i < searchEnd; i += coarseStep) {
+                let diff = 0;
+                for (let j = 0; j < windowSize; j += 3) { // 密集抽样对比
+                    const delta = channel[i + j] - channel[templateStart + j];
+                    diff += delta * delta;
+                }
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestOffset = i;
+                }
+            }
+
+            // 4. 精细扫描 (Step = 1)
+            // 在粗略最佳点前后 50 采样内精细查找（约1ms精度）
+            let fineBest = bestOffset;
+            let fineMinDiff = Infinity;
+            const fineRange = 50;
+            
+            for (let i = bestOffset - fineRange; i <= bestOffset + fineRange; i++) {
+                if (i < 0 || i + windowSize >= channel.length) continue;
+                let diff = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    const delta = channel[i + j] - channel[templateStart + j];
+                    diff += delta * delta;
+                }
+                if (diff < fineMinDiff) {
+                    fineMinDiff = diff;
+                    fineBest = i;
+                }
+            }
+
+            // 计算归一化差异度作为置信度参考
+            const avgDiff = fineMinDiff / windowSize;
+            
+            // 5. 返回结果
+            // Loop Start = 匹配到的位置 + 窗口长度 (因为我们是用 B 前面的片段去匹配 A 前面的片段)
+            // 实际上，如果 B 是循环结束点，那么 A 应该是循环开始点。
+            // 我们的模板是 [B - win, B]，最佳匹配是 [A' - win, A']
+            // 所以最佳 A 点就是 fineBest + windowSize
+            
+            const exactStart = (fineBest + windowSize) / sr;
+            const exactEnd = timeB; // 保持用户设定的 B 点不动 (通常由文件结尾决定)
+            
+            // 修正：如果 B 点也是模糊的，我们可以不动 B，只动 A。
+            // 只要 A 点的波形相位能接上 B 点即可。
+            
+            return { start: exactStart, end: exactEnd, diff: avgDiff };
+        }
+
+        // 辅助：捕获当前播放时间
+        function capturePoint(type) {
+            const t = getCurrentTime();
+            if(type === 'a') el.anaStart.value = t.toFixed(3);
+            else el.anaEnd.value = t.toFixed(3);
+        }
+        
+        // 辅助：试听
+        function previewPoint(type) {
+            const t = parseFloat(type==='a' ? el.anaStart.value : el.anaEnd.value);
+            if (!isNaN(t)) {
+                // 播放该点前3秒到该点
+                startAudio(Math.max(0, t - 3));
+                setTimeout(() => stopAudio(), 3500);
+            }
+        }
+
+        // 导出 .sli 文件
+        function exportSLI() {
+            if (!loopState.active || loopState.start >= loopState.end) {
+                el.anaMsg.textContent = "请先设置有效的循环区间！";
+                el.anaMsg.style.color = "red";
+                return;
+            }
+            
+            const rate = parseInt(el.baseRateInput.value) || 44100;
+            // SLI格式: From = 结束采样点; To = 开始采样点
+            const fromSamples = Math.round(loopState.end * rate);
+            const toSamples = Math.round(loopState.start * rate);
+            
+            const sliContent = `From = ${fromSamples};\nTo = ${toSamples};`;
+            
+            // 创建 Blob 并下载
+            const blob = new Blob([sliContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // 使用当前曲目名称
+            const fileName = playlist[curIdx]?.name || 'loop';
+            a.download = `${fileName}.sli`;
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            el.anaMsg.textContent = `已导出: ${fileName}.sli`;
+            el.anaMsg.style.color = "#27ae60";
+            log(`SLI Exported: From=${fromSamples}, To=${toSamples}`, 'success');
+        }
 
         async function parseFlacTagsNative(file) {
             return new Promise((resolve) => {
@@ -276,7 +474,6 @@
                     if (view.getUint32(0) !== 0x664C6143) { resolve(null); return; }
                     offset += 4;
                     log("FLAC Header Found.", 'success');
-
                     let loopLimit = 0;
                     while(offset < view.byteLength && loopLimit < 100) {
                         loopLimit++;
@@ -285,9 +482,7 @@
                         const type = header & 0x7F;
                         const len = view.getUint32(offset) & 0x00FFFFFF; 
                         offset += 4;
-
                         if (type === 4) { 
-                            log("Vorbis Comment Block Found.", 'success');
                             try {
                                 const vendorLen = view.getUint32(offset, true);
                                 offset += 4 + vendorLen;
@@ -406,15 +601,11 @@
                 startAudio(0);
                 el.coverWrap.classList.add('playing');
                 updatePlayIcon();
-                
-                // 系统媒体控制 (新增)
                 updateMediaSession();
-
                 if(track.lrcFile) readLrcFile(track.lrcFile);
             } catch(e) { log("Err: " + e, 'error'); alert("播放失败，请查看Debug窗口"); }
         }
 
-        // --- 系统媒体中心 ---
         function updateMediaSession() {
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
@@ -426,11 +617,6 @@
                 navigator.mediaSession.setActionHandler('pause', () => el.playBtn.click());
                 navigator.mediaSession.setActionHandler('previoustrack', () => document.getElementById('prev-btn').click());
                 navigator.mediaSession.setActionHandler('nexttrack', () => document.getElementById('next-btn').click());
-                navigator.mediaSession.setActionHandler('seekto', (details) => {
-                    if (details.seekTime && playbackState.duration) {
-                        startAudio(details.seekTime);
-                    }
-                });
             }
         }
 
@@ -509,10 +695,7 @@
             playbackState.startTime = actx.currentTime - offset;
             playbackState.pauseTime = offset;
             playbackState.isPlaying = true;
-            
-            // 更新系统播放状态
             if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
-
             sourceNode.onended = () => {
                 if(!sourceNode.loop && playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.2)) handleNext();
             };
@@ -562,54 +745,18 @@
             if(playbackState.isPlaying) startAudio(target);
             else { playbackState.pauseTime = target; el.progLine.style.width = pct*100+'%'; el.currTime.textContent = fmtTime(target); }
         };
-        
         el.volBtn.onclick = () => { el.volPopup.classList.toggle('show'); };
         el.volRange.oninput = () => { gainNode.gain.value = el.volRange.value; };
 
-        // --- 键盘快捷键监听 ---
         document.addEventListener('keydown', (e) => {
-            // 避免在输入框里打字时触发快捷键
             if(e.target.tagName === 'INPUT') return;
-
-            if(e.code === 'Space') {
-                e.preventDefault(); // 防止页面滚动
-                el.playBtn.click();
-            } else if (e.code === 'ArrowLeft') {
-                // 快退 5s
-                if (audioBuffer) {
-                    const t = Math.max(0, getCurrentTime() - 5);
-                    if (playbackState.isPlaying) startAudio(t);
-                    else { playbackState.pauseTime = t; updateUI(t); }
-                }
-            } else if (e.code === 'ArrowRight') {
-                // 快进 5s
-                if (audioBuffer) {
-                    const t = Math.min(playbackState.duration, getCurrentTime() + 5);
-                    if (playbackState.isPlaying) startAudio(t);
-                    else { playbackState.pauseTime = t; updateUI(t); }
-                }
-            } else if (e.code === 'ArrowUp') {
-                e.preventDefault();
-                el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05);
-                gainNode.gain.value = el.volRange.value;
-                el.volPopup.classList.add('show');
-                clearTimeout(window.volTimer);
-                window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000);
-            } else if (e.code === 'ArrowDown') {
-                e.preventDefault();
-                el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05);
-                gainNode.gain.value = el.volRange.value;
-                el.volPopup.classList.add('show');
-                clearTimeout(window.volTimer);
-                window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000);
-            }
+            if(e.code === 'Space') { e.preventDefault(); el.playBtn.click(); } 
+            else if (e.code === 'ArrowLeft') { if (audioBuffer) { const t = Math.max(0, getCurrentTime() - 5); if (playbackState.isPlaying) startAudio(t); else { playbackState.pauseTime = t; updateUI(t); } } } 
+            else if (e.code === 'ArrowRight') { if (audioBuffer) { const t = Math.min(playbackState.duration, getCurrentTime() + 5); if (playbackState.isPlaying) startAudio(t); else { playbackState.pauseTime = t; updateUI(t); } } } 
+            else if (e.code === 'ArrowUp') { e.preventDefault(); el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); } 
+            else if (e.code === 'ArrowDown') { e.preventDefault(); el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); }
         });
-
-        // 辅助函数：更新UI（暂停拖动时）
-        function updateUI(t) {
-            el.currTime.textContent = fmtTime(t);
-            el.progLine.style.width = (t / playbackState.duration) * 100 + '%';
-        }
+        function updateUI(t) { el.currTime.textContent = fmtTime(t); el.progLine.style.width = (t / playbackState.duration) * 100 + '%'; }
 
         function handleNext() {
             if(playMode === 1) playTrack(Math.floor(Math.random()*playlist.length));
@@ -697,6 +844,7 @@
 
         document.getElementById('toggle-list').onclick = () => document.getElementById('playlist-sidebar').classList.toggle('show');
         document.getElementById('toggle-loop-panel').onclick = () => document.getElementById('loop-panel').classList.toggle('show');
+        document.getElementById('toggle-analyze').onclick = () => document.getElementById('analyze-panel').classList.toggle('show');
         document.getElementById('toggle-debug').onclick = () => {
             const dbg = document.getElementById('debug-console');
             dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
