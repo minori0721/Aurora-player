@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Player (Final UI Fix)</title>
+    <title>Aurora Player</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
@@ -85,40 +85,18 @@
         .track-title { font-size: 3rem; font-weight: 800; margin: 0 0 10px 0; line-height: 1.1; }
         .track-artist { font-size: 1.2rem; color: var(--text-sub); font-weight: 500; }
         
-        /* 修复：增加 padding-left 防止文字溢出 */
         .lyrics-box { 
-            height: 350px; 
-            overflow: hidden; 
-            margin-bottom: 30px; 
-            position: relative; 
-            padding-left: 20px; /* <--- 关键修复：给容器加内边距 */
+            height: 350px; overflow: hidden; margin-bottom: 30px; position: relative; 
+            padding-left: 20px;
             mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
             -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
         }
         .lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; }
-        
-        .lyric-line { 
-            font-size: 1.1rem; 
-            color: var(--text-sub); 
-            margin: 14px 0; 
-            cursor: pointer; 
-            opacity: 0.6; 
-            transition: 0.2s; 
-            line-height: 1.4; 
-        }
-        
-        /* 修复：删除了 margin-left: -5px */
-        .lyric-line.active { 
-            color: var(--text-main); 
-            font-size: 1.4rem; 
-            font-weight: 800; 
-            opacity: 1; 
-            /* margin-left: -5px; <--- 已删除 */
-            transform-origin: left center;
-        }
+        .lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 14px 0; cursor: pointer; opacity: 0.6; transition: 0.2s; line-height: 1.4; }
+        .lyric-line.active { color: var(--text-main); font-size: 1.4rem; font-weight: 800; opacity: 1; transform-origin: left center; }
 
         .controls-row { display: flex; align-items: center; justify-content: flex-start; gap: 25px; padding-top: 20px; }
-        .btn { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .btn { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s; position: relative; }
         .btn:hover { background: #fff; transform: translateY(-3px); }
         .btn svg { width: 20px; height: 20px; fill: currentColor; }
         .btn-play { width: 70px; height: 70px; background: var(--text-main); color: #fff; }
@@ -133,19 +111,35 @@
         .drag-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: 0.3s; }
         body.drag-on .drag-mask { opacity: 1; pointer-events: all; }
         .loading-tip { position: absolute; bottom: 20px; font-size: 0.8rem; color: #2980b9; display: none; font-weight: bold; }
-        
         .tag-source { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); margin-left: 10px; vertical-align: middle;}
 
-        /* 调试控制台：默认隐藏，好看的悬浮窗 */
         #debug-console {
             position: fixed; top: 70px; left: 20px; width: 350px; max-height: 200px;
             background: rgba(0,0,0,0.85); color: #0f0; font-family: monospace; font-size: 11px;
             overflow-y: auto; z-index: 9999; padding: 10px; border-radius: 8px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: all;
-            display: none; /* 默认隐藏 */
-            border: 1px solid rgba(255,255,255,0.2);
+            display: none; border: 1px solid rgba(255,255,255,0.2);
         }
         .log-warn { color: yellow; } .log-err { color: #ff5555; font-weight: bold; } .log-suc { color: #55ff55; font-weight: bold; }
+
+        /* 音量控制 */
+        .vol-container { position: relative; display: flex; align-items: center; justify-content: center; }
+        .vol-popup {
+            position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 120px;
+            background: var(--glass-strong); backdrop-filter: blur(10px);
+            border-radius: 20px; border: 1px solid var(--border);
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .vol-popup.show { opacity: 1; pointer-events: all; bottom: 70px; }
+        
+        input[type=range].vol-range {
+            writing-mode: bt-lr; -webkit-appearance: slider-vertical;
+            width: 4px; height: 90px; background: rgba(0,0,0,0.1);
+            cursor: pointer; accent-color: var(--text-main);
+        }
     </style>
 </head>
 <body id="body">
@@ -221,12 +215,20 @@
                 <button class="btn" id="prev-btn"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
                 <button class="btn btn-play" id="play-btn"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
                 <button class="btn" id="next-btn"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
+                
+                <div class="vol-container">
+                    <div class="vol-popup" id="vol-popup">
+                        <input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1">
+                    </div>
+                    <button class="btn" id="vol-btn" title="Volume">
+                        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // --- 0. 日志系统 ---
         const debugConsole = document.getElementById('debug-console');
         function log(msg, type='') {
             console.log(msg);
@@ -237,7 +239,6 @@
             debugConsole.scrollTop = debugConsole.scrollHeight;
         }
 
-        // --- 1. 全局初始化 ---
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let actx = new AudioContext();
         let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
@@ -249,7 +250,6 @@
         let loopState = { active: false, start: 0, end: 0 };
         let particles = [];
 
-        // UI 引用
         const el = {
             img: document.getElementById('album-img'), coverWrap: document.getElementById('cover-wrap'),
             title: document.getElementById('track-title'), artist: document.getElementById('track-artist'),
@@ -261,12 +261,12 @@
             loopPanel: document.getElementById('loop-panel'), loopStart: document.getElementById('loop-start'), loopEnd: document.getElementById('loop-end'), loopEnable: document.getElementById('loop-enable'),
             baseRateInput: document.getElementById('base-rate'), loopMsg: document.getElementById('loop-msg'),
             markerA: document.getElementById('marker-a'), markerB: document.getElementById('marker-b'),
-            modeBtn: document.getElementById('mode-btn'), loadTip: document.getElementById('loading-tip')
+            modeBtn: document.getElementById('mode-btn'), loadTip: document.getElementById('loading-tip'),
+            volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range')
         };
         const colorThief = new ColorThief();
         const canvasCtx = el.canvas.getContext('2d');
 
-        // --- 2. 原生 FLAC 解析器 ---
         async function parseFlacTagsNative(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -286,28 +286,24 @@
                         const len = view.getUint32(offset) & 0x00FFFFFF; 
                         offset += 4;
 
-                        if (type === 4) { // VORBIS_COMMENT
+                        if (type === 4) { 
                             log("Vorbis Comment Block Found.", 'success');
                             try {
                                 const vendorLen = view.getUint32(offset, true);
                                 offset += 4 + vendorLen;
                                 const commentListLen = view.getUint32(offset, true);
                                 offset += 4;
-                                
                                 let tags = {};
                                 const decoder = new TextDecoder("utf-8");
-
                                 for(let i=0; i<commentListLen; i++) {
                                     const commentLen = view.getUint32(offset, true);
                                     offset += 4;
                                     const commentStr = decoder.decode(new Uint8Array(e.target.result, offset, commentLen));
                                     offset += commentLen;
-
                                     const splitIdx = commentStr.indexOf('=');
                                     if(splitIdx > -1) {
                                         const key = commentStr.substring(0, splitIdx).toUpperCase();
                                         const val = commentStr.substring(splitIdx + 1);
-                                        
                                         if(key === 'LYRICS' || key === 'UNSYNCED LYRICS') tags.lyrics = val;
                                         else if (key === 'TITLE') tags.title = val;
                                         else if (key === 'ARTIST') tags.artist = val;
@@ -327,7 +323,6 @@
             });
         }
 
-        // --- 3. 文件处理 ---
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => document.body.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); }));
         document.body.addEventListener('dragenter', () => document.body.classList.add('drag-on'));
         document.body.addEventListener('dragleave', (e) => { if(e.clientX===0 && e.clientY===0) document.body.classList.remove('drag-on'); });
@@ -338,7 +333,6 @@
             const files = Array.from(e.dataTransfer.files);
             const audios = files.filter(f => f.type.startsWith('audio/') || /\.(mp3|flac|wav|m4a|ogg)$/i.test(f.name));
             const lrcs = {}, slis = {};
-
             files.forEach(f => {
                 if(f.name.endsWith('.lrc')) lrcs[f.name.replace('.lrc','')] = f;
                 if(f.name.endsWith('.sli') || f.name.includes('.ogg.sli')) {
@@ -346,7 +340,6 @@
                     slis[base] = f;
                 }
             });
-
             if(audios.length) {
                 playlist = audios.map(f => {
                     const base = f.name.replace(/\.[^.]+$/, "");
@@ -361,7 +354,6 @@
             }
         }
 
-        // --- 4. 播放流程 ---
         async function playTrack(i) {
             if(i < 0 || i >= playlist.length) return;
             curIdx = i; renderPlaylist();
@@ -379,16 +371,11 @@
             try {
                 const ab = await track.file.arrayBuffer();
                 el.bufferLine.style.width = '30%';
-
-                // 元数据解析
                 let meta = null;
-                // A. FLAC 原生
                 if(track.file.name.toLowerCase().endsWith('.flac')) {
                     log("Detect FLAC. Using Native Parser...");
                     meta = await parseFlacTagsNative(track.file);
-                } 
-                // B. 其他格式 jsmediatags
-                else {
+                } else {
                     jsmediatags.read(track.file, {
                         onSuccess: (tag) => {
                             const c = {
@@ -405,10 +392,8 @@
                         }
                     });
                 }
-
                 if(meta) applyMetadata(meta, "Native");
 
-                // 解码
                 el.bufferLine.style.width = '60%';
                 audioBuffer = await actx.decodeAudioData(ab);
                 el.bufferLine.style.width = '100%';
@@ -417,42 +402,52 @@
                 el.loadTip.style.display = 'none';
                 
                 if(el.artist.textContent === "Loading...") el.artist.textContent = "Ready";
-
                 if(track.sliFile) await parseSLI(track);
                 startAudio(0);
                 el.coverWrap.classList.add('playing');
                 updatePlayIcon();
+                
+                // 系统媒体控制 (新增)
+                updateMediaSession();
 
-                // 外部歌词
                 if(track.lrcFile) readLrcFile(track.lrcFile);
+            } catch(e) { log("Err: " + e, 'error'); alert("播放失败，请查看Debug窗口"); }
+        }
 
-            } catch(e) {
-                log("Err: " + e, 'error');
-                alert("播放失败，请查看Debug窗口");
+        // --- 系统媒体中心 ---
+        function updateMediaSession() {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: el.title.textContent,
+                    artist: el.artist.textContent,
+                    artwork: [ { src: el.img.src, sizes: '512x512', type: 'image/png' } ]
+                });
+                navigator.mediaSession.setActionHandler('play', () => el.playBtn.click());
+                navigator.mediaSession.setActionHandler('pause', () => el.playBtn.click());
+                navigator.mediaSession.setActionHandler('previoustrack', () => document.getElementById('prev-btn').click());
+                navigator.mediaSession.setActionHandler('nexttrack', () => document.getElementById('next-btn').click());
+                navigator.mediaSession.setActionHandler('seekto', (details) => {
+                    if (details.seekTime && playbackState.duration) {
+                        startAudio(details.seekTime);
+                    }
+                });
             }
         }
 
-        // 应用元数据
         function applyMetadata(common, source) {
             if(common.title) el.title.textContent = common.title;
             if(common.artist) el.artist.textContent = common.artist;
-            
-            // 封面
             if(common.picture && typeof common.picture === 'object' && !el.img.src.startsWith('data')) {
-                // jsmediatags 格式
                 const data = common.picture.data;
                 const format = common.picture.format;
                 if(data && format) {
                     let base64 = "";
                     for(let j=0; j<data.length; j++) base64 += String.fromCharCode(data[j]);
                     el.img.src = `data:${format};base64,${window.btoa(base64)}`;
-                    el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); }
+                    el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); updateMediaSession(); }
                 }
-            } else if (!el.img.src.startsWith('data')) {
-                 updateTheme(null);
-            }
+            } else if (!el.img.src.startsWith('data')) { updateTheme(null); }
 
-            // 歌词
             if(common.lyrics) {
                 log("Lyrics found.", 'success');
                 let clean = common.lyrics.replace(/\/\s*(?=\[\d{2}:)/g, '\n');
@@ -463,7 +458,6 @@
             }
         }
 
-        // --- 3. 歌词渲染 ---
         function readLrcFile(file) {
             const r = new FileReader();
             r.onload = e => parseAndRenderLyrics(e.target.result, "LRC File");
@@ -475,29 +469,22 @@
             const reg = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
             lyrics = [];
             let hasTimeTag = false;
-
             lines.forEach(l => {
                 const m = reg.exec(l);
                 if(m) {
                     hasTimeTag = true;
-                    lyrics.push({
-                        t: parseInt(m[1])*60 + parseInt(m[2]) + parseInt(m[3])/1000, 
-                        txt: l.replace(reg,'').replace(/\[.*?\]/g, '').trim() 
-                    });
+                    lyrics.push({ t: parseInt(m[1])*60 + parseInt(m[2]) + parseInt(m[3])/1000, txt: l.replace(reg,'').replace(/\[.*?\]/g, '').trim() });
                 } else {
                     const clean = l.trim();
                     if(clean) lyrics.push({ t: -1, txt: clean });
                 }
             });
-
             el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
             isSyncedLyrics = hasTimeTag;
-
             if(isSyncedLyrics) {
                 lyrics.forEach(l => {
                     if(l.t === -1) return;
-                    const d = document.createElement('div'); d.className = 'lyric-line'; d.textContent = l.txt; d.onclick = () => startAudio(l.t); 
-                    el.lyricBox.appendChild(d); 
+                    const d = document.createElement('div'); d.className = 'lyric-line'; d.textContent = l.txt; d.onclick = () => startAudio(l.t); el.lyricBox.appendChild(d); 
                 });
                 el.artist.innerHTML += ` <span class="tag-source">${source}</span>`;
             } else {
@@ -507,48 +494,47 @@
             if(isSyncedLyrics) el.lyricBox.innerHTML += '<div style="height:150px"></div>';
         }
 
-        // --- 4. 音频引擎 (标准) ---
         function startAudio(offset) {
             if(sourceNode) sourceNode.disconnect();
             sourceNode = actx.createBufferSource();
             sourceNode.buffer = audioBuffer;
             sourceNode.connect(gainNode);
-
             if(loopState.active && loopState.end <= audioBuffer.duration && loopState.start < loopState.end) {
                 sourceNode.loop = true; sourceNode.loopStart = loopState.start; sourceNode.loopEnd = loopState.end;
                 document.getElementById('loop-status').style.display = 'inline';
             } else {
-                sourceNode.loop = false;
-                document.getElementById('loop-status').style.display = 'none';
+                sourceNode.loop = false; document.getElementById('loop-status').style.display = 'none';
             }
-
             sourceNode.start(0, offset);
             playbackState.startTime = actx.currentTime - offset;
             playbackState.pauseTime = offset;
             playbackState.isPlaying = true;
+            
+            // 更新系统播放状态
+            if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
 
             sourceNode.onended = () => {
                 if(!sourceNode.loop && playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.2)) handleNext();
             };
         }
-        function stopAudio() { if(sourceNode) { try{sourceNode.stop()}catch(e){}; sourceNode.disconnect(); sourceNode=null; } playbackState.isPlaying = false; }
+        function stopAudio() { 
+            if(sourceNode) { try{sourceNode.stop()}catch(e){}; sourceNode.disconnect(); sourceNode=null; } 
+            playbackState.isPlaying = false; 
+            if('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+        }
         function getCurrentTime() {
             if(!playbackState.isPlaying) return playbackState.pauseTime;
             let t = actx.currentTime - playbackState.startTime;
-            if(loopState.active && sourceNode.loop && t > loopState.end) {
-                const dur = loopState.end - loopState.start;
-                t = loopState.start + (t - loopState.end) % dur;
-            } else if (t > playbackState.duration) t = playbackState.duration;
+            if(loopState.active && sourceNode.loop && t > loopState.end) { const dur = loopState.end - loopState.start; t = loopState.start + (t - loopState.end) % dur; } 
+            else if (t > playbackState.duration) t = playbackState.duration;
             return t;
         }
 
-        // --- 5. 渲染循环 ---
         function renderLoop() {
             requestAnimationFrame(renderLoop);
             const now = getCurrentTime();
             el.currTime.textContent = fmtTime(now);
             if(playbackState.duration) el.progLine.style.width = (now / playbackState.duration) * 100 + '%';
-
             if(isSyncedLyrics && lyrics.length) {
                 let idx = lyrics.findIndex(l => l.t > now) - 1;
                 if(idx < 0) idx = lyrics.length - 1; if(now < lyrics[0]?.t) idx = -1;
@@ -564,7 +550,6 @@
         }
         renderLoop();
 
-        // --- 6. 交互 ---
         el.playBtn.onclick = () => {
             if(actx.state === 'suspended') actx.resume();
             if(playbackState.isPlaying) { playbackState.pauseTime = getCurrentTime(); stopAudio(); el.coverWrap.classList.remove('playing'); updatePlayIcon(); }
@@ -577,6 +562,55 @@
             if(playbackState.isPlaying) startAudio(target);
             else { playbackState.pauseTime = target; el.progLine.style.width = pct*100+'%'; el.currTime.textContent = fmtTime(target); }
         };
+        
+        el.volBtn.onclick = () => { el.volPopup.classList.toggle('show'); };
+        el.volRange.oninput = () => { gainNode.gain.value = el.volRange.value; };
+
+        // --- 键盘快捷键监听 ---
+        document.addEventListener('keydown', (e) => {
+            // 避免在输入框里打字时触发快捷键
+            if(e.target.tagName === 'INPUT') return;
+
+            if(e.code === 'Space') {
+                e.preventDefault(); // 防止页面滚动
+                el.playBtn.click();
+            } else if (e.code === 'ArrowLeft') {
+                // 快退 5s
+                if (audioBuffer) {
+                    const t = Math.max(0, getCurrentTime() - 5);
+                    if (playbackState.isPlaying) startAudio(t);
+                    else { playbackState.pauseTime = t; updateUI(t); }
+                }
+            } else if (e.code === 'ArrowRight') {
+                // 快进 5s
+                if (audioBuffer) {
+                    const t = Math.min(playbackState.duration, getCurrentTime() + 5);
+                    if (playbackState.isPlaying) startAudio(t);
+                    else { playbackState.pauseTime = t; updateUI(t); }
+                }
+            } else if (e.code === 'ArrowUp') {
+                e.preventDefault();
+                el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05);
+                gainNode.gain.value = el.volRange.value;
+                el.volPopup.classList.add('show');
+                clearTimeout(window.volTimer);
+                window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000);
+            } else if (e.code === 'ArrowDown') {
+                e.preventDefault();
+                el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05);
+                gainNode.gain.value = el.volRange.value;
+                el.volPopup.classList.add('show');
+                clearTimeout(window.volTimer);
+                window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000);
+            }
+        });
+
+        // 辅助函数：更新UI（暂停拖动时）
+        function updateUI(t) {
+            el.currTime.textContent = fmtTime(t);
+            el.progLine.style.width = (t / playbackState.duration) * 100 + '%';
+        }
+
         function handleNext() {
             if(playMode === 1) playTrack(Math.floor(Math.random()*playlist.length));
             else if(playMode === 2) startAudio(0);
@@ -590,7 +624,6 @@
             document.getElementById(['icon-list-loop', 'icon-random', 'icon-single'][playMode]).style.display = 'block';
         };
 
-        // Loop & SLI
         async function parseSLI(track) {
             return new Promise(resolve => {
                 const r = new FileReader();
@@ -631,7 +664,6 @@
             el.markerA.style.display='block'; el.markerB.style.display='block'; document.getElementById('loop-status').style.display='inline';
         }
 
-        // Utils
         function updatePlayIcon() { el.playBtn.innerHTML = playbackState.isPlaying ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>'; }
         function fmtTime(s) { const m = Math.floor(s/60); const sc = Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`; }
         function renderPlaylist() {
@@ -665,7 +697,6 @@
 
         document.getElementById('toggle-list').onclick = () => document.getElementById('playlist-sidebar').classList.toggle('show');
         document.getElementById('toggle-loop-panel').onclick = () => document.getElementById('loop-panel').classList.toggle('show');
-        // Debug 按钮逻辑
         document.getElementById('toggle-debug').onclick = () => {
             const dbg = document.getElementById('debug-console');
             dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
