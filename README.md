@@ -1,4 +1,4 @@
-# 🎵 Aurora Player (极光播放器) test ver
+# 🎵 Aurora Player (极光播放器) preview.ver
 
 > 一个基于 Web Audio API 的现代网页音乐播放器，专为无缝循环 (Seamless Loop) 和高保真音频体验设计。
 
