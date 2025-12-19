@@ -55,7 +55,15 @@
         
         .panel-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; }
         .panel-input { width: 80px; border: 1px solid #ccc; border-radius: 5px; padding: 4px; text-align: center; font-family: monospace; }
-        .panel-title { margin: 0; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; font-size: 1rem; font-weight: bold; }
+        .panel-title { margin: 0; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; font-size: 1rem; font-weight: bold; position: relative; }
+        
+        /* 面板关闭按钮 */
+        .panel-close {
+            position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+            background: none; border: none; font-size: 1.5rem; color: var(--text-sub);
+            cursor: pointer; padding: 0 5px; line-height: 1; display: none;
+        }
+        .panel-close:hover { color: var(--text-main); }
 
         /* 分析面板特别样式 */
         #analyze-panel { right: 350px; width: 300px; } /* 放在循环面板左边 */
@@ -145,87 +153,162 @@
         }
         .vol-popup.show { opacity: 1; pointer-events: all; bottom: 70px; }
         input[type=range].vol-range {
-            writing-mode: bt-lr; -webkit-appearance: slider-vertical;
-            width: 4px; height: 90px; background: rgba(0,0,0,0.1);
+            writing-mode: vertical-lr; direction: rtl;
+            width: 8px; height: 90px; background: rgba(0,0,0,0.1);
             cursor: pointer; accent-color: var(--text-main);
         }
 
+        /* 高级菜单 */
+        .advanced-menu-container { position: relative; }
+        .advanced-menu {
+            position: absolute; top: 45px; right: 0;
+            background: var(--glass-strong); backdrop-filter: blur(20px);
+            border-radius: 12px; border: 1px solid var(--border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            min-width: 140px; padding: 8px 0;
+            opacity: 0; pointer-events: none; transform: translateY(-10px);
+            transition: all 0.2s ease;
+            z-index: 9999;
+        }
+        .advanced-menu.show { opacity: 1; pointer-events: all; transform: translateY(0); }
+        .advanced-menu-item {
+            display: block; width: 100%; padding: 10px 15px;
+            background: none; border: none; text-align: left;
+            font-size: 0.85rem; color: var(--text-main); cursor: pointer;
+            transition: background 0.15s;
+        }
+        .advanced-menu-item:hover { background: rgba(0,0,0,0.05); }
+        .advanced-menu-item:active { background: rgba(0,0,0,0.1); }
+        
+        /* 桌面端隐藏高级按钮 */
+        .mobile-only { display: none; }
+        .desktop-only { display: flex; }
+
         /* ========== 移动端响应式 ========== */
         @media screen and (max-width: 900px) {
-            body { overflow-y: auto; height: auto; min-height: 100vh; }
+            html, body { 
+                overflow-x: hidden; 
+                overflow-y: auto;
+                height: auto; 
+                min-height: 100vh;
+                max-width: 100vw;
+            }
             
             .main-container {
-                width: 92vw; height: auto; min-height: 100vh;
-                grid-template-columns: 1fr; gap: 20px;
-                padding: 80px 0 30px 0;
+                width: 100%; height: auto;
+                grid-template-columns: 1fr; gap: 15px;
+                padding: 70px 15px 100px 15px;
+                box-sizing: border-box;
             }
             
             .left-panel { order: 1; }
             .right-panel { order: 2; }
             
             .cover-wrapper { 
-                width: 65vw; max-width: 300px; padding-bottom: 65vw; 
-                margin: 0 auto 20px auto; 
+                width: 55vw; max-width: 250px; padding-bottom: 55vw; 
+                margin: 0 auto 15px auto; 
             }
             
-            .progress-section { padding: 0 10px; }
+            .progress-section { padding: 0; }
             
-            .track-header { text-align: center; padding: 0 15px; }
-            .track-title { font-size: 1.6rem; }
-            .track-artist { font-size: 1rem; }
+            .track-header { text-align: center; padding: 0 10px; }
+            .track-title { font-size: 1.5rem; word-break: break-word; }
+            .track-artist { font-size: 0.95rem; }
             
             .lyrics-box { 
-                height: 200px; padding: 0 15px;
+                height: 180px; padding: 0 10px;
                 mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
                 -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
             }
-            .lyric-line { font-size: 0.95rem; margin: 10px 0; text-align: center; }
-            .lyric-line.active { font-size: 1.15rem; }
+            .lyric-line { font-size: 0.9rem; margin: 8px 0; text-align: center; }
+            .lyric-line.active { font-size: 1.1rem; }
             .lyrics-scroll { text-align: center; }
             
-            .controls-row { justify-content: center; gap: 15px; padding: 15px 0; }
-            .btn { width: 44px; height: 44px; }
-            .btn svg { width: 18px; height: 18px; }
-            .btn-play { width: 60px; height: 60px; }
+            .controls-row { justify-content: center; gap: 12px; padding: 10px 0; }
+            .btn { width: 42px; height: 42px; }
+            .btn svg { width: 16px; height: 16px; }
+            .btn-play { width: 56px; height: 56px; }
             
-            /* 顶部工具栏 */
+            /* 顶部工具栏 - 移动端重新布局 */
             .top-bar { 
-                top: 10px; left: 10px; right: 10px;
-                flex-wrap: wrap; gap: 8px;
+                top: 8px; left: 8px; right: 8px;
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                gap: 5px;
+                overflow: visible;
             }
-            .tool-group { gap: 6px; flex-wrap: wrap; }
+            .tool-group { 
+                gap: 5px; 
+                flex-wrap: nowrap;
+                overflow: visible;
+            }
+            .tool-group::-webkit-scrollbar { display: none; }
             .glass-btn { 
-                padding: 6px 10px; font-size: 0.75rem; 
-                border-radius: 15px;
+                padding: 5px 8px; font-size: 0.7rem; 
+                border-radius: 12px;
+                flex-shrink: 0;
             }
+            /* 移动端隐藏部分按钮文字，只显示图标 */
+            .glass-btn .btn-text { display: none; }
             
             /* 面板 */
             .panel-float { 
-                width: calc(100vw - 40px); right: 20px; left: 20px;
-                max-height: 60vh; overflow-y: auto;
+                position: fixed;
+                top: auto; bottom: 0; left: 0; right: 0;
+                width: 100%; max-width: 100%;
+                border-radius: 20px 20px 0 0;
+                max-height: 70vh; overflow-y: auto;
+                transform: translateY(100%);
+                box-sizing: border-box;
             }
-            #analyze-panel { right: 20px; left: 20px; width: auto; }
-            #analyze-panel:not(.show) { transform: translateX(120%); }
+            .panel-float.show { transform: translateY(0); }
             
-            .playlist-sidebar { width: 85vw; max-width: 320px; padding: 70px 20px 20px 20px; }
+            /* 移动端显示关闭按钮 */
+            .panel-close { display: block; }
+            
+            #analyze-panel { 
+                position: fixed;
+                top: auto; bottom: 0; left: 0; right: 0;
+                width: 100%;
+            }
+            #analyze-panel:not(.show) { transform: translateY(100%); }
+            
+            .playlist-sidebar { 
+                width: 100%; max-width: 100%; 
+                padding: 60px 15px 15px 15px; 
+                box-sizing: border-box;
+            }
             
             #debug-console { 
-                width: calc(100vw - 40px); left: 20px; right: 20px;
-                top: auto; bottom: 20px; max-height: 150px;
+                position: fixed;
+                width: calc(100% - 20px); left: 10px; right: 10px;
+                top: auto; bottom: 10px; max-height: 120px;
             }
             
-            .vol-popup { bottom: 55px; }
-            .vol-popup.show { bottom: 60px; }
+            .vol-popup { bottom: 50px; }
+            .vol-popup.show { bottom: 55px; }
+            
+            /* 拖拽遮罩 */
+            .drag-mask h1 { font-size: 1.5rem; }
+            .drag-mask p { font-size: 0.9rem; }
+            
+            /* 移动端：显示高级按钮，隐藏原来的三个 */
+            .mobile-only { display: block; }
+            .desktop-only { display: none !important; }
+            .advanced-menu { right: 0; left: auto; }
         }
         
         /* 超小屏幕 */
         @media screen and (max-width: 400px) {
-            .cover-wrapper { width: 70vw; padding-bottom: 70vw; }
-            .track-title { font-size: 1.4rem; }
-            .glass-btn { padding: 5px 8px; font-size: 0.7rem; }
-            .controls-row { gap: 12px; }
-            .btn { width: 40px; height: 40px; }
-            .btn-play { width: 54px; height: 54px; }
+            .main-container { padding: 60px 10px 90px 10px; }
+            .cover-wrapper { width: 60vw; padding-bottom: 60vw; max-width: 220px; }
+            .track-title { font-size: 1.3rem; }
+            .glass-btn { padding: 4px 6px; font-size: 0.65rem; }
+            .controls-row { gap: 10px; }
+            .btn { width: 38px; height: 38px; }
+            .btn-play { width: 50px; height: 50px; }
+            .lyrics-box { height: 150px; }
         }
     </style>
 </head>
@@ -244,17 +327,26 @@
                 <option value="bars">📊 律动频谱</option>
                 <option value="waves">🌊 极光波浪</option>
             </select>
-            <button id="toggle-debug" class="glass-btn">🐞 Debug</button>
+            <button id="toggle-debug" class="glass-btn desktop-only">🐞 Debug</button>
         </div>
         <div class="tool-group">
-            <button id="toggle-analyze" class="glass-btn">🔍 智能分析</button>
-            <button id="toggle-loop-panel" class="glass-btn">🔁 循环设定</button>
-            <button id="toggle-list" class="glass-btn">📜 播放列表</button>
+            <button id="toggle-analyze" class="glass-btn desktop-only">🔍 智能分析</button>
+            <button id="toggle-loop-panel" class="glass-btn desktop-only">🔁 循环设定</button>
+            <button id="toggle-list" class="glass-btn">📜 列表</button>
+            <!-- 移动端高级菜单 -->
+            <div class="advanced-menu-container mobile-only">
+                <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
+                <div class="advanced-menu" id="advanced-menu">
+                    <button class="advanced-menu-item" data-action="debug">🐞 Debug</button>
+                    <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
+                    <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="panel-float" id="analyze-panel">
-        <h4 class="panel-title">Loop Analyzer (智能对齐分析)</h4>
+        <h4 class="panel-title">Loop Analyzer (智能对齐分析)<button class="panel-close" onclick="this.closest('.panel-float').classList.remove('show')">&times;</button></h4>
         <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
             不知道在哪里设置循环点？试试智能分析！<br>
             1. 粗略设置 A/B 点 (前后误差<2s)<br>
@@ -284,7 +376,7 @@
     </div>
 
     <div class="loop-panel panel-float" id="loop-panel">
-        <h4 class="panel-title">Loop Controller</h4>
+        <h4 class="panel-title">Loop Controller<button class="panel-close" onclick="this.closest('.panel-float').classList.remove('show')">&times;</button></h4>
         <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable"></div>
         <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100"></div>
         <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0"></div>
@@ -837,51 +929,88 @@
 
         // 网易云音乐歌词搜索功能 (使用公开API服务)
         const NETEASE_API_HOSTS = [
-            'https://netease-cloud-music-api-eta-six.vercel.app',
-            'https://netease-cloud-music-api-beryl.vercel.app',
-            'https://music-api.gdstudio.xyz'
+            'https://music-api.heheda.top',
+            'https://wyy.heheda.top'
         ];
+        
+        // CORS 代理列表
+        const CORS_PROXIES = [
+            'https://api.allorigins.win/raw?url=',
+            'https://corsproxy.io/?'
+        ];
+        
         let currentApiIndex = 0;
+        let useDirectApi = true; // 先尝试直接API，失败后用代理
 
         async function searchNeteaselyrics(songName, artist, duration) {
             try {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 正在搜索歌词...</div>';
                 
-                // 智能提取歌名 - 处理 "歌手 - 歌名" 格式
+                // 智能提取歌名和歌手 - 处理 "歌手 - 歌名" 格式
                 let searchSong = songName;
+                let searchArtist = artist || '';
                 
-                // 如果标题包含 " - "，取后半部分作为歌名
+                // 如果标题包含 " - "，分离歌手和歌名
                 if (songName.includes(' - ')) {
                     const parts = songName.split(' - ');
                     if (parts.length >= 2) {
+                        searchArtist = parts[0].trim();
                         searchSong = parts.slice(1).join(' - ').trim();
                     }
                 }
                 
-                log(`Searching lyrics on Netease: "${searchSong}"`);
+                log(`Searching lyrics: "${searchSong}" by "${searchArtist}"`);
                 
                 // 尝试多个 API 服务
                 let searchData = null;
-                for (let i = 0; i < NETEASE_API_HOSTS.length; i++) {
-                    const hostIdx = (currentApiIndex + i) % NETEASE_API_HOSTS.length;
-                    const host = NETEASE_API_HOSTS[hostIdx];
-                    
+                
+                // 方法1: 尝试直接 API
+                for (let i = 0; i < NETEASE_API_HOSTS.length && !searchData; i++) {
+                    const host = NETEASE_API_HOSTS[i];
                     try {
                         const searchUrl = `${host}/search?keywords=${encodeURIComponent(searchSong)}&limit=20`;
                         log(`Trying API: ${host}`);
                         
-                        const searchResp = await fetch(searchUrl);
+                        const searchResp = await fetch(searchUrl, { 
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json' }
+                        });
                         if (!searchResp.ok) continue;
                         
                         const data = await searchResp.json();
                         if (data.code === 200 && data.result?.songs?.length > 0) {
                             searchData = data;
-                            currentApiIndex = hostIdx;
-                            log(`API ${hostIdx + 1} works! Found ${data.result.songs.length} songs`);
+                            currentApiIndex = i;
+                            useDirectApi = true;
+                            log(`API works! Found ${data.result.songs.length} songs`, 'success');
                             break;
                         }
                     } catch (e) {
-                        log(`API ${hostIdx + 1} failed: ${e.message}`);
+                        log(`API failed: ${e.message}`);
+                    }
+                }
+                
+                // 方法2: 使用 CORS 代理访问官方 API
+                if (!searchData) {
+                    log('Trying official API with CORS proxy...');
+                    const officialSearchUrl = `https://music.163.com/api/search/get?s=${encodeURIComponent(searchSong)}&type=1&limit=20&offset=0`;
+                    
+                    for (const proxy of CORS_PROXIES) {
+                        try {
+                            const proxyUrl = proxy + encodeURIComponent(officialSearchUrl);
+                            const resp = await fetch(proxyUrl);
+                            if (!resp.ok) continue;
+                            
+                            const data = await resp.json();
+                            if (data.code === 200 && data.result?.songs?.length > 0) {
+                                searchData = data;
+                                useDirectApi = false;
+                                log(`Proxy works! Found ${data.result.songs.length} songs`, 'success');
+                                break;
+                            }
+                        } catch (e) {
+                            log(`Proxy failed: ${e.message}`);
+                        }
                     }
                 }
                 
@@ -891,14 +1020,16 @@
                     return false;
                 }
                 
-                // 匹配逻辑：优先歌名匹配，再按时长筛选
+                // 匹配逻辑：歌名 → 歌手 → 时长
                 const songs = searchData.result.songs;
                 log(`Found ${songs.length} candidates`);
                 
-                // 1. 先筛选歌名匹配的歌曲（忽略大小写和空格）
-                const normalize = (s) => s.toLowerCase().replace(/\s+/g, '');
+                // 辅助函数：标准化字符串
+                const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
                 const targetName = normalize(searchSong);
+                const targetArtist = normalize(searchArtist);
                 
+                // 1. 先筛选歌名匹配的歌曲
                 let nameMatched = songs.filter(s => normalize(s.name) === targetName);
                 
                 // 如果完全匹配没有，尝试包含匹配
@@ -909,9 +1040,7 @@
                     );
                 }
                 
-                // 2. 从匹配的歌曲中选时长最接近的
                 let candidates = nameMatched.length > 0 ? nameMatched : songs;
-                let bestMatch = candidates[0];
                 
                 if (nameMatched.length > 0) {
                     log(`${nameMatched.length} songs with matching name`);
@@ -919,6 +1048,24 @@
                     log(`No exact name match, using all candidates`, 'warn');
                 }
                 
+                // 2. 从歌名匹配的歌曲中，优先选歌手匹配的
+                let bestMatch = candidates[0];
+                
+                if (targetArtist && candidates.length > 1) {
+                    // 找歌手完全匹配的
+                    const artistMatched = candidates.filter(s => {
+                        const songArtists = (s.artists || []).map(a => normalize(a.name));
+                        return songArtists.some(a => a === targetArtist || a.includes(targetArtist) || targetArtist.includes(a));
+                    });
+                    
+                    if (artistMatched.length > 0) {
+                        log(`${artistMatched.length} songs with matching artist`);
+                        candidates = artistMatched;
+                        bestMatch = candidates[0];
+                    }
+                }
+                
+                // 3. 最后按时长选最接近的
                 if (duration && duration > 0 && candidates.length > 1) {
                     const targetMs = duration * 1000;
                     let minDiff = Math.abs((bestMatch.duration || 0) - targetMs);
@@ -933,24 +1080,46 @@
                     }
                     const diffSec = (minDiff/1000).toFixed(1);
                     log(`Best match: "${bestMatch.name}" by ${bestMatch.artists?.[0]?.name || '?'} (Δ${diffSec}s)`);
+                } else {
+                    log(`Selected: "${bestMatch.name}" by ${bestMatch.artists?.[0]?.name || '?'}`);
                 }
                 
                 const songId = bestMatch.id;
                 log(`Found song ID: ${songId} - ${bestMatch.name}`);
                 
-                // 获取歌词 - 使用同一个有效的 API 服务
-                const host = NETEASE_API_HOSTS[currentApiIndex];
-                const lyricUrl = `${host}/lyric?id=${songId}`;
-                const lyricResp = await fetch(lyricUrl);
+                // 获取歌词
+                let lyricData = null;
                 
-                if (!lyricResp.ok) throw new Error('Lyric fetch failed');
-                const lyricData = await lyricResp.json();
+                if (useDirectApi) {
+                    // 使用直接 API
+                    const host = NETEASE_API_HOSTS[currentApiIndex];
+                    const lyricUrl = `${host}/lyric?id=${songId}`;
+                    const lyricResp = await fetch(lyricUrl);
+                    if (lyricResp.ok) {
+                        lyricData = await lyricResp.json();
+                    }
+                }
                 
-                if (lyricData.lrc && lyricData.lrc.lyric) {
+                // 如果直接 API 失败，尝试代理
+                if (!lyricData || !lyricData.lrc) {
+                    const officialLyricUrl = `https://music.163.com/api/song/lyric?id=${songId}&lv=1&tv=1`;
+                    for (const proxy of CORS_PROXIES) {
+                        try {
+                            const proxyUrl = proxy + encodeURIComponent(officialLyricUrl);
+                            const resp = await fetch(proxyUrl);
+                            if (resp.ok) {
+                                lyricData = await resp.json();
+                                if (lyricData.lrc) break;
+                            }
+                        } catch (e) { }
+                    }
+                }
+                
+                if (lyricData?.lrc?.lyric) {
                     log('Netease lyrics loaded!', 'success');
                     parseAndRenderLyrics(lyricData.lrc.lyric, '网易云');
                     return true;
-                } else if (lyricData.nolyric || lyricData.uncollected) {
+                } else if (lyricData?.nolyric || lyricData?.uncollected) {
                     log('Song has no lyrics (instrumental)', 'warn');
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🎵 纯音乐，无歌词</div>';
                     return false;
@@ -1246,6 +1415,45 @@
             neteaseBtn.style.color = neteaseSearchEnabled ? '#fff' : '';
             log(`Netease lyrics search: ${neteaseSearchEnabled ? 'ON' : 'OFF'}`);
         };
+        
+        // 移动端高级菜单
+        const advancedBtn = document.getElementById('toggle-advanced');
+        const advancedMenu = document.getElementById('advanced-menu');
+        if (advancedBtn && advancedMenu) {
+            advancedBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                advancedMenu.classList.toggle('show');
+            });
+            
+            // 点击菜单项
+            advancedMenu.querySelectorAll('.advanced-menu-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const action = this.dataset.action;
+                    advancedMenu.classList.remove('show');
+                    
+                    if (action === 'debug') {
+                        const dbg = document.getElementById('debug-console');
+                        dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
+                    } else if (action === 'analyze') {
+                        document.getElementById('analyze-panel').classList.toggle('show');
+                    } else if (action === 'loop') {
+                        document.getElementById('loop-panel').classList.toggle('show');
+                    }
+                });
+            });
+            
+            // 点击其他地方关闭菜单
+            document.addEventListener('click', function(e) {
+                if (!advancedBtn.contains(e.target) && !advancedMenu.contains(e.target)) {
+                    advancedMenu.classList.remove('show');
+                }
+            });
+        } else {
+            console.log('Advanced menu elements not found:', { advancedBtn, advancedMenu });
+        }
         
         updateTheme(null);
     </script>
