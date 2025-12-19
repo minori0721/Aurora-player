@@ -320,6 +320,8 @@
 
     <div class="top-bar">
         <div class="tool-group">
+            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
+            <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
             <button id="toggle-netease" class="glass-btn" title="自动从网易云搜索歌词">☁️ 云词</button>
             <select id="effect-select" class="glass-btn">
                 <option value="none">✨ 无特效</option>
@@ -791,9 +793,17 @@
         document.body.addEventListener('dragleave', (e) => { if(e.clientX===0 && e.clientY===0) document.body.classList.remove('drag-on'); });
         document.body.addEventListener('drop', handleDrop);
 
-        function handleDrop(e) {
-            document.body.classList.remove('drag-on');
-            const files = Array.from(e.dataTransfer.files);
+        // 文件导入按钮事件
+        const fileInput = document.getElementById('file-input');
+        document.getElementById('btn-import').addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFiles(Array.from(e.target.files));
+                e.target.value = ''; // 重置，允许重复选择同一文件
+            }
+        });
+
+        function handleFiles(files) {
             const audios = files.filter(f => f.type.startsWith('audio/') || /\.(mp3|flac|wav|m4a|ogg)$/i.test(f.name));
             const lrcs = {}, slis = {};
             files.forEach(f => {
@@ -815,6 +825,11 @@
                 const cur = playlist[curIdx];
                 if(slis[cur.name]) { cur.sliFile = slis[cur.name]; parseSLI(cur); }
             }
+        }
+
+        function handleDrop(e) {
+            document.body.classList.remove('drag-on');
+            handleFiles(Array.from(e.dataTransfer.files));
         }
 
         async function playTrack(i) {
