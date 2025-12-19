@@ -781,19 +781,38 @@
             sourceNode = actx.createBufferSource();
             sourceNode.buffer = audioBuffer;
             sourceNode.connect(gainNode);
-            if(loopState.active && loopState.end <= audioBuffer.duration && loopState.start < loopState.end) {
-                sourceNode.loop = true; sourceNode.loopStart = loopState.start; sourceNode.loopEnd = loopState.end;
+            
+            const isLooping = loopState.active && loopState.end <= audioBuffer.duration && loopState.start < loopState.end;
+            
+            if(isLooping) {
+                sourceNode.loop = true; 
+                sourceNode.loopStart = loopState.start; 
+                sourceNode.loopEnd = loopState.end;
                 document.getElementById('loop-status').style.display = 'inline';
             } else {
-                sourceNode.loop = false; document.getElementById('loop-status').style.display = 'none';
+                sourceNode.loop = false; 
+                document.getElementById('loop-status').style.display = 'none';
             }
             sourceNode.start(0, offset);
             playbackState.startTime = actx.currentTime - offset;
             playbackState.pauseTime = offset;
             playbackState.isPlaying = true;
             if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+            
+            // 使用闭包保存循环状态，避免后续状态变化影响判断
+            const wasLooping = isLooping;
             sourceNode.onended = () => {
-                if(!sourceNode.loop && playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.2)) handleNext();
+                // 如果是循环模式，onended 不应该触发切歌
+                // 但某些浏览器可能在精度问题下意外触发，这里重新启动循环
+                if(wasLooping && loopState.active && playbackState.isPlaying) {
+                    log("Loop interrupted, restarting...", 'warn');
+                    startAudio(loopState.start);
+                    return;
+                }
+                // 非循环模式下，检查是否真的播放完了
+                if(!wasLooping && playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.5)) {
+                    handleNext();
+                }
             };
         }
         function stopAudio() { 
