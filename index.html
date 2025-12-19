@@ -149,6 +149,84 @@
             width: 4px; height: 90px; background: rgba(0,0,0,0.1);
             cursor: pointer; accent-color: var(--text-main);
         }
+
+        /* ========== 移动端响应式 ========== */
+        @media screen and (max-width: 900px) {
+            body { overflow-y: auto; height: auto; min-height: 100vh; }
+            
+            .main-container {
+                width: 92vw; height: auto; min-height: 100vh;
+                grid-template-columns: 1fr; gap: 20px;
+                padding: 80px 0 30px 0;
+            }
+            
+            .left-panel { order: 1; }
+            .right-panel { order: 2; }
+            
+            .cover-wrapper { 
+                width: 65vw; max-width: 300px; padding-bottom: 65vw; 
+                margin: 0 auto 20px auto; 
+            }
+            
+            .progress-section { padding: 0 10px; }
+            
+            .track-header { text-align: center; padding: 0 15px; }
+            .track-title { font-size: 1.6rem; }
+            .track-artist { font-size: 1rem; }
+            
+            .lyrics-box { 
+                height: 200px; padding: 0 15px;
+                mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+                -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+            }
+            .lyric-line { font-size: 0.95rem; margin: 10px 0; text-align: center; }
+            .lyric-line.active { font-size: 1.15rem; }
+            .lyrics-scroll { text-align: center; }
+            
+            .controls-row { justify-content: center; gap: 15px; padding: 15px 0; }
+            .btn { width: 44px; height: 44px; }
+            .btn svg { width: 18px; height: 18px; }
+            .btn-play { width: 60px; height: 60px; }
+            
+            /* 顶部工具栏 */
+            .top-bar { 
+                top: 10px; left: 10px; right: 10px;
+                flex-wrap: wrap; gap: 8px;
+            }
+            .tool-group { gap: 6px; flex-wrap: wrap; }
+            .glass-btn { 
+                padding: 6px 10px; font-size: 0.75rem; 
+                border-radius: 15px;
+            }
+            
+            /* 面板 */
+            .panel-float { 
+                width: calc(100vw - 40px); right: 20px; left: 20px;
+                max-height: 60vh; overflow-y: auto;
+            }
+            #analyze-panel { right: 20px; left: 20px; width: auto; }
+            #analyze-panel:not(.show) { transform: translateX(120%); }
+            
+            .playlist-sidebar { width: 85vw; max-width: 320px; padding: 70px 20px 20px 20px; }
+            
+            #debug-console { 
+                width: calc(100vw - 40px); left: 20px; right: 20px;
+                top: auto; bottom: 20px; max-height: 150px;
+            }
+            
+            .vol-popup { bottom: 55px; }
+            .vol-popup.show { bottom: 60px; }
+        }
+        
+        /* 超小屏幕 */
+        @media screen and (max-width: 400px) {
+            .cover-wrapper { width: 70vw; padding-bottom: 70vw; }
+            .track-title { font-size: 1.4rem; }
+            .glass-btn { padding: 5px 8px; font-size: 0.7rem; }
+            .controls-row { gap: 12px; }
+            .btn { width: 40px; height: 40px; }
+            .btn-play { width: 54px; height: 54px; }
+        }
     </style>
 </head>
 <body id="body">
@@ -159,6 +237,7 @@
 
     <div class="top-bar">
         <div class="tool-group">
+            <button id="toggle-netease" class="glass-btn" title="自动从网易云搜索歌词">☁️ 云词</button>
             <select id="effect-select" class="glass-btn">
                 <option value="none">✨ 无特效</option>
                 <option value="snow">❄️ 凛冬飞雪</option>
@@ -281,6 +360,7 @@
         let playbackState = { startTime: 0, pauseTime: 0, isPlaying: false, duration: 0 };
         let playlist = [], curIdx = -1, playMode = 0;
         let lyrics = [], isSyncedLyrics = true;
+        let neteaseSearchEnabled = false; // 网易云歌词搜索开关，默认关闭
         let loopState = { active: false, start: 0, end: 0 };
         let particles = [];
 
@@ -736,7 +816,16 @@
                 if(!clean.includes('\n') && clean.includes('/')) clean = clean.replace(/\s*\/\s*/g, '\n');
                 parseAndRenderLyrics(clean, source);
             } else if(lyrics.length === 0) {
-                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
+                // 没有内嵌歌词
+                if (neteaseSearchEnabled) {
+                    // 开启了网易云搜索，尝试搜索
+                    const songName = el.title.textContent;
+                    const artistName = common.artist || '';
+                    const duration = playbackState.duration || 0;
+                    searchNeteaselyrics(songName, artistName, duration);
+                } else {
+                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
+                }
             }
         }
 
@@ -744,6 +833,135 @@
             const r = new FileReader();
             r.onload = e => parseAndRenderLyrics(e.target.result, "LRC File");
             r.readAsText(file);
+        }
+
+        // 网易云音乐歌词搜索功能 (使用公开API服务)
+        const NETEASE_API_HOSTS = [
+            'https://netease-cloud-music-api-eta-six.vercel.app',
+            'https://netease-cloud-music-api-beryl.vercel.app',
+            'https://music-api.gdstudio.xyz'
+        ];
+        let currentApiIndex = 0;
+
+        async function searchNeteaselyrics(songName, artist, duration) {
+            try {
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 正在搜索歌词...</div>';
+                
+                // 智能提取歌名 - 处理 "歌手 - 歌名" 格式
+                let searchSong = songName;
+                
+                // 如果标题包含 " - "，取后半部分作为歌名
+                if (songName.includes(' - ')) {
+                    const parts = songName.split(' - ');
+                    if (parts.length >= 2) {
+                        searchSong = parts.slice(1).join(' - ').trim();
+                    }
+                }
+                
+                log(`Searching lyrics on Netease: "${searchSong}"`);
+                
+                // 尝试多个 API 服务
+                let searchData = null;
+                for (let i = 0; i < NETEASE_API_HOSTS.length; i++) {
+                    const hostIdx = (currentApiIndex + i) % NETEASE_API_HOSTS.length;
+                    const host = NETEASE_API_HOSTS[hostIdx];
+                    
+                    try {
+                        const searchUrl = `${host}/search?keywords=${encodeURIComponent(searchSong)}&limit=20`;
+                        log(`Trying API: ${host}`);
+                        
+                        const searchResp = await fetch(searchUrl);
+                        if (!searchResp.ok) continue;
+                        
+                        const data = await searchResp.json();
+                        if (data.code === 200 && data.result?.songs?.length > 0) {
+                            searchData = data;
+                            currentApiIndex = hostIdx;
+                            log(`API ${hostIdx + 1} works! Found ${data.result.songs.length} songs`);
+                            break;
+                        }
+                    } catch (e) {
+                        log(`API ${hostIdx + 1} failed: ${e.message}`);
+                    }
+                }
+                
+                if (!searchData || !searchData.result?.songs?.length) {
+                    log('No songs found on Netease', 'error');
+                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
+                    return false;
+                }
+                
+                // 匹配逻辑：优先歌名匹配，再按时长筛选
+                const songs = searchData.result.songs;
+                log(`Found ${songs.length} candidates`);
+                
+                // 1. 先筛选歌名匹配的歌曲（忽略大小写和空格）
+                const normalize = (s) => s.toLowerCase().replace(/\s+/g, '');
+                const targetName = normalize(searchSong);
+                
+                let nameMatched = songs.filter(s => normalize(s.name) === targetName);
+                
+                // 如果完全匹配没有，尝试包含匹配
+                if (nameMatched.length === 0) {
+                    nameMatched = songs.filter(s => 
+                        normalize(s.name).includes(targetName) || 
+                        targetName.includes(normalize(s.name))
+                    );
+                }
+                
+                // 2. 从匹配的歌曲中选时长最接近的
+                let candidates = nameMatched.length > 0 ? nameMatched : songs;
+                let bestMatch = candidates[0];
+                
+                if (nameMatched.length > 0) {
+                    log(`${nameMatched.length} songs with matching name`);
+                } else {
+                    log(`No exact name match, using all candidates`, 'warn');
+                }
+                
+                if (duration && duration > 0 && candidates.length > 1) {
+                    const targetMs = duration * 1000;
+                    let minDiff = Math.abs((bestMatch.duration || 0) - targetMs);
+                    
+                    for (const song of candidates) {
+                        const songDur = song.duration || 0;
+                        const diff = Math.abs(songDur - targetMs);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestMatch = song;
+                        }
+                    }
+                    const diffSec = (minDiff/1000).toFixed(1);
+                    log(`Best match: "${bestMatch.name}" by ${bestMatch.artists?.[0]?.name || '?'} (Δ${diffSec}s)`);
+                }
+                
+                const songId = bestMatch.id;
+                log(`Found song ID: ${songId} - ${bestMatch.name}`);
+                
+                // 获取歌词 - 使用同一个有效的 API 服务
+                const host = NETEASE_API_HOSTS[currentApiIndex];
+                const lyricUrl = `${host}/lyric?id=${songId}`;
+                const lyricResp = await fetch(lyricUrl);
+                
+                if (!lyricResp.ok) throw new Error('Lyric fetch failed');
+                const lyricData = await lyricResp.json();
+                
+                if (lyricData.lrc && lyricData.lrc.lyric) {
+                    log('Netease lyrics loaded!', 'success');
+                    parseAndRenderLyrics(lyricData.lrc.lyric, '网易云');
+                    return true;
+                } else if (lyricData.nolyric || lyricData.uncollected) {
+                    log('Song has no lyrics (instrumental)', 'warn');
+                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🎵 纯音乐，无歌词</div>';
+                    return false;
+                } else {
+                    throw new Error('No lyrics in response');
+                }
+            } catch (e) {
+                log('Netease search error: ' + e.message, 'error');
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词搜索失败</div>';
+                return false;
+            }
         }
 
         function parseAndRenderLyrics(text, source) {
@@ -1019,6 +1237,16 @@
             const dbg = document.getElementById('debug-console');
             dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
         };
+        
+        // 网易云歌词开关
+        const neteaseBtn = document.getElementById('toggle-netease');
+        neteaseBtn.onclick = () => {
+            neteaseSearchEnabled = !neteaseSearchEnabled;
+            neteaseBtn.style.background = neteaseSearchEnabled ? '#27ae60' : '';
+            neteaseBtn.style.color = neteaseSearchEnabled ? '#fff' : '';
+            log(`Netease lyrics search: ${neteaseSearchEnabled ? 'ON' : 'OFF'}`);
+        };
+        
         updateTheme(null);
     </script>
 </body>
