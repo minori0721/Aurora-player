@@ -866,7 +866,29 @@
                         },
                         onError: () => {
                             updateTheme(null);
-                            if(!track.lrcFile) el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
+                            // 没有ID3标签，尝试网易云搜索或显示 Pure Music
+                            if(!track.lrcFile) {
+                                if (neteaseSearchEnabled) {
+                                    const songName = el.title.textContent;
+                                    // 延迟搜索，等待 duration 设置完成
+                                    const trySearch = () => {
+                                        if (playbackState.duration > 0) {
+                                            searchNeteaselyrics(songName, '', playbackState.duration);
+                                        } else {
+                                            if (!trySearch.attempts) trySearch.attempts = 0;
+                                            trySearch.attempts++;
+                                            if (trySearch.attempts < 30) {
+                                                setTimeout(trySearch, 100);
+                                            } else {
+                                                searchNeteaselyrics(songName, '', 0);
+                                            }
+                                        }
+                                    };
+                                    trySearch();
+                                } else {
+                                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
+                                }
+                            }
                         }
                     });
                 }
@@ -928,8 +950,23 @@
                     // 开启了网易云搜索，尝试搜索
                     const songName = el.title.textContent;
                     const artistName = common.artist || '';
-                    const duration = playbackState.duration || 0;
-                    searchNeteaselyrics(songName, artistName, duration);
+                    // 延迟搜索，等待 duration 设置完成
+                    const trySearch = () => {
+                        if (playbackState.duration > 0) {
+                            searchNeteaselyrics(songName, artistName, playbackState.duration);
+                        } else {
+                            // duration 还没准备好，100ms 后重试，最多重试 30 次
+                            if (!trySearch.attempts) trySearch.attempts = 0;
+                            trySearch.attempts++;
+                            if (trySearch.attempts < 30) {
+                                setTimeout(trySearch, 100);
+                            } else {
+                                // 超时，直接搜索不带时长
+                                searchNeteaselyrics(songName, artistName, 0);
+                            }
+                        }
+                    };
+                    trySearch();
                 } else {
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
                 }
