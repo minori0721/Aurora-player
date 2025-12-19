@@ -1,5 +1,7 @@
 # 🎵 Aurora Player (极光播放器) preview.ver
 
+点击使用：https://minori0721-test-1.aurora-player.pages.dev/
+
 > 一个基于 Web Audio API 的现代网页音乐播放器，专为无缝循环 (Seamless Loop) 和高保真音频体验设计。
 
 ## ✨ 项目简介
