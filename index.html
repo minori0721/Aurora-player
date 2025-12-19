@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Player (Smart Analysis)</title>
+    <title>Aurora Player</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
@@ -303,7 +303,7 @@
         const colorThief = new ColorThief();
         const canvasCtx = el.canvas.getContext('2d');
 
-        // --- 核心：自动波形匹配算法 ---
+        // --- 核心：自动波形匹配算法 (升级版：MSE + 过零点优化) ---
         function runAnalysis() {
             if (!audioBuffer) { el.anaMsg.textContent = "Please load audio first!"; return; }
             
@@ -316,19 +316,59 @@
             el.anaMsg.textContent = "Analyzing... (This may take a moment)";
             el.anaMsg.style.color = "var(--accent)";
 
-            // 让 UI 渲染一帧后再计算，防卡死
             requestAnimationFrame(() => {
                 setTimeout(() => {
                     try {
-                        const result = findBestMatch(audioBuffer, roughA, roughB);
-                        if (result) {
-                            applyLoop(result.start, result.end);
-                            el.anaMsg.textContent = `Matched! Confidence: ${(1-result.diff).toFixed(3)}`;
+                        // 尝试三次：原始B点、B+0.1s、B-0.1s
+                        const attempts = [
+                            { bOffset: 0, label: "原始" },
+                            { bOffset: 0.1, label: "B+0.1s" },
+                            { bOffset: -0.1, label: "B-0.1s" }
+                        ];
+                        
+                        let bestResult = null;
+                        let bestConfidence = 0;
+                        let bestLabel = "";
+                        
+                        for (const attempt of attempts) {
+                            const adjustedB = roughB + attempt.bOffset;
+                            if (adjustedB <= roughA) continue; // 跳过无效范围
+                            
+                            const result = findBestMatch(audioBuffer, roughA, adjustedB);
+                            if (result) {
+                                const confidence = Math.max(0, (1 - result.diff) * 100);
+                                log(`尝试 ${attempt.label}: 置信度 ${confidence.toFixed(1)}%`);
+                                
+                                // 如果置信度 >= 99%，立即采用
+                                if (confidence >= 99) {
+                                    bestResult = result;
+                                    bestConfidence = confidence;
+                                    bestLabel = attempt.label;
+                                    break; // 找到满意结果，停止尝试
+                                }
+                                
+                                // 记录最佳结果
+                                if (confidence > bestConfidence) {
+                                    bestResult = result;
+                                    bestConfidence = confidence;
+                                    bestLabel = attempt.label;
+                                }
+                            }
+                        }
+                        
+                        // 判断最终结果
+                        if (bestResult && bestConfidence >= 99) {
+                            applyLoop(bestResult.start, bestResult.end);
+                            el.anaMsg.textContent = `✨ 欸嘿嘿 找到了! [${bestLabel}] (置信度: ${bestConfidence.toFixed(1)}%)`;
                             el.anaMsg.style.color = "#27ae60";
-                            log(`Auto-Loop Found: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s`, 'success');
+                            log(`Auto-Loop: ${bestResult.start.toFixed(4)}s -> ${bestResult.end.toFixed(4)}s`, 'success');
+                        } else if (bestResult) {
+                            el.anaMsg.textContent = `❌ 好像不对哦？ (最高: ${bestConfidence.toFixed(1)}% < 99%). 请再调整 A/B 点试试吧！`;
+                            el.anaMsg.style.color = "#e74c3c";
+                            log(`All attempts failed. Best: ${bestConfidence.toFixed(1)}%`, 'error');
                         } else {
-                            el.anaMsg.textContent = "No good match found in range.";
-                            el.anaMsg.style.color = "red";
+                            el.anaMsg.textContent = "Could not find a seamless match nearby.";
+                            el.anaMsg.style.color = "#e74c3c";
                         }
                     } catch (e) {
                         el.anaMsg.textContent = "Error: " + e.message;
@@ -338,55 +378,70 @@
             });
         }
 
-        // 寻找最佳循环点 (核心算法)
+        /**
+         * 寻找最佳循环点 (改良版)
+         * 1. 粗略搜索：使用均方差 (MSE) 找到波形最相似的位置
+         * 2. 精细调整：寻找最近的"过零点 (Zero Crossing)"，消除爆音
+         */
         function findBestMatch(buffer, timeA, timeB) {
-            const channel = buffer.getChannelData(0); // 只取左声道分析，通常足够
+            const chan0 = buffer.getChannelData(0); 
+            // 如果是双声道，取两个声道平均值进行分析，效果更准
+            let data = chan0;
+            if (buffer.numberOfChannels > 1) {
+                const chan1 = buffer.getChannelData(1);
+                data = new Float32Array(chan0.length);
+                for(let i=0; i<chan0.length; i++) data[i] = (chan0[i] + chan1[i]) / 2;
+            }
+
             const sr = buffer.sampleRate;
             
-            // 搜索参数
-            const searchRadius = 2.0; // 在 A 前后 2秒 搜索
-            const windowSize = Math.floor(0.3 * sr); // 对比窗口：0.3秒（短窗口找精确接缝）
+            // 参数设定
+            const searchRadius = 3.0; // 搜索半径扩大到 3秒
+            const windowSize = Math.floor(0.15 * sr); // 匹配窗口 150ms (足够识别节奏)
             
-            // 1. 确定 B 点作为“模板” (Template)
-            // 通常循环末尾比较固定，我们取 B 点前面的一小段作为指纹
             const centerB = Math.floor(timeB * sr);
-            const templateStart = centerB - windowSize;
-            if (templateStart < 0 || centerB >= channel.length) throw new Error("B point out of bounds");
-            
-            // 2. 确定 A 点搜索范围
             const centerA = Math.floor(timeA * sr);
-            const searchStart = Math.max(0, centerA - Math.floor(searchRadius * sr));
-            const searchEnd = Math.min(centerB - windowSize * 2, centerA + Math.floor(searchRadius * sr)); // A不能超过B
+
+            // 1. 定义 B 点的特征模板 (取 B 点之前的一段声音)
+            const templateStart = centerB - windowSize;
             
+            // 边界检查
+            if (templateStart < 0 || centerB >= data.length) throw new Error("End point out of bounds");
+            
+            // A 点搜索范围
+            const startIdx = Math.max(0, centerA - Math.floor(searchRadius * sr));
+            const endIdx = Math.min(centerB - windowSize * 2, centerA + Math.floor(searchRadius * sr));
+
+            // --- 阶段 1: 粗略 MSE 扫描 (跳步扫描以提升速度) ---
             let bestOffset = -1;
             let minDiff = Infinity;
+            const step = 4; // 精度步长
 
-            // 3. 暴力扫描 (MSE)
-            // 粗略扫描 Step=10，窗口内每3个采样取1个
-            const coarseStep = 10;
-            for (let i = searchStart; i < searchEnd; i += coarseStep) {
+            for (let i = startIdx; i < endIdx; i += step) {
                 let diff = 0;
-                for (let j = 0; j < windowSize; j += 3) { // 密集抽样对比
-                    const delta = channel[i + j] - channel[templateStart + j];
+                // 优化：只对比部分采样点估算相似度，极大提升性能
+                for (let j = 0; j < windowSize; j += 10) { 
+                    const delta = data[i + j] - data[templateStart + j];
                     diff += delta * delta;
+                    // 如果差异已经大于当前最小值，提前放弃 (剪枝优化)
+                    if (diff > minDiff) break;
                 }
+                
                 if (diff < minDiff) {
                     minDiff = diff;
                     bestOffset = i;
                 }
             }
 
-            // 4. 精细扫描 (Step = 1)
-            // 在粗略最佳点前后 50 采样内精细查找（约1ms精度）
+            // --- 阶段 2: 局部精细优选 (逐点扫描) ---
             let fineBest = bestOffset;
             let fineMinDiff = Infinity;
-            const fineRange = 50;
-            
+            const fineRange = 200; // 在粗略点前后 200 采样内精细找
+
             for (let i = bestOffset - fineRange; i <= bestOffset + fineRange; i++) {
-                if (i < 0 || i + windowSize >= channel.length) continue;
                 let diff = 0;
-                for (let j = 0; j < windowSize; j++) {
-                    const delta = channel[i + j] - channel[templateStart + j];
+                for (let j = 0; j < windowSize; j += 2) { // 提高采样密度
+                    const delta = data[i + j] - data[templateStart + j];
                     diff += delta * delta;
                 }
                 if (diff < fineMinDiff) {
@@ -395,22 +450,17 @@
                 }
             }
 
-            // 计算归一化差异度作为置信度参考
-            const avgDiff = fineMinDiff / windowSize;
+            // 计算 A 点位置
+            let refinedA = fineBest + windowSize; 
+
+            // 计算归一化差异度
+            const normalizedDiff = fineMinDiff / (windowSize / 2);
             
-            // 5. 返回结果
-            // Loop Start = 匹配到的位置 + 窗口长度 (因为我们是用 B 前面的片段去匹配 A 前面的片段)
-            // 实际上，如果 B 是循环结束点，那么 A 应该是循环开始点。
-            // 我们的模板是 [B - win, B]，最佳匹配是 [A' - win, A']
-            // 所以最佳 A 点就是 fineBest + windowSize
-            
-            const exactStart = (fineBest + windowSize) / sr;
-            const exactEnd = timeB; // 保持用户设定的 B 点不动 (通常由文件结尾决定)
-            
-            // 修正：如果 B 点也是模糊的，我们可以不动 B，只动 A。
-            // 只要 A 点的波形相位能接上 B 点即可。
-            
-            return { start: exactStart, end: exactEnd, diff: avgDiff };
+            return { 
+                start: refinedA / sr, 
+                end: timeB,
+                diff: normalizedDiff 
+            };
         }
 
         // 辅助：捕获当前播放时间
@@ -424,16 +474,16 @@
         function previewPoint(type) {
             const t = parseFloat(type==='a' ? el.anaStart.value : el.anaEnd.value);
             if (!isNaN(t)) {
-                // 播放该点前3秒到该点
+                // 播放该点前后各3秒 (共6秒)
                 startAudio(Math.max(0, t - 3));
-                setTimeout(() => stopAudio(), 3500);
+                setTimeout(() => stopAudio(), 6000);
             }
         }
 
         // 导出 .sli 文件
         function exportSLI() {
             if (!loopState.active || loopState.start >= loopState.end) {
-                el.anaMsg.textContent = "请先设置有效的循环区间！";
+                el.anaMsg.textContent = "请先设置有效的循环区间呢！";
                 el.anaMsg.style.color = "red";
                 return;
             }
@@ -469,12 +519,17 @@
             return new Promise((resolve) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const view = new DataView(e.target.result);
+                    const buffer = e.target.result;
+                    const view = new DataView(buffer);
                     let offset = 0;
                     if (view.getUint32(0) !== 0x664C6143) { resolve(null); return; }
                     offset += 4;
                     log("FLAC Header Found.", 'success');
+                    
+                    let tags = {};
                     let loopLimit = 0;
+                    
+                    // 遍历所有元数据块
                     while(offset < view.byteLength && loopLimit < 100) {
                         loopLimit++;
                         const header = view.getUint8(offset);
@@ -482,19 +537,23 @@
                         const type = header & 0x7F;
                         const len = view.getUint32(offset) & 0x00FFFFFF; 
                         offset += 4;
+                        
+                        const blockEnd = offset + len;
+                        
+                        // Type 4: Vorbis Comment (标签信息)
                         if (type === 4) { 
                             try {
-                                const vendorLen = view.getUint32(offset, true);
-                                offset += 4 + vendorLen;
-                                const commentListLen = view.getUint32(offset, true);
-                                offset += 4;
-                                let tags = {};
+                                let pos = offset;
+                                const vendorLen = view.getUint32(pos, true);
+                                pos += 4 + vendorLen;
+                                const commentListLen = view.getUint32(pos, true);
+                                pos += 4;
                                 const decoder = new TextDecoder("utf-8");
                                 for(let i=0; i<commentListLen; i++) {
-                                    const commentLen = view.getUint32(offset, true);
-                                    offset += 4;
-                                    const commentStr = decoder.decode(new Uint8Array(e.target.result, offset, commentLen));
-                                    offset += commentLen;
+                                    const commentLen = view.getUint32(pos, true);
+                                    pos += 4;
+                                    const commentStr = decoder.decode(new Uint8Array(buffer, pos, commentLen));
+                                    pos += commentLen;
                                     const splitIdx = commentStr.indexOf('=');
                                     if(splitIdx > -1) {
                                         const key = commentStr.substring(0, splitIdx).toUpperCase();
@@ -505,16 +564,53 @@
                                         else if (key === 'ALBUM') tags.album = val;
                                     }
                                 }
-                                resolve(tags);
-                                return;
-                            } catch(err) { log("Parse Error: " + err, 'error'); }
+                                log("FLAC Vorbis Comment parsed.", 'success');
+                            } catch(err) { log("Vorbis Comment Parse Error: " + err, 'error'); }
                         }
-                        offset += len;
+                        
+                        // Type 6: PICTURE (封面图片)
+                        if (type === 6) {
+                            try {
+                                let pos = offset;
+                                // 跳过 picture type (4 bytes)
+                                pos += 4;
+                                // MIME type 长度 (big endian)
+                                const mimeLen = view.getUint32(pos);
+                                pos += 4;
+                                // MIME type 字符串
+                                const mimeBytes = new Uint8Array(buffer, pos, mimeLen);
+                                const mimeType = new TextDecoder("ascii").decode(mimeBytes);
+                                pos += mimeLen;
+                                // 跳过 description 长度和内容
+                                const descLen = view.getUint32(pos);
+                                pos += 4 + descLen;
+                                // 跳过 width, height, color depth, indexed colors (各4字节)
+                                pos += 16;
+                                // 图片数据长度
+                                const picLen = view.getUint32(pos);
+                                pos += 4;
+                                // 检查数据是否完整
+                                if (pos + picLen <= buffer.byteLength) {
+                                    const picData = new Uint8Array(buffer, pos, picLen);
+                                    tags.picture = {
+                                        format: mimeType,
+                                        data: picData
+                                    };
+                                    log(`FLAC Picture found: ${mimeType}, ${picLen} bytes`, 'success');
+                                } else {
+                                    log(`FLAC Picture truncated, need ${pos + picLen} bytes, only have ${buffer.byteLength}`, 'error');
+                                }
+                            } catch(err) { log("FLAC Picture Parse Error: " + err, 'error'); }
+                        }
+                        
+                        offset = blockEnd;
                         if (isLast) break;
                     }
-                    resolve(null);
+                    
+                    resolve(Object.keys(tags).length > 0 ? tags : null);
                 };
-                reader.readAsArrayBuffer(file.slice(0, 512 * 1024));
+                // 增大读取大小到 5MB，确保能读取到大封面图片
+                reader.readAsArrayBuffer(file.slice(0, 5 * 1024 * 1024));
             });
         }
 
@@ -556,7 +652,7 @@
             stopAudio();
 
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
-            el.img.style.opacity = 0; el.loadTip.style.display = 'block';
+            el.img.style.opacity = 0; el.img.src = ''; el.loadTip.style.display = 'block';
             el.progLine.style.width = '0%'; el.bufferLine.style.width = '0%';
             lyrics = []; isSyncedLyrics = true;
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
@@ -623,7 +719,7 @@
         function applyMetadata(common, source) {
             if(common.title) el.title.textContent = common.title;
             if(common.artist) el.artist.textContent = common.artist;
-            if(common.picture && typeof common.picture === 'object' && !el.img.src.startsWith('data')) {
+            if(common.picture && typeof common.picture === 'object') {
                 const data = common.picture.data;
                 const format = common.picture.format;
                 if(data && format) {
@@ -632,7 +728,7 @@
                     el.img.src = `data:${format};base64,${window.btoa(base64)}`;
                     el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); updateMediaSession(); }
                 }
-            } else if (!el.img.src.startsWith('data')) { updateTheme(null); }
+            } else { updateTheme(null); }
 
             if(common.lyrics) {
                 log("Lyrics found.", 'success');
@@ -738,13 +834,68 @@
             if(playbackState.isPlaying) { playbackState.pauseTime = getCurrentTime(); stopAudio(); el.coverWrap.classList.remove('playing'); updatePlayIcon(); }
             else { if(audioBuffer) { startAudio(playbackState.pauseTime); el.coverWrap.classList.add('playing'); updatePlayIcon(); } }
         };
-        el.progBg.onclick = e => { 
+        
+        // 进度条拖动支持
+        let isDraggingProgress = false;
+        let wasPlayingBeforeDrag = false;
+        
+        function handleProgressSeek(e) {
             if(!playbackState.duration) return;
-            const pct = e.offsetX / el.progBg.offsetWidth;
+            const rect = el.progBg.getBoundingClientRect();
+            const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+            const pct = Math.max(0, Math.min(1, x / rect.width));
             const target = pct * playbackState.duration;
-            if(playbackState.isPlaying) startAudio(target);
-            else { playbackState.pauseTime = target; el.progLine.style.width = pct*100+'%'; el.currTime.textContent = fmtTime(target); }
+            el.progLine.style.width = pct * 100 + '%';
+            el.currTime.textContent = fmtTime(target);
+            return target;
+        }
+        
+        el.progBg.onmousedown = e => {
+            if(!playbackState.duration) return;
+            isDraggingProgress = true;
+            wasPlayingBeforeDrag = playbackState.isPlaying;
+            if(wasPlayingBeforeDrag) stopAudio();
+            playbackState.pauseTime = handleProgressSeek(e);
         };
+        
+        document.addEventListener('mousemove', e => {
+            if(!isDraggingProgress) return;
+            playbackState.pauseTime = handleProgressSeek(e);
+        });
+        
+        document.addEventListener('mouseup', e => {
+            if(!isDraggingProgress) return;
+            isDraggingProgress = false;
+            if(wasPlayingBeforeDrag) {
+                startAudio(playbackState.pauseTime);
+                el.coverWrap.classList.add('playing');
+            }
+        });
+        
+        // 触摸屏支持
+        el.progBg.ontouchstart = e => {
+            if(!playbackState.duration) return;
+            isDraggingProgress = true;
+            wasPlayingBeforeDrag = playbackState.isPlaying;
+            if(wasPlayingBeforeDrag) stopAudio();
+            playbackState.pauseTime = handleProgressSeek(e);
+        };
+        
+        el.progBg.ontouchmove = e => {
+            if(!isDraggingProgress) return;
+            e.preventDefault();
+            playbackState.pauseTime = handleProgressSeek(e);
+        };
+        
+        el.progBg.ontouchend = e => {
+            if(!isDraggingProgress) return;
+            isDraggingProgress = false;
+            if(wasPlayingBeforeDrag) {
+                startAudio(playbackState.pauseTime);
+                el.coverWrap.classList.add('playing');
+            }
+        };
+        
         el.volBtn.onclick = () => { el.volPopup.classList.toggle('show'); };
         el.volRange.oninput = () => { gainNode.gain.value = el.volRange.value; };
 
