@@ -131,6 +131,7 @@
         body.drag-on .drag-mask { opacity: 1; pointer-events: all; }
         .loading-tip { position: absolute; bottom: 20px; font-size: 0.8rem; color: #2980b9; display: none; font-weight: bold; }
         .tag-source { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); margin-left: 10px; vertical-align: middle;}
+        .tag-quality { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; background: linear-gradient(135deg, #3498db, #2980b9); color: white; margin-left: 8px; vertical-align: middle; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
 
         #debug-console {
             position: fixed; top: 70px; left: 20px; width: 350px; max-height: 200px;
@@ -156,6 +157,178 @@
             writing-mode: vertical-lr; direction: rtl;
             width: 8px; height: 90px; background: rgba(0,0,0,0.1);
             cursor: pointer; accent-color: var(--text-main);
+        }
+
+        /* 网易云搜索面板 */
+        .netease-panel {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 200;
+            display: none; justify-content: center; align-items: center;
+        }
+        .netease-panel.show { display: flex; }
+        .netease-content {
+            background: var(--glass-strong); backdrop-filter: blur(30px);
+            border-radius: 20px; padding: 25px; width: 90%; max-width: 500px;
+            max-height: 80vh; display: flex; flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .netease-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        .netease-header h3 { margin: 0; font-size: 1.1rem; }
+        .netease-close {
+            background: none; border: none; font-size: 1.5rem;
+            cursor: pointer; color: var(--text-sub); padding: 0 5px;
+        }
+        .netease-close:hover { color: var(--text-main); }
+        .netease-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .netease-tab {
+            flex: 1; padding: 10px; border: none; border-radius: 10px;
+            background: rgba(0,0,0,0.05); cursor: pointer; font-size: 0.9rem;
+            transition: 0.2s;
+        }
+        .netease-tab.active { background: var(--accent); color: white; }
+        .netease-tab:hover:not(.active) { background: rgba(0,0,0,0.1); }
+        .netease-tab-content {
+            flex: 1; display: flex; flex-direction: column;
+            overflow: hidden; min-height: 0;
+        }
+        .netease-search-box {
+            display: flex; gap: 10px; margin-bottom: 15px;
+        }
+        .netease-input {
+            flex: 1; padding: 12px 15px; border: 1px solid rgba(0,0,0,0.15);
+            border-radius: 10px; font-size: 0.95rem; outline: none;
+            background: rgba(255,255,255,0.8);
+        }
+        .netease-input:focus { border-color: var(--accent); }
+        .netease-search-btn {
+            padding: 12px 20px; border: none; border-radius: 10px;
+            background: var(--accent); color: white; cursor: pointer;
+            font-size: 0.9rem; white-space: nowrap;
+        }
+        .netease-search-btn:hover { background: #1a5276; }
+        .netease-search-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .netease-results {
+            flex: 1; overflow-y: auto; min-height: 0; max-height: 45vh;
+            border: 1px solid rgba(0,0,0,0.1); border-radius: 10px;
+            background: rgba(255,255,255,0.5);
+        }
+        .netease-item {
+            padding: 12px 15px; cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05);
+            display: flex; align-items: center; gap: 12px; transition: 0.15s;
+        }
+        .netease-item:hover { background: rgba(0,0,0,0.05); }
+        .netease-item:last-child { border-bottom: none; }
+        .netease-item-cover {
+            width: 45px; height: 45px; border-radius: 6px;
+            object-fit: cover; background: #eee; flex-shrink: 0;
+        }
+        .netease-item-info { flex: 1; min-width: 0; }
+        .netease-item-name {
+            font-weight: 600; font-size: 0.95rem; color: var(--text-main);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .netease-item-artist {
+            font-size: 0.8rem; color: var(--text-sub); margin-top: 3px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .netease-item-duration {
+            font-size: 0.75rem; color: var(--text-sub); flex-shrink: 0;
+        }
+        .netease-item-play {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: var(--accent); color: white; border: none;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; opacity: 0; transition: 0.15s;
+        }
+        .netease-item:hover .netease-item-play { opacity: 1; }
+        .netease-item-play:hover { transform: scale(1.1); }
+        .netease-loading, .netease-empty {
+            text-align: center; padding: 40px; color: var(--text-sub);
+        }
+        .netease-playlist-info {
+            display: flex; gap: 15px; padding: 15px;
+            background: rgba(0,0,0,0.03); border-radius: 10px; margin-bottom: 15px;
+        }
+        .netease-playlist-cover {
+            width: 80px; height: 80px; border-radius: 10px; object-fit: cover;
+        }
+        .netease-playlist-meta { flex: 1; }
+        .netease-playlist-name { font-weight: bold; font-size: 1rem; margin-bottom: 5px; }
+        .netease-playlist-desc { font-size: 0.8rem; color: var(--text-sub); }
+        .netease-import-btn {
+            width: 100%; padding: 12px; border: none; border-radius: 10px;
+            background: #27ae60; color: white; cursor: pointer;
+            font-size: 0.95rem; margin-top: 10px;
+        }
+        .netease-import-btn:hover { background: #219a52; }
+        .netease-import-btn:disabled { background: #ccc; }
+        
+        /* 登录相关 */
+        .netease-user-bar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 15px; background: rgba(0,0,0,0.03);
+            border-radius: 10px; margin-bottom: 15px;
+        }
+        .netease-avatar {
+            width: 40px; height: 40px; border-radius: 50%;
+            object-fit: cover; background: #eee;
+        }
+        .netease-user-info { flex: 1; min-width: 0; }
+        .netease-nickname { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .netease-user-type { 
+            display: inline-block; font-size: 0.7rem; padding: 2px 6px; 
+            border-radius: 4px; margin-top: 2px;
+        }
+        .netease-user-type.vip { background: linear-gradient(135deg, #f39c12, #e74c3c); color: white; }
+        .netease-user-type.svip { background: linear-gradient(135deg, #9b59b6, #8e44ad); color: white; }
+        .netease-user-type.music-pack { background: linear-gradient(135deg, #1abc9c, #16a085); color: white; }
+        .netease-user-type.normal { background: #95a5a6; color: white; }
+        .netease-quality-bar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 12px; background: rgba(0,0,0,0.03);
+            border-radius: 8px; margin-bottom: 15px; font-size: 0.85rem;
+        }
+        .netease-quality-bar label { color: var(--text-sub); white-space: nowrap; }
+        .netease-quality-select {
+            flex: 1; padding: 6px 10px; border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 6px; background: white; font-size: 0.85rem; cursor: pointer;
+        }
+        .netease-logout-btn {
+            padding: 6px 12px; border: none; border-radius: 6px;
+            background: #e74c3c; color: white; cursor: pointer; font-size: 0.8rem;
+        }
+        .netease-logout-btn:hover { background: #c0392b; }
+        .netease-login-btn {
+            width: 100%; padding: 12px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white; cursor: pointer; font-size: 0.95rem;
+            margin-bottom: 15px; transition: 0.2s;
+        }
+        .netease-login-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(231,76,60,0.3); }
+        .qrcode-container {
+            text-align: center; padding: 20px;
+        }
+        .qrcode-container img {
+            width: 180px; height: 180px; border-radius: 10px;
+            border: 2px solid #eee;
+        }
+        .qrcode-tip {
+            margin-top: 15px; font-size: 0.85rem; color: var(--text-sub);
+        }
+        .qrcode-status {
+            margin-top: 10px; font-size: 0.9rem; font-weight: 600;
+        }
+        .qrcode-status.waiting { color: #f39c12; }
+        .qrcode-status.scanned { color: #3498db; }
+        .qrcode-status.success { color: #27ae60; }
+        .qrcode-status.expired { color: #e74c3c; }
+        .my-playlists { margin-top: 10px; }
+        .my-playlists-title {
+            font-size: 0.85rem; color: var(--text-sub);
+            margin-bottom: 8px; padding-left: 5px;
         }
 
         /* 高级菜单 */
@@ -318,12 +491,87 @@
     <canvas id="visual-canvas"></canvas>
     <div class="drag-mask"><h1>投喂音乐</h1><p>MP3 / FLAC / OGG / SLI</p></div>
 
+    <!-- 网易云搜索面板 -->
+    <div class="netease-panel" id="netease-panel">
+        <div class="netease-content">
+            <div class="netease-header">
+                <h3>🎵 网易云音乐</h3>
+                <button class="netease-close" onclick="document.getElementById('netease-panel').classList.remove('show')">&times;</button>
+            </div>
+            <!-- 用户状态栏 -->
+            <div id="netease-user-bar" class="netease-user-bar" style="display:none">
+                <img class="netease-avatar" id="netease-avatar" src="">
+                <div class="netease-user-info">
+                    <div class="netease-nickname" id="netease-nickname">用户名</div>
+                    <small class="netease-user-id" id="netease-user-id">ID: </small>
+                    <span class="netease-user-type normal" id="netease-user-type">普通用户</span>
+                </div>
+                <button class="netease-logout-btn" onclick="neteaseLogout()">退出</button>
+            </div>
+            <!-- 音质选择 -->
+            <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
+                <label>🎧 音质:</label>
+                <select id="netease-quality-select" class="netease-quality-select">
+                    <option value="standard">标准 (128kbps)</option>
+                    <option value="higher">较高 (192kbps)</option>
+                    <option value="exhigh">极高 (320kbps)</option>
+                    <option value="lossless">无损 (FLAC)</option>
+                    <option value="hires">Hi-Res</option>
+                </select>
+            </div>
+            <button id="netease-login-btn" class="netease-login-btn" onclick="showQRLogin()">🔐 扫码登录网易云账号</button>
+            
+            <div class="netease-tabs">
+                <button class="netease-tab active" data-tab="search">🔍 搜索歌曲</button>
+                <button class="netease-tab" data-tab="playlist">📋 导入歌单</button>
+                <button class="netease-tab" data-tab="mylist">❤️ 我的歌单</button>
+            </div>
+            <!-- 搜索歌曲 -->
+            <div class="netease-tab-content" id="tab-search">
+                <div class="netease-search-box">
+                    <input type="text" class="netease-input" id="netease-search-input" placeholder="输入歌名、歌手...">
+                    <button class="netease-search-btn" id="netease-search-btn">搜索</button>
+                </div>
+                <div class="netease-results" id="netease-search-results">
+                    <div class="netease-empty">输入关键词搜索歌曲</div>
+                </div>
+            </div>
+            <!-- 导入歌单 -->
+            <div class="netease-tab-content" id="tab-playlist" style="display:none">
+                <div class="netease-search-box">
+                    <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或ID...">
+                    <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
+                </div>
+                <div id="netease-playlist-preview"></div>
+                <div class="netease-results" id="netease-playlist-results">
+                    <div class="netease-empty">支持格式：<br>https://music.163.com/playlist?id=xxx<br>或直接输入歌单ID</div>
+                </div>
+            </div>
+            <!-- 我的歌单 -->
+            <div class="netease-tab-content" id="tab-mylist" style="display:none">
+                <div id="mylist-content" class="netease-results" style="border:none;background:none">
+                    <div class="netease-empty">请先登录网易云账号</div>
+                </div>
+            </div>
+            <!-- 二维码登录 -->
+            <div class="netease-tab-content" id="tab-qrlogin" style="display:none">
+                <div class="qrcode-container">
+                    <div id="qrcode-img-wrap"><div class="netease-loading">生成二维码中...</div></div>
+                    <div class="qrcode-tip">请使用网易云音乐APP扫描二维码登录</div>
+                    <div class="qrcode-status waiting" id="qrcode-status">等待扫描...</div>
+                    <button class="glass-btn" style="margin-top:15px" onclick="refreshQRCode()">🔄 刷新二维码</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="top-bar">
         <div class="tool-group">
             <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
             <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
-            <button id="toggle-netease" class="glass-btn" title="自动从网易云搜索歌词">☁️ 云词</button>
-            <select id="effect-select" class="glass-btn">
+            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐">☁️ <span class="btn-text">云音乐</span></button>
+            <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词">📝 <span class="btn-text">云词</span></button>
+            <select id="effect-select" class="glass-btn desktop-only">
                 <option value="none">✨ 无特效</option>
                 <option value="snow">❄️ 凛冬飞雪</option>
                 <option value="bars">📊 律动频谱</option>
@@ -334,7 +582,7 @@
         <div class="tool-group">
             <button id="toggle-analyze" class="glass-btn desktop-only">🔍 智能分析</button>
             <button id="toggle-loop-panel" class="glass-btn desktop-only">🔁 循环设定</button>
-            <button id="toggle-list" class="glass-btn">📜 列表</button>
+            <button id="toggle-list" class="glass-btn">📜 <span class="btn-text">列表</span></button>
             <!-- 移动端高级菜单 -->
             <div class="advanced-menu-container mobile-only">
                 <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
@@ -342,6 +590,8 @@
                     <button class="advanced-menu-item" data-action="debug">🐞 Debug</button>
                     <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
                     <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
+                    <button class="advanced-menu-item" data-action="netease-lyrics">📝 云词开关</button>
+                    <button class="advanced-menu-item" data-action="effects">✨ 视觉特效</button>
                 </div>
             </div>
         </div>
@@ -714,6 +964,26 @@
                         
                         const blockEnd = offset + len;
                         
+                        // Type 0: STREAMINFO (采样率、位深度等)
+                        if (type === 0 && len >= 18) {
+                            try {
+                                // Bytes 10-13: 采样率(20bits) + 通道数(3bits) + 位深度(5bits) + 总采样数高4位
+                                const byte10 = view.getUint8(offset + 10);
+                                const byte11 = view.getUint8(offset + 11);
+                                const byte12 = view.getUint8(offset + 12);
+                                
+                                // 采样率: 前20位 (byte10全部 + byte11全部 + byte12前4位)
+                                const sampleRate = (byte10 << 12) | (byte11 << 4) | (byte12 >> 4);
+                                // 位深度: byte12后1位 + byte13前4位 (5位总共), +1得到实际值
+                                const byte13 = view.getUint8(offset + 13);
+                                const bitsPerSample = (((byte12 & 0x01) << 4) | (byte13 >> 4)) + 1;
+                                
+                                tags.sampleRate = sampleRate;
+                                tags.bitsPerSample = bitsPerSample;
+                                log(`FLAC: ${sampleRate}Hz ${bitsPerSample}bit`, 'success');
+                            } catch(err) { log("STREAMINFO Parse Error: " + err, 'error'); }
+                        }
+                        
                         // Type 4: Vorbis Comment (标签信息)
                         if (type === 4) { 
                             try {
@@ -837,6 +1107,7 @@
             curIdx = i; renderPlaylist();
             const track = playlist[i];
             stopAudio();
+            currentAudioQuality = ''; // 先清除，后面会根据文件信息设置
 
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
             el.img.style.opacity = 0; el.img.src = ''; el.loadTip.style.display = 'block';
@@ -853,14 +1124,24 @@
                 if(track.file.name.toLowerCase().endsWith('.flac')) {
                     log("Detect FLAC. Using Native Parser...");
                     meta = await parseFlacTagsNative(track.file);
+                    // 计算FLAC比特率（文件大小 / 时长）
+                    if (meta) {
+                        meta.fileSize = track.file.size;
+                    }
                 } else {
+                    // 对于MP3等文件，计算比特率
+                    const fileSize = track.file.size;
+                    const ext = track.file.name.split('.').pop().toUpperCase();
+                    
                     jsmediatags.read(track.file, {
                         onSuccess: (tag) => {
                             const c = {
                                 title: tag.tags.title,
                                 artist: tag.tags.artist,
                                 lyrics: tag.tags.lyrics || (tag.tags.USLT ? tag.tags.USLT.data : ""),
-                                picture: tag.tags.picture
+                                picture: tag.tags.picture,
+                                fileSize: fileSize,
+                                fileExt: ext
                             };
                             applyMetadata(c, "ID3");
                         },
@@ -901,6 +1182,53 @@
                 el.totalTime.textContent = fmtTime(playbackState.duration);
                 el.loadTip.style.display = 'none';
                 
+                // 根据不同格式计算并显示音质信息
+                if (pendingQualityInfo && playbackState.duration > 0) {
+                    const ext = pendingQualityInfo.ext;
+                    const bitrateKbps = Math.round((pendingQualityInfo.size * 8) / playbackState.duration / 1000);
+                    const sampleRate = audioBuffer.sampleRate;
+                    const channels = audioBuffer.numberOfChannels;
+                    const srKhz = sampleRate >= 1000 ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : sampleRate + 'Hz';
+                    
+                    // 根据格式显示不同的信息
+                    switch(ext) {
+                        case 'WAV':
+                        case 'AIFF':
+                        case 'AIF':
+                            // 无损格式 - 显示采样率和声道
+                            const chStr = channels === 1 ? 'Mono' : (channels === 2 ? 'Stereo' : `${channels}ch`);
+                            currentAudioQuality = `${ext} ${srKhz} ${chStr}`;
+                            break;
+                        case 'OGG':
+                        case 'OPUS':
+                            // OGG/Opus - 显示比特率（有损）
+                            currentAudioQuality = `${ext} ~${bitrateKbps}kbps`;
+                            break;
+                        case 'AAC':
+                        case 'M4A':
+                        case 'MP4':
+                            // AAC - 显示比特率
+                            currentAudioQuality = `AAC ${bitrateKbps}kbps`;
+                            break;
+                        case 'WMA':
+                            currentAudioQuality = `WMA ${bitrateKbps}kbps`;
+                            break;
+                        case 'APE':
+                        case 'TTA':
+                        case 'TAK':
+                            // 无损压缩格式 - 显示采样率
+                            currentAudioQuality = `${ext} ${srKhz}`;
+                            break;
+                        case 'MP3':
+                        default:
+                            // MP3和其他格式 - 显示比特率
+                            currentAudioQuality = `${ext} ${bitrateKbps}kbps`;
+                            break;
+                    }
+                    log(`Audio: ${currentAudioQuality}, ${sampleRate}Hz, ${channels}ch`);
+                    pendingQualityInfo = null;
+                }
+                
                 if(el.artist.textContent === "Loading...") el.artist.textContent = "Ready";
                 if(track.sliFile) await parseSLI(track);
                 startAudio(0);
@@ -928,6 +1256,16 @@
         function applyMetadata(common, source) {
             if(common.title) el.title.textContent = common.title;
             if(common.artist) el.artist.textContent = common.artist;
+            
+            // 设置本地文件音质标签
+            if (common.sampleRate && common.bitsPerSample) {
+                // FLAC文件 - 显示位深度和采样率
+                const srKhz = common.sampleRate >= 1000 ? (common.sampleRate / 1000).toFixed(common.sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : common.sampleRate + 'Hz';
+                currentAudioQuality = `FLAC ${common.bitsPerSample}bit/${srKhz}`;
+            } else if (common.fileSize && common.fileExt) {
+                // 其他格式 - 稍后在解码完成后根据格式显示合适信息
+                pendingQualityInfo = { size: common.fileSize, ext: common.fileExt };
+            }
             if(common.picture && typeof common.picture === 'object') {
                 const data = common.picture.data;
                 const format = common.picture.format;
@@ -979,20 +1317,14 @@
             r.readAsText(file);
         }
 
-        // 网易云音乐歌词搜索功能 (使用公开API服务)
-        const NETEASE_API_HOSTS = [
-            'https://music-api.heheda.top',
-            'https://wyy.heheda.top'
-        ];
+        // 网易云音乐API服务
+        const NETEASE_API_HOST = 'https://musicapi-eight-dusky.vercel.app';
         
-        // CORS 代理列表
-        const CORS_PROXIES = [
-            'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.io/?'
-        ];
-        
-        let currentApiIndex = 0;
-        let useDirectApi = true; // 先尝试直接API，失败后用代理
+        // Vercel部署需要添加的参数（绕过IP限制）
+        function buildApiUrl(path) {
+            const separator = path.includes('?') ? '&' : '?';
+            return `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
+        }
 
         async function searchNeteaselyrics(songName, artist, duration) {
             try {
@@ -1013,64 +1345,18 @@
                 
                 log(`Searching lyrics: "${searchSong}" by "${searchArtist}"`);
                 
-                // 尝试多个 API 服务
-                let searchData = null;
+                // 搜索歌曲
+                const searchResp = await fetch(buildApiUrl(`/search?keywords=${encodeURIComponent(searchSong)}&limit=20`));
+                if (!searchResp.ok) throw new Error('搜索请求失败');
                 
-                // 方法1: 尝试直接 API
-                for (let i = 0; i < NETEASE_API_HOSTS.length && !searchData; i++) {
-                    const host = NETEASE_API_HOSTS[i];
-                    try {
-                        const searchUrl = `${host}/search?keywords=${encodeURIComponent(searchSong)}&limit=20`;
-                        log(`Trying API: ${host}`);
-                        
-                        const searchResp = await fetch(searchUrl, { 
-                            method: 'GET',
-                            headers: { 'Accept': 'application/json' }
-                        });
-                        if (!searchResp.ok) continue;
-                        
-                        const data = await searchResp.json();
-                        if (data.code === 200 && data.result?.songs?.length > 0) {
-                            searchData = data;
-                            currentApiIndex = i;
-                            useDirectApi = true;
-                            log(`API works! Found ${data.result.songs.length} songs`, 'success');
-                            break;
-                        }
-                    } catch (e) {
-                        log(`API failed: ${e.message}`);
-                    }
-                }
-                
-                // 方法2: 使用 CORS 代理访问官方 API
-                if (!searchData) {
-                    log('Trying official API with CORS proxy...');
-                    const officialSearchUrl = `https://music.163.com/api/search/get?s=${encodeURIComponent(searchSong)}&type=1&limit=20&offset=0`;
-                    
-                    for (const proxy of CORS_PROXIES) {
-                        try {
-                            const proxyUrl = proxy + encodeURIComponent(officialSearchUrl);
-                            const resp = await fetch(proxyUrl);
-                            if (!resp.ok) continue;
-                            
-                            const data = await resp.json();
-                            if (data.code === 200 && data.result?.songs?.length > 0) {
-                                searchData = data;
-                                useDirectApi = false;
-                                log(`Proxy works! Found ${data.result.songs.length} songs`, 'success');
-                                break;
-                            }
-                        } catch (e) {
-                            log(`Proxy failed: ${e.message}`);
-                        }
-                    }
-                }
-                
-                if (!searchData || !searchData.result?.songs?.length) {
+                const searchData = await searchResp.json();
+                if (searchData.code !== 200 || !searchData.result?.songs?.length) {
                     log('No songs found on Netease', 'error');
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
                     return false;
                 }
+                
+                log(`Found ${searchData.result.songs.length} songs`, 'success');
                 
                 // 匹配逻辑：歌名 → 歌手 → 时长
                 const songs = searchData.result.songs;
@@ -1140,32 +1426,10 @@
                 log(`Found song ID: ${songId} - ${bestMatch.name}`);
                 
                 // 获取歌词
-                let lyricData = null;
+                const lyricResp = await fetch(buildApiUrl(`/lyric?id=${songId}`));
+                if (!lyricResp.ok) throw new Error('获取歌词失败');
                 
-                if (useDirectApi) {
-                    // 使用直接 API
-                    const host = NETEASE_API_HOSTS[currentApiIndex];
-                    const lyricUrl = `${host}/lyric?id=${songId}`;
-                    const lyricResp = await fetch(lyricUrl);
-                    if (lyricResp.ok) {
-                        lyricData = await lyricResp.json();
-                    }
-                }
-                
-                // 如果直接 API 失败，尝试代理
-                if (!lyricData || !lyricData.lrc) {
-                    const officialLyricUrl = `https://music.163.com/api/song/lyric?id=${songId}&lv=1&tv=1`;
-                    for (const proxy of CORS_PROXIES) {
-                        try {
-                            const proxyUrl = proxy + encodeURIComponent(officialLyricUrl);
-                            const resp = await fetch(proxyUrl);
-                            if (resp.ok) {
-                                lyricData = await resp.json();
-                                if (lyricData.lrc) break;
-                            }
-                        } catch (e) { }
-                    }
-                }
+                const lyricData = await lyricResp.json();
                 
                 if (lyricData?.lrc?.lyric) {
                     log('Netease lyrics loaded!', 'success');
@@ -1184,35 +1448,101 @@
                 return false;
             }
         }
+        
+        // 直接通过歌曲ID获取歌词（用于已知ID的网易云歌曲）
+        async function fetchLyricById(songId) {
+            try {
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 获取歌词...</div>';
+                
+                const resp = await fetch(buildApiUrl(`/lyric?id=${songId}`));
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data?.lrc?.lyric) {
+                        log('Lyrics loaded!', 'success');
+                        parseAndRenderLyrics(data.lrc.lyric, '网易云');
+                        return true;
+                    } else if (data?.nolyric || data?.uncollected) {
+                        el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🎵 纯音乐，无歌词</div>';
+                        return false;
+                    }
+                }
+                
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
+                return false;
+            } catch (e) {
+                log('Lyric fetch error: ' + e.message, 'error');
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词获取失败</div>';
+                return false;
+            }
+        }
 
         function parseAndRenderLyrics(text, source) {
             const lines = text.split(/[\r\n]/);
-            const reg = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+            // 支持多种时间格式: [00:00.00], [00:00.000], [00:00:00], [0:00.00]
+            const timeReg = /\[(\d{1,2}):(\d{2})(?:[:.](\d{2,3}))?\]/g;
             lyrics = [];
             let hasTimeTag = false;
+            
             lines.forEach(l => {
-                const m = reg.exec(l);
-                if(m) {
+                const line = l.trim();
+                if (!line) return;
+                
+                // 提取所有时间标签
+                const times = [];
+                let match;
+                while ((match = timeReg.exec(line)) !== null) {
+                    const min = parseInt(match[1]);
+                    const sec = parseInt(match[2]);
+                    let ms = match[3] ? parseInt(match[3]) : 0;
+                    // 如果毫秒是2位数，需要乘以10（如.12表示120毫秒）
+                    if (match[3] && match[3].length === 2) ms *= 10;
+                    times.push(min * 60 + sec + ms / 1000);
+                }
+                timeReg.lastIndex = 0; // 重置正则
+                
+                // 提取歌词文本（移除所有时间标签和元数据标签如[ti:xxx]）
+                const txt = line.replace(/\[\d{1,2}:\d{2}(?:[:.\d]+)?\]/g, '')
+                                .replace(/\[[a-zA-Z]+:.*?\]/g, '')
+                                .trim();
+                
+                if (times.length > 0 && txt) {
                     hasTimeTag = true;
-                    lyrics.push({ t: parseInt(m[1])*60 + parseInt(m[2]) + parseInt(m[3])/1000, txt: l.replace(reg,'').replace(/\[.*?\]/g, '').trim() });
-                } else {
-                    const clean = l.trim();
-                    if(clean) lyrics.push({ t: -1, txt: clean });
+                    // 一行可能有多个时间标签（合唱等）
+                    times.forEach(t => lyrics.push({ t, txt }));
+                } else if (txt && !line.match(/^\[[a-zA-Z]+:/)) {
+                    // 非元数据行才添加
+                    lyrics.push({ t: -1, txt });
                 }
             });
+            
+            // 按时间排序
+            lyrics.sort((a, b) => a.t - b.t);
+            
             el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
-            isSyncedLyrics = hasTimeTag;
+            isSyncedLyrics = hasTimeTag && lyrics.some(l => l.t >= 0);
+            
             if(isSyncedLyrics) {
                 lyrics.forEach(l => {
-                    if(l.t === -1) return;
-                    const d = document.createElement('div'); d.className = 'lyric-line'; d.textContent = l.txt; d.onclick = () => startAudio(l.t); el.lyricBox.appendChild(d); 
+                    if(l.t < 0 || !l.txt) return;
+                    const d = document.createElement('div'); 
+                    d.className = 'lyric-line'; 
+                    d.textContent = l.txt; 
+                    d.onclick = () => startAudio(l.t); 
+                    el.lyricBox.appendChild(d); 
                 });
                 el.artist.innerHTML += ` <span class="tag-source">${source}</span>`;
-            } else {
-                el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${text}</div>`;
+                if (currentAudioQuality) el.artist.innerHTML += ` <span class="tag-quality">${currentAudioQuality}</span>`;
+                el.lyricBox.innerHTML += '<div style="height:150px"></div>';
+                log(`Lyrics: ${lyrics.filter(l => l.t >= 0).length} lines`, 'success');
+            } else if (lyrics.length > 0) {
+                // 有内容但无时间标签
+                const content = lyrics.map(l => l.txt).join('\n');
+                el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${content}</div>`;
                 el.artist.innerHTML += ` <span class="tag-source">Unsynced</span>`;
+                if (currentAudioQuality) el.artist.innerHTML += ` <span class="tag-quality">${currentAudioQuality}</span>`;
+            } else {
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
             }
-            if(isSyncedLyrics) el.lyricBox.innerHTML += '<div style="height:150px"></div>';
         }
 
         function startAudio(offset) {
@@ -1426,8 +1756,9 @@
             el.plContainer.innerHTML = '';
             playlist.forEach((t, i) => {
                 const d = document.createElement('div'); d.className = `pl-item ${i === curIdx ? 'active' : ''}`;
-                d.innerHTML = `<span style="width:20px; opacity:0.5">${i+1}</span> ${t.name}`;
-                d.onclick = () => playTrack(i); el.plContainer.appendChild(d);
+                const icon = t.netease ? '☁️ ' : '';
+                d.innerHTML = `<span style="width:20px; opacity:0.5">${i+1}</span> ${icon}${t.name}`;
+                d.onclick = () => playTrackFromPlaylist(i); el.plContainer.appendChild(d);
             });
         }
         function updateTheme(img) {
@@ -1468,6 +1799,678 @@
             log(`Netease lyrics search: ${neteaseSearchEnabled ? 'ON' : 'OFF'}`);
         };
         
+        // ========== 网易云音乐搜索 & 歌单导入 ==========
+        const neteasePanel = document.getElementById('netease-panel');
+        const neteaseTabs = document.querySelectorAll('.netease-tab');
+        const searchInput = document.getElementById('netease-search-input');
+        const searchBtn = document.getElementById('netease-search-btn');
+        const searchResults = document.getElementById('netease-search-results');
+        const playlistInput = document.getElementById('netease-playlist-input');
+        const playlistBtn = document.getElementById('netease-playlist-btn');
+        const playlistPreview = document.getElementById('netease-playlist-preview');
+        const playlistResults = document.getElementById('netease-playlist-results');
+        
+        // 打开网易云面板
+        document.getElementById('toggle-netease-panel').onclick = () => {
+            neteasePanel.classList.add('show');
+        };
+        
+        // 点击背景关闭
+        neteasePanel.onclick = (e) => {
+            if (e.target === neteasePanel) neteasePanel.classList.remove('show');
+        };
+        
+        // Tab 切换
+        neteaseTabs.forEach(tab => {
+            tab.onclick = () => {
+                neteaseTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelectorAll('.netease-tab-content').forEach(c => c.style.display = 'none');
+                document.getElementById('tab-' + tab.dataset.tab).style.display = 'flex';
+                // 切换到我的歌单时，只有未加载过才刷新
+                if (tab.dataset.tab === 'mylist' && neteaseUser && !myPlaylistsCache) {
+                    loadMyPlaylists();
+                }
+            };
+        });
+        
+        // ========== 网易云登录系统 ==========
+        let neteaseUser = null;
+        let neteaseCookie = localStorage.getItem('netease_cookie') || '';
+        let qrCheckTimer = null;
+        let myPlaylistsCache = null; // 我的歌单缓存
+        let pendingQualityInfo = null; // 等待计算的音质信息（MP3等）
+        let currentAudioQuality = ''; // 当前播放音质
+        let neteaseVipType = 0; // 0=普通 1=VIP 2=SVIP 3=音乐包
+        let neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh'; // 默认极高
+        
+        // 初始化音质选择器
+        const qualitySelect = document.getElementById('netease-quality-select');
+        qualitySelect.value = neteaseQuality;
+        qualitySelect.onchange = () => {
+            neteaseQuality = qualitySelect.value;
+            localStorage.setItem('netease_quality', neteaseQuality);
+            log(`音质设置: ${qualitySelect.options[qualitySelect.selectedIndex].text}`);
+        };
+        
+        // 检查登录状态
+        async function checkLoginStatus() {
+            if (!neteaseCookie) return false;
+            
+            try {
+                const resp = await fetch(buildApiUrl(`/login/status?cookie=${encodeURIComponent(neteaseCookie)}`));
+                if (resp.ok) {
+                    const json = await resp.json();
+                    if (json.data?.profile) {
+                        neteaseUser = json.data.profile;
+                        // 获取VIP信息
+                        await fetchVipInfo();
+                        updateUserUI();
+                        log(`Logged in as: ${neteaseUser.nickname}`, 'success');
+                        return true;
+                    }
+                }
+            } catch (e) {
+                log('Login check failed: ' + e.message, 'error');
+            }
+            return false;
+        }
+        
+        // 获取VIP信息
+        async function fetchVipInfo() {
+            try {
+                const resp = await fetch(buildApiUrl(`/vip/info?cookie=${encodeURIComponent(neteaseCookie)}`));
+                if (resp.ok) {
+                    const json = await resp.json();
+                    // redVipLevel: 0=普通 1=VIP; musicPackage=音乐包
+                    const vipInfo = json.data;
+                    if (vipInfo?.redVipLevel >= 7) {
+                        neteaseVipType = 2; // SVIP
+                        neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+                    } else if (vipInfo?.redVipLevel >= 1) {
+                        neteaseVipType = 1; // VIP
+                        neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+                    } else if (vipInfo?.musicPackage?.vipCode) {
+                        neteaseVipType = 3; // 音乐包
+                        neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+                    } else {
+                        neteaseVipType = 0; // 普通
+                        neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
+                    }
+                    qualitySelect.value = neteaseQuality;
+                    localStorage.setItem('netease_quality', neteaseQuality);
+                }
+            } catch (e) {
+                log('VIP info fetch failed', 'warn');
+            }
+        }
+        
+        // 更新用户界面
+        function updateUserUI() {
+            const userBar = document.getElementById('netease-user-bar');
+            const loginBtn = document.getElementById('netease-login-btn');
+            const qualityBar = document.getElementById('netease-quality-bar');
+            
+            if (neteaseUser) {
+                document.getElementById('netease-avatar').src = neteaseUser.avatarUrl;
+                document.getElementById('netease-nickname').textContent = neteaseUser.nickname;
+                document.getElementById('netease-user-id').textContent = 'ID: ' + neteaseUser.userId;
+                
+                // 显示VIP状态
+                const userTypeEl = document.getElementById('netease-user-type');
+                const typeMap = {
+                    0: { text: '普通用户', cls: 'normal' },
+                    1: { text: 'VIP会员', cls: 'vip' },
+                    2: { text: 'SVIP会员', cls: 'svip' },
+                    3: { text: '音乐包', cls: 'music-pack' }
+                };
+                const typeInfo = typeMap[neteaseVipType] || typeMap[0];
+                userTypeEl.textContent = typeInfo.text;
+                userTypeEl.className = 'netease-user-type ' + typeInfo.cls;
+                
+                userBar.style.display = 'flex';
+                loginBtn.style.display = 'none';
+                qualityBar.style.display = 'flex';
+            } else {
+                userBar.style.display = 'none';
+                loginBtn.style.display = 'block';
+                qualityBar.style.display = 'none';
+            }
+        }
+        
+        // 显示二维码登录
+        async function showQRLogin() {
+            // 切换到登录Tab
+            document.querySelectorAll('.netease-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.netease-tab-content').forEach(c => c.style.display = 'none');
+            document.getElementById('tab-qrlogin').style.display = 'block';
+            
+            await generateQRCode();
+        }
+        window.showQRLogin = showQRLogin;
+        
+        // 生成二维码
+        async function generateQRCode() {
+            const imgWrap = document.getElementById('qrcode-img-wrap');
+            const status = document.getElementById('qrcode-status');
+            imgWrap.innerHTML = '<div class="netease-loading">生成二维码中...</div>';
+            status.textContent = '等待扫描...';
+            status.className = 'qrcode-status waiting';
+            
+            // 清除旧的定时器
+            if (qrCheckTimer) clearInterval(qrCheckTimer);
+            
+            try {
+                // 获取二维码key
+                const keyResp = await fetch(buildApiUrl(`/login/qr/key?timestamp=${Date.now()}`));
+                if (!keyResp.ok) throw new Error('无法获取二维码');
+                
+                const keyJson = await keyResp.json();
+                if (!keyJson.data?.unikey) throw new Error('无法获取二维码key');
+                
+                const qrKey = keyJson.data.unikey;
+                
+                // 获取二维码图片
+                const imgResp = await fetch(buildApiUrl(`/login/qr/create?key=${qrKey}&qrimg=true&timestamp=${Date.now()}`));
+                if (!imgResp.ok) throw new Error('无法生成二维码图片');
+                
+                const imgJson = await imgResp.json();
+                if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
+                
+                imgWrap.innerHTML = `<img src="${imgJson.data.qrimg}" alt="QR Code">`;
+                
+                // 轮询检查扫码状态
+                qrCheckTimer = setInterval(async () => {
+                    try {
+                        const checkResp = await fetch(buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`));
+                        if (!checkResp.ok) return;
+                        
+                        const checkJson = await checkResp.json();
+                        
+                        if (checkJson.code === 800) {
+                            // 二维码过期
+                            status.textContent = '二维码已过期，请刷新';
+                            status.className = 'qrcode-status expired';
+                            clearInterval(qrCheckTimer);
+                        } else if (checkJson.code === 801) {
+                            // 等待扫描
+                            status.textContent = '等待扫描...';
+                            status.className = 'qrcode-status waiting';
+                        } else if (checkJson.code === 802) {
+                            // 已扫描等待确认
+                            status.textContent = '已扫描，请在手机上确认登录';
+                            status.className = 'qrcode-status scanned';
+                        } else if (checkJson.code === 803) {
+                            // 登录成功
+                            status.textContent = '登录成功！';
+                            status.className = 'qrcode-status success';
+                            clearInterval(qrCheckTimer);
+                            
+                            // 保存cookie
+                            neteaseCookie = checkJson.cookie || '';
+                            localStorage.setItem('netease_cookie', neteaseCookie);
+                            
+                            // 获取用户信息
+                            await checkLoginStatus();
+                                    
+                            // 切换到搜索Tab
+                            setTimeout(() => {
+                                document.querySelectorAll('.netease-tab')[0].click();
+                            }, 1000);
+                        }
+                    } catch (e) {}
+                }, 2000);
+                
+            } catch (e) {
+                imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + e.message + '</div>';
+                log('QR generate error: ' + e.message, 'error');
+            }
+        }
+        
+        // 刷新二维码
+        window.refreshQRCode = generateQRCode;
+        
+        // 退出登录
+        window.neteaseLogout = function() {
+            neteaseCookie = '';
+            neteaseUser = null;
+            myPlaylistsCache = null; // 清除歌单缓存
+            localStorage.removeItem('netease_cookie');
+            updateUserUI();
+            document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+            log('Logged out');
+        };
+        
+        // 加载我的歌单
+        async function loadMyPlaylists() {
+            const container = document.getElementById('mylist-content');
+            
+            if (!neteaseUser) {
+                container.innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+                return;
+            }
+            
+            // 如果有缓存直接使用
+            if (myPlaylistsCache) {
+                container.innerHTML = myPlaylistsCache;
+                return;
+            }
+            
+            container.innerHTML = '<div class="netease-loading">加载中...</div>';
+            
+            try {
+                const resp = await fetch(buildApiUrl(`/user/playlist?uid=${neteaseUser.userId}&cookie=${encodeURIComponent(neteaseCookie)}`));
+                if (!resp.ok) throw new Error('获取歌单失败');
+                
+                const json = await resp.json();
+                const playlists = json.playlist;
+                
+                if (!playlists || playlists.length === 0) {
+                    container.innerHTML = '<div class="netease-empty">暂无歌单</div>';
+                    return;
+                }
+                
+                // 分类：我创建的 & 我收藏的
+                const created = playlists.filter(p => p.creator?.userId === neteaseUser.userId);
+                const collected = playlists.filter(p => p.creator?.userId !== neteaseUser.userId);
+                
+                let html = '';
+                
+                if (created.length > 0) {
+                    html += '<div class="my-playlists-title">📁 我创建的歌单</div>';
+                    created.forEach(p => {
+                        html += `
+                            <div class="netease-item" onclick="loadPlaylistById(${p.id})">
+                                <img class="netease-item-cover" src="${p.coverImgUrl}?param=100y100">
+                                <div class="netease-item-info">
+                                    <div class="netease-item-name">${p.name}</div>
+                                    <div class="netease-item-artist">${p.trackCount} 首</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                if (collected.length > 0) {
+                    html += '<div class="my-playlists-title" style="margin-top:15px">❤️ 我收藏的歌单</div>';
+                    collected.forEach(p => {
+                        html += `
+                            <div class="netease-item" onclick="loadPlaylistById(${p.id})">
+                                <img class="netease-item-cover" src="${p.coverImgUrl}?param=100y100">
+                                <div class="netease-item-info">
+                                    <div class="netease-item-name">${p.name}</div>
+                                    <div class="netease-item-artist">${p.trackCount} 首 · ${p.creator?.nickname || ''}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                myPlaylistsCache = html; // 保存缓存
+                container.innerHTML = html;
+                
+            } catch (e) {
+                container.innerHTML = '<div class="netease-empty">加载失败: ' + e.message + '</div>';
+            }
+        }
+        
+        // 点击歌单加载
+        window.loadPlaylistById = async function(id) {
+            // 切换到歌单Tab
+            document.querySelectorAll('.netease-tab')[1].click();
+            document.getElementById('netease-playlist-input').value = id;
+            await fetchPlaylist(id);
+        };
+        
+        // 初始化时检查登录状态
+        checkLoginStatus();
+        
+        // 当前加载的歌单数据
+        let currentPlaylistData = null;
+        
+        // 搜索歌曲
+        async function searchNeteaseSongs(keyword) {
+            if (!keyword.trim()) return;
+            searchResults.innerHTML = '<div class="netease-loading">🔍 搜索中...</div>';
+            searchBtn.disabled = true;
+            
+            try {
+                const resp = await fetch(buildApiUrl(`/search?keywords=${encodeURIComponent(keyword)}&limit=30`));
+                if (!resp.ok) throw new Error('搜索失败');
+                
+                const json = await resp.json();
+                if (json.code !== 200 || !json.result?.songs?.length) {
+                    searchResults.innerHTML = '<div class="netease-empty">未找到相关歌曲</div>';
+                    return;
+                }
+                
+                renderSongList(json.result.songs, searchResults);
+            } catch (e) {
+                searchResults.innerHTML = '<div class="netease-empty">搜索失败: ' + e.message + '</div>';
+            } finally {
+                searchBtn.disabled = false;
+            }
+        }
+        
+        // 渲染歌曲列表
+        function renderSongList(songs, container) {
+            container.innerHTML = '';
+            songs.forEach(song => {
+                const artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
+                const album = song.album?.name || song.al?.name || '';
+                const duration = song.duration || song.dt || 0;
+                const cover = song.album?.picUrl || song.al?.picUrl || '';
+                
+                const item = document.createElement('div');
+                item.className = 'netease-item';
+                item.innerHTML = `
+                    <img class="netease-item-cover" src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'">
+                    <div class="netease-item-info">
+                        <div class="netease-item-name">${song.name}</div>
+                        <div class="netease-item-artist">${artists}${album ? ' · ' + album : ''}</div>
+                    </div>
+                    <span class="netease-item-duration">${fmtTime(duration / 1000)}</span>
+                    <button class="netease-item-play">▶</button>
+                `;
+                
+                item.querySelector('.netease-item-play').onclick = (e) => {
+                    e.stopPropagation();
+                    playNeteaseSong(song);
+                };
+                item.onclick = () => playNeteaseSong(song);
+                
+                container.appendChild(item);
+            });
+        }
+        
+        // 播放网易云歌曲
+        async function playNeteaseSong(song) {
+            const songId = song.id;
+            let songName = song.name;
+            let artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
+            let cover = song.album?.picUrl || song.al?.picUrl || '';
+            
+            log(`Playing: ${songName} - ${artists}`);
+            neteasePanel.classList.remove('show');
+            
+            // 如果没有封面，先获取歌曲详情
+            if (!cover) {
+                try {
+                    const detailResp = await fetch(buildApiUrl(`/song/detail?ids=${songId}`));
+                    if (detailResp.ok) {
+                        const detailJson = await detailResp.json();
+                        if (detailJson.songs?.[0]) {
+                            const detail = detailJson.songs[0];
+                            cover = detail.al?.picUrl || '';
+                            artists = (detail.ar || []).map(a => a.name).join(', ');
+                        }
+                    }
+                } catch (e) {}
+            }
+            
+            // 更新UI
+            el.title.textContent = songName;
+            el.artist.textContent = artists;
+            if (cover) {
+                el.img.src = cover;
+                el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); };
+            } else {
+                el.img.style.opacity = 0;
+                updateTheme(null);
+            }
+            
+            el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取音频...</div>';
+            stopAudio();
+            resetLoopUI();
+            lyrics = [];
+            
+            try {
+                // 获取音频URL - 使用新版API指定音质
+                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
+                const levelParam = `&level=${neteaseQuality}`;
+                const resp = await fetch(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`));
+                
+                if (!resp.ok) throw new Error('获取音频失败');
+                
+                const json = await resp.json();
+                if (json.code !== 200 || !json.data?.[0]?.url) {
+                    throw new Error('无法获取音频链接' + (neteaseCookie ? '' : '，登录后可播放更多歌曲'));
+                }
+                
+                let audioUrl = json.data[0].url;
+                const audioInfo = json.data[0];
+                // 获取音质信息 - API可能返回: br(比特率), type(格式), level, sr(采样率)等
+                const brKbps = audioInfo.br ? Math.round(audioInfo.br / 1000) : null;
+                const audioType = (audioInfo.type || 'mp3').toUpperCase();
+                const sampleRate = audioInfo.sr || null; // 采样率 (如44100)
+                
+                // Debug显示原始信息
+                log(`Audio: ${audioType} ${brKbps || '?'}kbps${sampleRate ? ` ${sampleRate}Hz` : ''}`, 'success');
+                
+                // 根据格式和可用信息构建音质标签
+                let qualityStr = audioType;
+                if (audioType === 'FLAC' || audioType === 'WAV' || audioType === 'AIFF') {
+                    // 无损格式 - 优先显示采样率信息
+                    if (sampleRate) {
+                        const srKhz = sampleRate >= 1000 ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : sampleRate + 'Hz';
+                        // FLAC通常是16bit或24bit，根据比特率估算
+                        // 16bit/44.1kHz stereo ≈ 1411kbps, 24bit/96kHz stereo ≈ 4608kbps
+                        if (brKbps) {
+                            const estBitDepth = brKbps > 2000 ? 24 : 16;
+                            qualityStr = `${audioType} ${estBitDepth}bit/${srKhz}`;
+                        } else {
+                            qualityStr = `${audioType} ${srKhz}`;
+                        }
+                    } else if (brKbps) {
+                        // 没有采样率但有比特率，根据比特率估算
+                        const estBitDepth = brKbps > 2000 ? 24 : 16;
+                        const estSr = brKbps > 2000 ? '96kHz' : '44.1kHz';
+                        qualityStr = `${audioType} ${estBitDepth}bit/${estSr}`;
+                    }
+                } else {
+                    // 有损格式 - 显示比特率
+                    if (brKbps) {
+                        qualityStr = `${audioType} ${brKbps}kbps`;
+                    }
+                }
+                
+                currentAudioQuality = qualityStr;
+                
+                // 确保使用 https
+                audioUrl = audioUrl.replace('http://', 'https://');
+                log(`Audio URL: ${audioUrl}`);
+                
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 加载音频...</div>';
+                el.loadTip.style.display = 'block';
+                el.bufferLine.style.width = '30%';
+                
+                // 获取音频数据
+                const audioResp = await fetch(audioUrl);
+                if (!audioResp.ok) throw new Error('音频加载失败');
+                
+                el.bufferLine.style.width = '60%';
+                const ab = await audioResp.arrayBuffer();
+                
+                el.bufferLine.style.width = '80%';
+                audioBuffer = await actx.decodeAudioData(ab);
+                
+                el.bufferLine.style.width = '100%';
+                playbackState.duration = audioBuffer.duration;
+                el.totalTime.textContent = fmtTime(playbackState.duration);
+                el.loadTip.style.display = 'none';
+                
+                // 更新当前播放项的 songData（不覆盖整个播放列表）
+                if (playlist[curIdx]) {
+                    playlist[curIdx].songData = song;
+                }
+                renderPlaylist();
+                
+                startAudio(0);
+                el.coverWrap.classList.add('playing');
+                updatePlayIcon();
+                updateMediaSession();
+                
+                // 直接用歌曲ID获取歌词（已知ID无需搜索）
+                fetchLyricById(songId);
+                
+            } catch (e) {
+                log('Play error: ' + e.message, 'error');
+                el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${e.message}</div>`;
+                el.loadTip.style.display = 'none';
+            }
+        }
+        
+        // 获取歌单
+        async function fetchPlaylist(input) {
+            // 解析歌单ID
+            let playlistId = input.trim();
+            
+            // 从链接中提取ID
+            const match = input.match(/playlist[?/].*?id[=/]?(\d+)/i) || input.match(/(\d{5,})/);
+            if (match) playlistId = match[1];
+            
+            if (!playlistId || !/^\d+$/.test(playlistId)) {
+                playlistResults.innerHTML = '<div class="netease-empty">无效的歌单链接或ID</div>';
+                return;
+            }
+            
+            playlistResults.innerHTML = '<div class="netease-loading">🔄 获取歌单...</div>';
+            playlistPreview.innerHTML = '';
+            playlistBtn.disabled = true;
+            currentPlaylistData = null;
+            
+            try {
+                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
+                const resp = await fetch(buildApiUrl(`/playlist/detail?id=${playlistId}${cookieParam}`));
+                
+                if (!resp.ok) throw new Error('获取歌单失败');
+                
+                const json = await resp.json();
+                if (json.code !== 200 || !json.playlist) {
+                    throw new Error('无法获取歌单信息');
+                }
+                
+                const data = json.playlist;
+                currentPlaylistData = data;
+                
+                // 显示歌单信息
+                playlistPreview.innerHTML = `
+                    <div class="netease-playlist-info">
+                        <img class="netease-playlist-cover" src="${data.coverImgUrl}?param=200y200">
+                        <div class="netease-playlist-meta">
+                            <div class="netease-playlist-name">${data.name}</div>
+                            <div class="netease-playlist-desc">${data.trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount/10000) + '万播放' : ''}</div>
+                            <button class="netease-import-btn" onclick="importPlaylistToQueue()">📥 导入到播放列表</button>
+                        </div>
+                    </div>
+                `;
+                
+                // 显示歌曲列表
+                if (data.tracks && data.tracks.length > 0) {
+                    renderSongList(data.tracks, playlistResults);
+                } else {
+                    playlistResults.innerHTML = '<div class="netease-empty">歌单为空或需要登录查看</div>';
+                }
+                
+            } catch (e) {
+                playlistResults.innerHTML = '<div class="netease-empty">获取失败: ' + e.message + '</div>';
+            } finally {
+                playlistBtn.disabled = false;
+            }
+        }
+        
+        // 导入歌单到播放队列
+        window.importPlaylistToQueue = async function() {
+            if (!currentPlaylistData || !currentPlaylistData.tracks) return;
+            
+            const tracks = currentPlaylistData.tracks;
+            log(`Importing ${tracks.length} songs from playlist`);
+            
+            // 创建播放列表条目
+            playlist = tracks.map(song => {
+                const artists = (song.ar || []).map(a => a.name).join(', ');
+                return {
+                    name: `${song.name} - ${artists}`,
+                    netease: true,
+                    songId: song.id,
+                    songData: song
+                };
+            });
+            
+            curIdx = -1;
+            renderPlaylist();
+            neteasePanel.classList.remove('show');
+            document.getElementById('playlist-sidebar').classList.add('show');
+            
+            log(`Imported ${playlist.length} songs`, 'success');
+            
+            // 自动播放第一首
+            if (playlist.length > 0) {
+                playTrackFromPlaylist(0);
+            }
+        };
+        
+        // 从播放列表播放（支持本地和网易云）
+        async function playTrackFromPlaylist(i) {
+            if (i < 0 || i >= playlist.length) return;
+            const track = playlist[i];
+            curIdx = i;
+            renderPlaylist();
+            
+            if (track.netease) {
+                // 网易云歌曲
+                if (track.songData) {
+                    await playNeteaseSong(track.songData);
+                } else {
+                    // 需要重新获取歌曲信息
+                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取歌曲信息...</div>';
+                    try {
+                        const resp = await fetch(buildApiUrl(`/song/detail?ids=${track.songId}`));
+                        if (resp.ok) {
+                            const json = await resp.json();
+                            if (json.songs?.[0]) {
+                                track.songData = json.songs[0];
+                                await playNeteaseSong(track.songData);
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        log('Error: ' + e.message, 'error');
+                    }
+                }
+            } else {
+                // 本地文件
+                await playTrack(i);
+            }
+        }
+        
+        // 修改 handleNext 使用新的播放函数
+        const originalHandleNext = handleNext;
+        handleNext = function() {
+            if (playlist.length === 0) return;
+            let nextIdx;
+            if (playMode === 1) nextIdx = Math.floor(Math.random() * playlist.length);
+            else if (playMode === 2) nextIdx = curIdx;
+            else nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+            
+            playTrackFromPlaylist(nextIdx);
+        };
+        
+        // 修改上一曲/下一曲按钮
+        document.getElementById('prev-btn').onclick = () => {
+            if (playlist.length === 0) return;
+            playTrackFromPlaylist(curIdx - 1 < 0 ? playlist.length - 1 : curIdx - 1);
+        };
+        document.getElementById('next-btn').onclick = handleNext;
+        
+        // 搜索按钮和回车
+        searchBtn.onclick = () => searchNeteaseSongs(searchInput.value);
+        searchInput.onkeypress = (e) => { if (e.key === 'Enter') searchNeteaseSongs(searchInput.value); };
+        
+        // 歌单按钮和回车
+        playlistBtn.onclick = () => fetchPlaylist(playlistInput.value);
+        playlistInput.onkeypress = (e) => { if (e.key === 'Enter') fetchPlaylist(playlistInput.value); };
+        
         // 移动端高级菜单
         const advancedBtn = document.getElementById('toggle-advanced');
         const advancedMenu = document.getElementById('advanced-menu');
@@ -1493,6 +2496,21 @@
                         document.getElementById('analyze-panel').classList.toggle('show');
                     } else if (action === 'loop') {
                         document.getElementById('loop-panel').classList.toggle('show');
+                    } else if (action === 'netease-lyrics') {
+                        // 切换云词开关
+                        neteaseSearchEnabled = !neteaseSearchEnabled;
+                        neteaseBtn.style.background = neteaseSearchEnabled ? '#27ae60' : '';
+                        neteaseBtn.style.color = neteaseSearchEnabled ? '#fff' : '';
+                        log(`Netease lyrics search: ${neteaseSearchEnabled ? 'ON' : 'OFF'}`);
+                        alert(`云词搜索已${neteaseSearchEnabled ? '开启' : '关闭'}`);
+                    } else if (action === 'effects') {
+                        // 循环切换特效
+                        const options = ['none', 'snow', 'bars', 'waves'];
+                        const names = ['无特效', '凛冬飞雪', '律动频谱', '极光波浪'];
+                        const current = options.indexOf(el.effectSel.value);
+                        const next = (current + 1) % options.length;
+                        el.effectSel.value = options[next];
+                        alert(`特效: ${names[next]}`);
                     }
                 });
             });
