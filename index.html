@@ -253,7 +253,7 @@
             background: rgba(0,0,0,0.03); border-radius: 10px; margin-bottom: 15px;
         }
         .netease-playlist-cover {
-            width: 80px; height: 80px; border-radius: 10px; object-fit: cover;
+            width: 80px; height: 80px; border-radius: 10px; object-fit: cover; background: #eee;
         }
         .netease-playlist-meta { flex: 1; }
         .netease-playlist-name { font-weight: bold; font-size: 1rem; margin-bottom: 5px; }
@@ -707,6 +707,10 @@
         let neteaseSearchEnabled = false; // 网易云歌词搜索开关，默认关闭
         let loopState = { active: false, start: 0, end: 0 };
         let particles = [];
+        let currentAbortController = null; // 用于取消之前的网络请求
+        let currentPlaylistSongs = []; // 当前歌单的所有歌曲
+        let currentPage = 0; // 当前页码
+        const SONGS_PER_PAGE = 50; // 每页显示的歌曲数量
 
         const el = {
             img: document.getElementById('album-img'), coverWrap: document.getElementById('cover-wrap'),
@@ -1451,10 +1455,18 @@
         
         // 直接通过歌曲ID获取歌词（用于已知ID的网易云歌曲）
         async function fetchLyricById(songId) {
+            // 支持外部传入AbortController
+            let lyricSignal;
+            if (arguments.length > 1 && arguments[1] && arguments[1].signal) {
+                lyricSignal = arguments[1].signal;
+            } else {
+                if (window.neteaseLyricAbortController) window.neteaseLyricAbortController.abort();
+                window.neteaseLyricAbortController = new AbortController();
+                lyricSignal = window.neteaseLyricAbortController.signal;
+            }
             try {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 获取歌词...</div>';
-                
-                const resp = await fetch(buildApiUrl(`/lyric?id=${songId}`));
+                const resp = await fetch(buildApiUrl(`/lyric?id=${songId}`), { signal: lyricSignal });
                 if (resp.ok) {
                     const data = await resp.json();
                     if (data?.lrc?.lyric) {
@@ -1466,10 +1478,13 @@
                         return false;
                     }
                 }
-                
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
                 return false;
             } catch (e) {
+                if (e.name === 'AbortError') {
+                    // 切歌时中断不报错
+                    return false;
+                }
                 log('Lyric fetch error: ' + e.message, 'error');
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词获取失败</div>';
                 return false;
@@ -1588,6 +1603,11 @@
             if(sourceNode) { try{sourceNode.stop()}catch(e){}; sourceNode.disconnect(); sourceNode=null; } 
             playbackState.isPlaying = false; 
             if('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+            // 取消当前的网络请求
+            if(currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
         }
         function getCurrentTime() {
             if(!playbackState.isPlaying) return playbackState.pauseTime;
@@ -1772,9 +1792,31 @@
             let data = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(data);
             if(mode==='bars') { const bw=(w/data.length)*2.5; let x=0; for(let i=0;i<data.length;i++){ const H=data[i]*1.5; canvasCtx.fillStyle=`rgba(255,255,255,0.3)`; canvasCtx.fillRect(x,h-H/2,bw,H/2); x+=bw+1; } }
             else if(mode==='snow') {
-                if(particles.length<100) particles.push({x:Math.random()*w,y:0,r:Math.random()*3+1,s:Math.random()*2+1});
-                const bass=data[10]; canvasCtx.fillStyle="rgba(255,255,255,0.8)";
-                particles.forEach((p,i)=>{ p.y+=p.s*(1+bass/256*5)*0.5; p.x+=Math.sin(p.y*0.01); canvasCtx.beginPath(); canvasCtx.arc(p.x,p.y,p.r,0,Math.PI*2); canvasCtx.fill(); if(p.y>h) particles[i].y=-10; });
+                // 自适应雪花数量并保持左右均匀分布
+                const maxParticles = Math.max(60, Math.floor(w / 8));
+                while (particles.length < maxParticles) {
+                    particles.push({ x: Math.random() * w, y: Math.random() * -h, r: Math.random() * 3 + 1, s: Math.random() * 2 + 0.5 });
+                }
+                const bass = (data && data[10]) ? data[10] : 0;
+                canvasCtx.fillStyle = "rgba(255,255,255,0.9)";
+                for (let i = 0; i < particles.length; i++) {
+                    const p = particles[i];
+                    // 垂直移动，受低频影响但幅度较小
+                    p.y += p.s * (1 + (bass / 256) * 0.8);
+                    // 温和水平漂移并加随机抖动，避免偏向一侧
+                    p.x += Math.sin(p.y * 0.01) * 0.5 + (Math.random() - 0.5) * 0.3;
+                    // 越界处理：从顶部随机X重置，保持整体均匀
+                    if (p.y > h) {
+                        p.y = -Math.random() * 20;
+                        p.x = Math.random() * w;
+                    }
+                    if (p.x < -50 || p.x > w + 50) {
+                        p.x = Math.random() * w;
+                    }
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(p.x, p.y, Math.max(1, p.r), 0, Math.PI * 2);
+                    canvasCtx.fill();
+                }
             } else if(mode==='waves') {
                 canvasCtx.beginPath(); canvasCtx.moveTo(0,h/2);
                 for(let i=0;i<data.length;i++){ canvasCtx.lineTo((i/data.length)*w, h/2+Math.sin(i*0.1+performance.now()/1000)*data[i]+Math.cos(i*0.05)*50); }
@@ -1951,6 +1993,12 @@
         
         // 生成二维码
         async function generateQRCode() {
+                        // 二维码相关请求AbortController
+                        if (window.neteaseQrAbortController) {
+                            window.neteaseQrAbortController.abort();
+                        }
+                        window.neteaseQrAbortController = new AbortController();
+                        const qrSignal = window.neteaseQrAbortController.signal;
             const imgWrap = document.getElementById('qrcode-img-wrap');
             const status = document.getElementById('qrcode-status');
             imgWrap.innerHTML = '<div class="netease-loading">生成二维码中...</div>';
@@ -1962,57 +2010,43 @@
             
             try {
                 // 获取二维码key
-                const keyResp = await fetch(buildApiUrl(`/login/qr/key?timestamp=${Date.now()}`));
+                const keyResp = await fetch(buildApiUrl(`/login/qr/key?timestamp=${Date.now()}`), { signal: qrSignal });
                 if (!keyResp.ok) throw new Error('无法获取二维码');
-                
                 const keyJson = await keyResp.json();
                 if (!keyJson.data?.unikey) throw new Error('无法获取二维码key');
-                
                 const qrKey = keyJson.data.unikey;
-                
                 // 获取二维码图片
-                const imgResp = await fetch(buildApiUrl(`/login/qr/create?key=${qrKey}&qrimg=true&timestamp=${Date.now()}`));
+                const imgResp = await fetch(buildApiUrl(`/login/qr/create?key=${qrKey}&qrimg=true&timestamp=${Date.now()}`), { signal: qrSignal });
                 if (!imgResp.ok) throw new Error('无法生成二维码图片');
-                
                 const imgJson = await imgResp.json();
                 if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
-                
                 imgWrap.innerHTML = `<img src="${imgJson.data.qrimg}" alt="QR Code">`;
-                
                 // 轮询检查扫码状态
                 qrCheckTimer = setInterval(async () => {
                     try {
-                        const checkResp = await fetch(buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`));
+                        if (qrSignal.aborted) return;
+                        const checkResp = await fetch(buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`), { signal: qrSignal });
                         if (!checkResp.ok) return;
-                        
                         const checkJson = await checkResp.json();
-                        
                         if (checkJson.code === 800) {
-                            // 二维码过期
                             status.textContent = '二维码已过期，请刷新';
                             status.className = 'qrcode-status expired';
                             clearInterval(qrCheckTimer);
                         } else if (checkJson.code === 801) {
-                            // 等待扫描
                             status.textContent = '等待扫描...';
                             status.className = 'qrcode-status waiting';
                         } else if (checkJson.code === 802) {
-                            // 已扫描等待确认
                             status.textContent = '已扫描，请在手机上确认登录';
                             status.className = 'qrcode-status scanned';
                         } else if (checkJson.code === 803) {
-                            // 登录成功
                             status.textContent = '登录成功！';
                             status.className = 'qrcode-status success';
                             clearInterval(qrCheckTimer);
-                            
                             // 保存cookie
                             neteaseCookie = checkJson.cookie || '';
                             localStorage.setItem('netease_cookie', neteaseCookie);
-                            
                             // 获取用户信息
                             await checkLoginStatus();
-                                    
                             // 切换到搜索Tab
                             setTimeout(() => {
                                 document.querySelectorAll('.netease-tab')[0].click();
@@ -2020,7 +2054,6 @@
                         }
                     } catch (e) {}
                 }, 2000);
-                
             } catch (e) {
                 imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + e.message + '</div>';
                 log('QR generate error: ' + e.message, 'error');
@@ -2144,7 +2177,7 @@
                     return;
                 }
                 
-                renderSongList(json.result.songs, searchResults);
+                renderSongList(json.result.songs, searchResults, 0);
             } catch (e) {
                 searchResults.innerHTML = '<div class="netease-empty">搜索失败: ' + e.message + '</div>';
             } finally {
@@ -2152,19 +2185,30 @@
             }
         }
         
-        // 渲染歌曲列表
-        function renderSongList(songs, container) {
+        // 渲染歌曲列表（支持分页）
+        function renderSongList(songs, container, page = 0) {
+            // 保持用户当前页
+            if (typeof renderSongList._page !== 'undefined' && typeof page === 'undefined') {
+                page = renderSongList._page;
+            }
+            renderSongList._page = page;
+            currentPlaylistSongs = songs;
+            currentPage = page;
+            const start = page * SONGS_PER_PAGE;
+            const end = Math.min(start + SONGS_PER_PAGE, songs.length);
+            const pageSongs = songs.slice(start, end);
             container.innerHTML = '';
-            songs.forEach(song => {
+            // 使用 DocumentFragment 批量添加元素，提高性能
+            const fragment = document.createDocumentFragment();
+            pageSongs.forEach(song => {
                 const artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
                 const album = song.album?.name || song.al?.name || '';
                 const duration = song.duration || song.dt || 0;
                 const cover = song.album?.picUrl || song.al?.picUrl || '';
-                
                 const item = document.createElement('div');
                 item.className = 'netease-item';
                 item.innerHTML = `
-                    <img class="netease-item-cover" src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'">
+                    <img class="netease-item-cover" data-src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'" loading="lazy">
                     <div class="netease-item-info">
                         <div class="netease-item-name">${song.name}</div>
                         <div class="netease-item-artist">${artists}${album ? ' · ' + album : ''}</div>
@@ -2172,19 +2216,54 @@
                     <span class="netease-item-duration">${fmtTime(duration / 1000)}</span>
                     <button class="netease-item-play">▶</button>
                 `;
-                
                 item.querySelector('.netease-item-play').onclick = (e) => {
                     e.stopPropagation();
                     playNeteaseSong(song);
                 };
                 item.onclick = () => playNeteaseSong(song);
-                
-                container.appendChild(item);
+                fragment.appendChild(item);
             });
+            container.appendChild(fragment);
+            // 添加分页控件
+            if (songs.length > SONGS_PER_PAGE) {
+                const paginationDiv = document.createElement('div');
+                paginationDiv.className = 'netease-pagination';
+                paginationDiv.style.cssText = 'display: flex; justify-content: center; gap: 10px; margin-top: 15px; padding: 10px;';
+                const totalPages = Math.ceil(songs.length / SONGS_PER_PAGE);
+                // 上一页按钮
+                if (page > 0) {
+                    const prevBtn = document.createElement('button');
+                    prevBtn.textContent = '◀ 上一页';
+                    prevBtn.style.cssText = 'padding: 8px 15px; border: 1px solid #ddd; border-radius: 5px; background: white; cursor: pointer;';
+                    prevBtn.onclick = () => renderSongList(songs, container, page - 1);
+                    paginationDiv.appendChild(prevBtn);
+                }
+                // 页码信息
+                const pageInfo = document.createElement('span');
+                pageInfo.textContent = `第 ${page + 1} / ${totalPages} 页 (${songs.length} 首歌曲)`;
+                pageInfo.style.cssText = 'padding: 8px 15px; color: #666;';
+                paginationDiv.appendChild(pageInfo);
+                // 下一页按钮
+                if (end < songs.length) {
+                    const nextBtn = document.createElement('button');
+                    nextBtn.textContent = '下一页 ▶';
+                    nextBtn.style.cssText = 'padding: 8px 15px; border: 1px solid #ddd; border-radius: 5px; background: white; cursor: pointer;';
+                    nextBtn.onclick = () => renderSongList(songs, container, page + 1);
+                    paginationDiv.appendChild(nextBtn);
+                }
+                container.appendChild(paginationDiv);
+            }
+            // 重新初始化懒加载
+            lazyLoadImages();
         }
         
         // 播放网易云歌曲
         async function playNeteaseSong(song) {
+            // play token 防止旧的播放请求完成后覆盖新的播放
+            if (!window._playActionTokenSeed) window._playActionTokenSeed = 1;
+            const myPlayToken = ++window._playActionTokenSeed;
+            window._currentPlayActionToken = myPlayToken;
+
             const songId = song.id;
             let songName = song.name;
             let artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
@@ -2220,15 +2299,24 @@
             }
             
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取音频...</div>';
+            // 立即中断上一个播放操作并停止声音
             stopAudio();
             resetLoopUI();
             lyrics = [];
+            
+            // 创建新的 AbortController（与play token配合）
+            if (window.currentAbortController) window.currentAbortController.abort();
+            window.currentAbortController = new AbortController();
+            const signal = window.currentAbortController.signal;
             
             try {
                 // 获取音频URL - 使用新版API指定音质
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
                 const levelParam = `&level=${neteaseQuality}`;
-                const resp = await fetch(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`));
+                // 在发起请求前检查token
+                if (window._currentPlayActionToken !== myPlayToken) throw new Error('stale');
+                const resp = await fetch(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`), { signal });
+                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
                 
                 if (!resp.ok) throw new Error('获取音频失败');
                 
@@ -2285,14 +2373,19 @@
                 el.bufferLine.style.width = '30%';
                 
                 // 获取音频数据
-                const audioResp = await fetch(audioUrl);
+                // 二次检查：确保仍是当前播放请求
+                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                const audioResp = await fetch(audioUrl, { signal });
+                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
                 if (!audioResp.ok) throw new Error('音频加载失败');
                 
                 el.bufferLine.style.width = '60%';
                 const ab = await audioResp.arrayBuffer();
+                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
                 
                 el.bufferLine.style.width = '80%';
                 audioBuffer = await actx.decodeAudioData(ab);
+                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
                 
                 el.bufferLine.style.width = '100%';
                 playbackState.duration = audioBuffer.duration;
@@ -2310,18 +2403,42 @@
                 updatePlayIcon();
                 updateMediaSession();
                 
-                // 直接用歌曲ID获取歌词（已知ID无需搜索）
-                fetchLyricById(songId);
+                // 直接用歌曲ID获取歌词（已知ID无需搜索），传入当前播放的abort signal
+                try { fetchLyricById(songId, window.currentAbortController); } catch(_) {}
                 
             } catch (e) {
+                if (e.message === 'stale' || e.name === 'AbortError') {
+                    // 过期或被取消，不记录为错误
+                    log('Play request aborted/stale');
+                    return;
+                }
                 log('Play error: ' + e.message, 'error');
                 el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${e.message}</div>`;
                 el.loadTip.style.display = 'none';
+            } finally {
+                if (window.currentAbortController && window.currentAbortController.signal.aborted) window.currentAbortController = null;
             }
         }
         
+        // 取消歌单请求
+        window.cancelPlaylistRequest = function() {
+            if (window.currentPlaylistAbortController) {
+                window.currentPlaylistAbortController.abort();
+                window.currentPlaylistAbortController = null;
+            }
+        };
+        
         // 获取歌单
         async function fetchPlaylist(input) {
+                                    // 分步加载唯一token，切歌单时只允许当前token的loadBatch渲染
+                                    if (!window._playlistLoadTokenSeed) window._playlistLoadTokenSeed = 1;
+                                    const myLoadToken = ++window._playlistLoadTokenSeed;
+                                    window._currentPlaylistLoadToken = myLoadToken;
+                        // 切换歌单时，先中断上一个加载
+                        if (window.currentPlaylistAbortController) {
+                            window.currentPlaylistAbortController.abort();
+                            window.currentPlaylistAbortController = null;
+                        }
             // 解析歌单ID
             let playlistId = input.trim();
             
@@ -2334,48 +2451,111 @@
                 return;
             }
             
-            playlistResults.innerHTML = '<div class="netease-loading">🔄 获取歌单...</div>';
+            playlistResults.innerHTML = '<div class="netease-loading">🔄 获取歌单信息... <button onclick="cancelPlaylistRequest()" style="margin-left:10px; padding:2px 8px; font-size:12px;">取消</button></div>';
             playlistPreview.innerHTML = '';
             playlistBtn.disabled = true;
             currentPlaylistData = null;
             
+            // 创建 AbortController 用于取消请求
+            const abortController = new AbortController();
+            window.currentPlaylistAbortController = abortController; // 全局保存用于取消
+            
+            const timeoutId = setTimeout(() => {
+                abortController.abort();
+                playlistResults.innerHTML = '<div class="netease-empty">请求超时，请重试</div>';
+                playlistBtn.disabled = false;
+            }, 15000); // 15秒超时
+            
             try {
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
-                const resp = await fetch(buildApiUrl(`/playlist/detail?id=${playlistId}${cookieParam}`));
-                
-                if (!resp.ok) throw new Error('获取歌单失败');
-                
+                playlistResults.innerHTML = '<div class="netease-loading">🔄 连接网易云音乐...</div>';
+                // 1. 获取歌单基本信息（不带tracks）
+                const resp = await fetch(buildApiUrl(`/playlist/detail?id=${playlistId}&s=0${cookieParam}`), {
+                    signal: abortController.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                clearTimeout(timeoutId);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
                 const json = await resp.json();
                 if (json.code !== 200 || !json.playlist) {
-                    throw new Error('无法获取歌单信息');
+                    throw new Error('无法获取歌单信息，可能需要登录或歌单不存在');
                 }
-                
                 const data = json.playlist;
                 currentPlaylistData = data;
-                
-                // 显示歌单信息
+                // 显示歌单基本信息（无tracks）
+                const trackCount = data.trackCount || 0;
                 playlistPreview.innerHTML = `
-                    <div class="netease-playlist-info">
-                        <img class="netease-playlist-cover" src="${data.coverImgUrl}?param=200y200">
-                        <div class="netease-playlist-meta">
-                            <div class="netease-playlist-name">${data.name}</div>
-                            <div class="netease-playlist-desc">${data.trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount/10000) + '万播放' : ''}</div>
-                            <button class="netease-import-btn" onclick="importPlaylistToQueue()">📥 导入到播放列表</button>
+                    <div class=\"netease-playlist-info\">
+                        <img class=\"netease-playlist-cover\" data-src=\"${data.coverImgUrl}?param=200y200\" loading=\"lazy\">
+                        <div class=\"netease-playlist-meta\">
+                            <div class=\"netease-playlist-name\">${data.name}</div>
+                            <div class=\"netease-playlist-desc\">${trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount/10000) + '万播放' : ''}</div>
+                            <button class=\"netease-import-btn\" onclick=\"importPlaylistToQueue()\">📥 导入到播放列表</button>
                         </div>
                     </div>
                 `;
-                
-                // 显示歌曲列表
-                if (data.tracks && data.tracks.length > 0) {
-                    renderSongList(data.tracks, playlistResults);
-                } else {
-                    playlistResults.innerHTML = '<div class="netease-empty">歌单为空或需要登录查看</div>';
+                playlistResults.innerHTML = `<div class=\"netease-loading\">🔄 歌单信息加载完成，正在分步加载歌曲... (共${trackCount}首)</div>`;
+                // 2. 分步加载歌曲详情
+                let allTracks = [];
+                const limit = 50;
+                let offset = 0;
+                let loading = true;
+                async function loadBatch() {
+                    // 只允许当前歌单的分步加载渲染
+                    if (!loading || abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) return;
+                    const url = buildApiUrl(`/playlist/track/all?id=${playlistId}&limit=${limit}&offset=${offset}${cookieParam}`);
+                    const batchResp = await fetch(url, { signal: abortController.signal });
+                    if (abortController.signal.aborted) return;
+                    if (!batchResp.ok) throw new Error('歌曲详情加载失败');
+                    const batchJson = await batchResp.json();
+                    if (abortController.signal.aborted) return;
+                    if (batchJson.code !== 200 || !batchJson.songs) throw new Error('歌曲详情获取失败');
+                    allTracks = allTracks.concat(batchJson.songs);
+                    if (abortController.signal.aborted) return;
+                    // 每加载一批都刷新分页控件，允许用户切换已加载的任意批次
+                    // 只在首次加载时用0页，后续保持用户当前页
+                    let keepPage = typeof renderSongList._page === 'number' ? renderSongList._page : 0;
+                    if (window._currentPlaylistLoadToken !== myLoadToken) return;
+                    renderSongList(allTracks, playlistResults, keepPage);
+                    offset += limit;
+                    if (allTracks.length < trackCount && batchJson.songs.length > 0) {
+                        if (abortController.signal.aborted) return;
+                        // 只显示进度提示，不覆盖已加载内容
+                        const progressDiv = document.createElement('div');
+                        progressDiv.className = 'netease-loading';
+                        progressDiv.textContent = `🔄 正在加载第 ${Math.floor(offset/limit)+1} 批... (${allTracks.length}/${trackCount})`;
+                        // 移除旧的进度提示
+                        const old = playlistResults.querySelector('.netease-loading');
+                        if (old) old.remove();
+                        playlistResults.appendChild(progressDiv);
+                        setTimeout(() => {
+                            if (window._currentPlaylistLoadToken === myLoadToken) loadBatch();
+                        }, 100); // 递归加载下一批
+                    } else {
+                        loading = false;
+                        if (abortController.signal.aborted) return;
+                        // 移除进度提示
+                        const old = playlistResults.querySelector('.netease-loading');
+                        if (old) old.remove();
+                        if (window._currentPlaylistLoadToken !== myLoadToken) return;
+                        renderSongList(allTracks, playlistResults, 0);
+                        // 更新 currentPlaylistData.tracks 供导入
+                        currentPlaylistData.tracks = allTracks;
+                    }
                 }
-                
+                await loadBatch();
             } catch (e) {
-                playlistResults.innerHTML = '<div class="netease-empty">获取失败: ' + e.message + '</div>';
+                clearTimeout(timeoutId);
+                if (e.name === 'AbortError') {
+                    playlistResults.innerHTML = '<div class="netease-empty">请求已取消或超时</div>';
+                } else {
+                    playlistResults.innerHTML = '<div class="netease-empty">获取失败: ' + e.message + '</div>';
+                }
             } finally {
                 playlistBtn.disabled = false;
+                window.currentPlaylistAbortController = null;
             }
         }
         
@@ -2526,6 +2706,29 @@
         }
         
         updateTheme(null);
+        
+        // 懒加载图片实现
+        const lazyLoadImages = () => {
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.classList.remove('lazy');
+                        observer.unobserve(img);
+                    }
+                });
+            });
+            
+            // 观察所有懒加载图片
+            document.querySelectorAll('img[data-src]').forEach(img => {
+                imageObserver.observe(img);
+            });
+        };
+        
+        // 初始化懒加载
+        lazyLoadImages();
+        
     </script>
 </body>
 </html>
