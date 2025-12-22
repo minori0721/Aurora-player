@@ -7,6 +7,9 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
+    <!-- Preconnect/DNS prefetch for faster API warmup -->
+    <link rel="preconnect" href="https://minorimusicapi.zeabur.app" crossorigin>
+    <link rel="dns-prefetch" href="//minorimusicapi.zeabur.app">
 
     <style>
         :root {
@@ -696,6 +699,24 @@
             debugConsole.scrollTop = debugConsole.scrollHeight;
         }
 
+        // 清洗 Cookie，只保留核心凭证（如 MUSIC_U、__csrf），去掉浏览器指令（Max-Age/Expires/Path/Domain/SameSite/Secure/HttpOnly）
+        function cleanCookie(cookieStr) {
+            if (!cookieStr) return '';
+            return cookieStr.split(';')
+                .map(part => part.trim())
+                .filter(part => {
+                    const lower = part.toLowerCase();
+                    return !lower.startsWith('max-age=') && 
+                           !lower.startsWith('expires=') && 
+                           !lower.startsWith('path=') && 
+                           !lower.startsWith('domain=') &&
+                           !lower.startsWith('samesite=') &&
+                           !lower.startsWith('httponly') &&
+                           !lower.startsWith('secure');
+                })
+                .join('; ');
+        }
+
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let actx = new AudioContext();
         let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
@@ -711,6 +732,100 @@
         let currentPlaylistSongs = []; // 当前歌单的所有歌曲
         let currentPage = 0; // 当前页码
         const SONGS_PER_PAGE = 50; // 每页显示的歌曲数量
+
+        // --- 请求队列与缓存工具 ---
+        // 并发队列（通用请求，默认并发3）
+        const requestQueue = [];
+        let requestActive = 0;
+        const REQUEST_CONCURRENCY = 3;
+        function _processQueue() {
+            if (requestActive >= REQUEST_CONCURRENCY) return;
+            const task = requestQueue.shift();
+            if (!task) return;
+            requestActive++;
+            const {fn, resolve, reject} = task;
+            Promise.resolve().then(() => fn()).then(r => { resolve(r); }).catch(e => { reject(e); }).finally(() => { requestActive--; _processQueue(); });
+        }
+        function qFetch(url, options={}) {
+            return new Promise((resolve, reject) => {
+                requestQueue.push({ fn: () => fetch(url, options), resolve, reject });
+                _processQueue();
+            });
+        }
+
+        // 预取队列（并发1）
+        const prefetchQueue = [];
+        let prefetchActive = 0;
+        function _processPrefetch() {
+            if (prefetchActive >= 1) return;
+            const task = prefetchQueue.shift();
+            if (!task) return;
+            prefetchActive++;
+            const {fn, resolve, reject} = task;
+            Promise.resolve().then(() => fn()).then(r => { resolve(r); }).catch(e => { reject(e); }).finally(() => { prefetchActive--; _processPrefetch(); });
+        }
+        function prefetchFetch(url, options={}) {
+            return new Promise((resolve, reject) => {
+                prefetchQueue.push({ fn: () => fetch(url, options), resolve, reject });
+                _processPrefetch();
+            });
+        }
+
+        // 简单 IndexedDB 缓存（metadata only）
+        const IDB_DB = 'aurora-cache';
+        const IDB_STORE = 'metadata';
+        function openIdb() {
+            return new Promise((res, rej) => {
+                const rq = indexedDB.open(IDB_DB, 1);
+                rq.onupgradeneeded = () => { rq.result.createObjectStore(IDB_STORE); };
+                rq.onsuccess = () => res(rq.result);
+                rq.onerror = () => rej(rq.error);
+            });
+        }
+        async function idbGet(key) {
+            try {
+                const db = await openIdb();
+                return new Promise((res, rej) => {
+                    const tx = db.transaction(IDB_STORE, 'readonly');
+                    const store = tx.objectStore(IDB_STORE);
+                    const r = store.get(key);
+                    r.onsuccess = () => res(r.result);
+                    r.onerror = () => rej(r.error);
+                });
+            } catch (e) { return null; }
+        }
+        async function idbSet(key, value) {
+            try {
+                const db = await openIdb();
+                return new Promise((res, rej) => {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    const store = tx.objectStore(IDB_STORE);
+                    const r = store.put(value, key);
+                    r.onsuccess = () => res(true);
+                    r.onerror = () => rej(r.error);
+                });
+            } catch (e) { return false; }
+        }
+
+        // cachedFetch: 尝试从IDB获取 JSON 缓存，否则走队列请求并缓存
+        async function cachedFetchJson(url, options = {}, ttl = 3600_000) {
+            const key = 'json|' + url;
+            try {
+                const entry = await idbGet(key);
+                const now = Date.now();
+                if (entry && entry.ts && (now - entry.ts) < ttl) {
+                    return entry.data;
+                }
+            } catch (e) {}
+            // 选择队列或普通 fetch
+            const useQueue = options.useQueue !== false;
+            const fetchFn = useQueue ? qFetch : fetch;
+            const resp = await fetchFn(url, options);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            try { await idbSet(key, { ts: Date.now(), data }); } catch (e) {}
+            return data;
+        }
 
         const el = {
             img: document.getElementById('album-img'), coverWrap: document.getElementById('cover-wrap'),
@@ -1466,9 +1581,9 @@
             }
             try {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 获取歌词...</div>';
-                const resp = await fetch(buildApiUrl(`/lyric?id=${songId}`), { signal: lyricSignal });
-                if (resp.ok) {
-                    const data = await resp.json();
+                // 使用缓存队列获取歌词（ttl 1 hour）
+                const data = await cachedFetchJson(buildApiUrl(`/lyric?id=${songId}`), { signal: lyricSignal, useQueue: true }, 3600_000);
+                if (data) {
                     if (data?.lrc?.lyric) {
                         log('Lyrics loaded!', 'success');
                         parseAndRenderLyrics(data.lrc.lyric, '网易云');
@@ -1900,7 +2015,7 @@
             if (!neteaseCookie) return false;
             
             try {
-                const resp = await fetch(buildApiUrl(`/login/status?cookie=${encodeURIComponent(neteaseCookie)}`));
+                const resp = await fetch(buildApiUrl(`/login/status?cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`));
                 if (resp.ok) {
                     const json = await resp.json();
                     if (json.data?.profile) {
@@ -1921,7 +2036,7 @@
         // 获取VIP信息
         async function fetchVipInfo() {
             try {
-                const resp = await fetch(buildApiUrl(`/vip/info?cookie=${encodeURIComponent(neteaseCookie)}`));
+                const resp = await fetch(buildApiUrl(`/vip/info?cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`));
                 if (resp.ok) {
                     const json = await resp.json();
                     // redVipLevel: 0=普通 1=VIP; musicPackage=音乐包
@@ -2042,8 +2157,8 @@
                             status.textContent = '登录成功！';
                             status.className = 'qrcode-status success';
                             clearInterval(qrCheckTimer);
-                            // 保存cookie
-                            neteaseCookie = checkJson.cookie || '';
+                            // 保存干净的 cookie（只保留核心凭证）
+                            neteaseCookie = cleanCookie(checkJson.cookie || '');
                             localStorage.setItem('netease_cookie', neteaseCookie);
                             // 获取用户信息
                             await checkLoginStatus();
@@ -2092,7 +2207,7 @@
             container.innerHTML = '<div class="netease-loading">加载中...</div>';
             
             try {
-                const resp = await fetch(buildApiUrl(`/user/playlist?uid=${neteaseUser.userId}&cookie=${encodeURIComponent(neteaseCookie)}`));
+                const resp = await fetch(buildApiUrl(`/user/playlist?uid=${neteaseUser.userId}&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`));
                 if (!resp.ok) throw new Error('获取歌单失败');
                 
                 const json = await resp.json();
@@ -2272,17 +2387,14 @@
             log(`Playing: ${songName} - ${artists}`);
             neteasePanel.classList.remove('show');
             
-            // 如果没有封面，先获取歌曲详情
+            // 如果没有封面，先尝试从缓存或队列获取歌曲详情
             if (!cover) {
                 try {
-                    const detailResp = await fetch(buildApiUrl(`/song/detail?ids=${songId}`));
-                    if (detailResp.ok) {
-                        const detailJson = await detailResp.json();
-                        if (detailJson.songs?.[0]) {
-                            const detail = detailJson.songs[0];
-                            cover = detail.al?.picUrl || '';
-                            artists = (detail.ar || []).map(a => a.name).join(', ');
-                        }
+                    const detailJson = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}`), { useQueue: true }, 60_000);
+                    if (detailJson?.songs?.[0]) {
+                        const detail = detailJson.songs[0];
+                        cover = detail.al?.picUrl || '';
+                        artists = (detail.ar || []).map(a => a.name).join(', ');
                     }
                 } catch (e) {}
             }
@@ -2310,17 +2422,14 @@
             const signal = window.currentAbortController.signal;
             
             try {
-                // 获取音频URL - 使用新版API指定音质
-                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
+                // 获取音频URL - 使用新版API指定音质，优先从缓存获取（短时缓存）
+                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
                 const levelParam = `&level=${neteaseQuality}`;
-                // 在发起请求前检查token
                 if (window._currentPlayActionToken !== myPlayToken) throw new Error('stale');
-                const resp = await fetch(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`), { signal });
+                const json = await cachedFetchJson(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`), { signal, useQueue: true }, 30_000);
                 if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
                 
-                if (!resp.ok) throw new Error('获取音频失败');
-                
-                const json = await resp.json();
+                if (!json || json.code !== 200) throw new Error('获取音频失败');
                 if (json.code !== 200 || !json.data?.[0]?.url) {
                     throw new Error('无法获取音频链接' + (neteaseCookie ? '' : '，登录后可播放更多歌曲'));
                 }
@@ -2405,6 +2514,19 @@
                 
                 // 直接用歌曲ID获取歌词（已知ID无需搜索），传入当前播放的abort signal
                 try { fetchLyricById(songId, window.currentAbortController); } catch(_) {}
+
+                // 预取下一首的元数据（并发1）
+                try {
+                    const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
+                    if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
+                        const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
+                        if (nextId) {
+                            // 预取 song/detail 和 song/url（短时缓存）
+                            prefetchFetch(buildApiUrl(`/song/detail?ids=${nextId}`)).catch(()=>{});
+                            prefetchFetch(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}`)).catch(()=>{});
+                        }
+                    }
+                } catch (_) {}
                 
             } catch (e) {
                 if (e.message === 'stale' || e.name === 'AbortError') {
@@ -2467,18 +2589,12 @@
             }, 15000); // 15秒超时
             
             try {
-                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(neteaseCookie)}` : '';
+                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
                 playlistResults.innerHTML = '<div class="netease-loading">🔄 连接网易云音乐...</div>';
                 // 1. 获取歌单基本信息（不带tracks）
-                const resp = await fetch(buildApiUrl(`/playlist/detail?id=${playlistId}&s=0${cookieParam}`), {
-                    signal: abortController.signal,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                });
+                const json = await cachedFetchJson(buildApiUrl(`/playlist/detail?id=${playlistId}&s=0${cookieParam}`), { signal: abortController.signal, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, useQueue: true }, 30_000);
                 clearTimeout(timeoutId);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-                const json = await resp.json();
+                if (!json) throw new Error('无法获取歌单信息');
                 if (json.code !== 200 || !json.playlist) {
                     throw new Error('无法获取歌单信息，可能需要登录或歌单不存在');
                 }
@@ -2497,55 +2613,136 @@
                     </div>
                 `;
                 playlistResults.innerHTML = `<div class=\"netease-loading\">🔄 歌单信息加载完成，正在分步加载歌曲... (共${trackCount}首)</div>`;
-                // 2. 分步加载歌曲详情
+                // 2. 分步并发加载歌曲详情（限并发 worker 池）
                 let allTracks = [];
                 const limit = 50;
-                let offset = 0;
                 let loading = true;
-                async function loadBatch() {
-                    // 只允许当前歌单的分步加载渲染
-                    if (!loading || abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) return;
-                    const url = buildApiUrl(`/playlist/track/all?id=${playlistId}&limit=${limit}&offset=${offset}${cookieParam}`);
-                    const batchResp = await fetch(url, { signal: abortController.signal });
-                    if (abortController.signal.aborted) return;
-                    if (!batchResp.ok) throw new Error('歌曲详情加载失败');
-                    const batchJson = await batchResp.json();
-                    if (abortController.signal.aborted) return;
-                    if (batchJson.code !== 200 || !batchJson.songs) throw new Error('歌曲详情获取失败');
-                    allTracks = allTracks.concat(batchJson.songs);
-                    if (abortController.signal.aborted) return;
-                    // 每加载一批都刷新分页控件，允许用户切换已加载的任意批次
-                    // 只在首次加载时用0页，后续保持用户当前页
-                    let keepPage = typeof renderSongList._page === 'number' ? renderSongList._page : 0;
-                    if (window._currentPlaylistLoadToken !== myLoadToken) return;
-                    renderSongList(allTracks, playlistResults, keepPage);
-                    offset += limit;
-                    if (allTracks.length < trackCount && batchJson.songs.length > 0) {
-                        if (abortController.signal.aborted) return;
-                        // 只显示进度提示，不覆盖已加载内容
-                        const progressDiv = document.createElement('div');
-                        progressDiv.className = 'netease-loading';
-                        progressDiv.textContent = `🔄 正在加载第 ${Math.floor(offset/limit)+1} 批... (${allTracks.length}/${trackCount})`;
-                        // 移除旧的进度提示
-                        const old = playlistResults.querySelector('.netease-loading');
-                        if (old) old.remove();
-                        playlistResults.appendChild(progressDiv);
-                        setTimeout(() => {
-                            if (window._currentPlaylistLoadToken === myLoadToken) loadBatch();
-                        }, 100); // 递归加载下一批
-                    } else {
+
+                async function fetchBatchesConcurrently(concurrency = 3) {
+                    const offsets = [];
+                    for (let o = 0; o < trackCount; o += limit) offsets.push(o);
+                    const resultsMap = new Map();
+                    let idx = 0;
+
+                    // 简单的 429/短期错误退避重试器（用于保护 Zeabur 端点）
+                    async function fetchWithRetry(url, opts = {}) {
+                        const maxRetries = 5;
+                        let attempt = 0;
+                        let backoff = 250; // ms
+                        while (true) {
+                            if (abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) throw new DOMException('aborted', 'AbortError');
+                            try {
+                                const resp = await fetch(url, opts);
+                                if (resp.status === 429) {
+                                    log(`429 received for ${url} (attempt ${attempt+1}), backing off ${backoff}ms`, 'error');
+                                    if (attempt >= maxRetries) throw new Error('Too many 429 responses');
+                                    const jitter = Math.floor(Math.random() * 200);
+                                    await new Promise(r => setTimeout(r, backoff + jitter));
+                                    attempt++;
+                                    backoff *= 2;
+                                    continue;
+                                }
+                                if (!resp.ok && resp.status >= 500 && attempt < maxRetries) {
+                                    log(`server error ${resp.status} for ${url}, retrying (attempt ${attempt+1})`, 'error');
+                                    const jitter = Math.floor(Math.random() * 200);
+                                    await new Promise(r => setTimeout(r, backoff + jitter));
+                                    attempt++;
+                                    backoff *= 2;
+                                    continue;
+                                }
+                                return resp;
+                            } catch (err) {
+                                // 仅在 fetch 抛错时重试一次，避免无限循环
+                                log(`fetch error for ${url}: ${err}. retrying (attempt ${attempt+1})`, 'error');
+                                if (attempt >= maxRetries) throw err;
+                                const jitter = Math.floor(Math.random() * 200);
+                                await new Promise(r => setTimeout(r, backoff + jitter));
+                                attempt++;
+                                backoff *= 2;
+                            }
+                        }
+                    }
+
+                    async function worker() {
+                        while (true) {
+                            if (abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) return;
+                            const myIdx = idx++;
+                            if (myIdx >= offsets.length) return;
+                            const myOffset = offsets[myIdx];
+                            try {
+                                const url = buildApiUrl(`/playlist/track/all?id=${playlistId}&limit=${limit}&offset=${myOffset}${cookieParam}`);
+                                const t0 = performance.now();
+                                const respBatch = await fetchWithRetry(url, { signal: abortController.signal });
+                                const tFetch = performance.now();
+                                if (abortController.signal.aborted) return;
+                                if (!respBatch.ok) throw new Error('歌曲详情加载失败: ' + respBatch.status);
+                                // 读取部分响应头用于调试
+                                const contentLen = respBatch.headers.get('content-length') || respBatch.headers.get('Content-Length') || 'unknown';
+                                const contentEnc = respBatch.headers.get('content-encoding') || respBatch.headers.get('Content-Encoding') || 'none';
+                                const altSvc = respBatch.headers.get('alt-svc') || respBatch.headers.get('Alt-Svc') || '';
+                                const bj = await respBatch.json();
+                                const tJson = performance.now();
+                                if (abortController.signal.aborted) return;
+                                if (bj.code !== 200 || !bj.songs) throw new Error('歌曲详情获取失败');
+                                resultsMap.set(myOffset, bj.songs);
+                                // 估算响应体大小（字符数）并输出调试信息
+                                let approxSize = 0;
+                                try { approxSize = JSON.stringify(bj).length; } catch(e) { approxSize = -1; }
+                                if (window.DEBUG) {
+                                    log(`batch offset=${myOffset} status=${respBatch.status} fetchMs=${(tFetch-t0).toFixed(1)} jsonMs=${(tJson-tFetch).toFixed(1)} totalMs=${(tJson-t0).toFixed(1)} size=${approxSize} hdr_len=${contentLen} enc=${contentEnc} alt=${altSvc}`);
+                                }
+                                // 合并已到达的批次并渲染
+                                const merged = [];
+                                for (let o of offsets) {
+                                    if (resultsMap.has(o)) merged.push(...resultsMap.get(o));
+                                    else break; // 保持顺序直到第一个缺失批次
+                                }
+                                allTracks = merged;
+                                const keepPage = typeof renderSongList._page === 'number' ? renderSongList._page : 0;
+                                if (window._currentPlaylistLoadToken !== myLoadToken) return;
+                                renderSongList(allTracks, playlistResults, keepPage);
+                                // 更新进度提示
+                                const progressDiv = document.createElement('div');
+                                progressDiv.className = 'netease-loading';
+                                progressDiv.textContent = `🔄 已加载 ${allTracks.length}/${trackCount} 首...`;
+                                const old = playlistResults.querySelector('.netease-loading');
+                                if (old) old.remove();
+                                playlistResults.appendChild(progressDiv);
+                            } catch (e) {
+                                if (e.name === 'AbortError') return;
+                                console.warn('batch error', e);
+                            }
+                        }
+                    }
+
+                    await Promise.all(new Array(Math.max(1, Math.min(concurrency, offsets.length))).fill(0).map(() => worker()));
+                    // 所有完成后合并所有批次（按 offset 排序）
+                    const sortedOffsets = Array.from(resultsMap.keys()).sort((a,b)=>a-b);
+                    const mergedAll = [];
+                    for (const o of sortedOffsets) mergedAll.push(...resultsMap.get(o));
+                    return mergedAll;
+                }
+
+                try {
+                    const concurrency = 3; // 可调：3~6 之间视服务稳定性而定
+                    const merged = await fetchBatchesConcurrently(concurrency);
+                    if (abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) {
+                        // 被取消或已切换歌单
                         loading = false;
-                        if (abortController.signal.aborted) return;
-                        // 移除进度提示
-                        const old = playlistResults.querySelector('.netease-loading');
-                        if (old) old.remove();
-                        if (window._currentPlaylistLoadToken !== myLoadToken) return;
-                        renderSongList(allTracks, playlistResults, 0);
-                        // 更新 currentPlaylistData.tracks 供导入
-                        currentPlaylistData.tracks = allTracks;
+                        return;
+                    }
+                    allTracks = merged;
+                    loading = false;
+                    const old = playlistResults.querySelector('.netease-loading'); if (old) old.remove();
+                    renderSongList(allTracks, playlistResults, 0);
+                    currentPlaylistData.tracks = allTracks;
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        // ignore
+                    } else {
+                        throw e;
                     }
                 }
-                await loadBatch();
             } catch (e) {
                 clearTimeout(timeoutId);
                 if (e.name === 'AbortError') {
@@ -2605,14 +2802,11 @@
                     // 需要重新获取歌曲信息
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取歌曲信息...</div>';
                     try {
-                        const resp = await fetch(buildApiUrl(`/song/detail?ids=${track.songId}`));
-                        if (resp.ok) {
-                            const json = await resp.json();
-                            if (json.songs?.[0]) {
-                                track.songData = json.songs[0];
-                                await playNeteaseSong(track.songData);
-                                return;
-                            }
+                        const json = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${track.songId}`), { useQueue: true }, 60_000);
+                        if (json?.songs?.[0]) {
+                            track.songData = json.songs[0];
+                            await playNeteaseSong(track.songData);
+                            return;
                         }
                     } catch (e) {
                         log('Error: ' + e.message, 'error');
