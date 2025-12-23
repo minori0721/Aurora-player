@@ -87,7 +87,8 @@
 
 ### 2. 后端 API 配置 (重要)
 
-网易云功能依赖 [NeteaseCloudMusicApiEnhanced]([https://github.com/neteasecloudmusicapienhanced/api-enhanced])。
+网易云功能依赖 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/)。
+但是试用网站使用了我fork后修改的版本 [api-enhanced](https://github.com/minori0721/api-enhanced)
 项目代码中默认配置了 API 地址：
 
 ```javascript
@@ -97,6 +98,7 @@ const NETEASE_API_HOST = 'https://minorimusicapi.zeabur.app';
 ```
 经我测试，国内可直连的部署服务包括：
 [zeabur](https://zeabur.com/)
+
 [hugging face](https://huggingface.co/)
 
 如果你部署了自己的 API 服务，请在代码中搜索 `NETEASE_API_HOST` 并修改为你自己的地址。（不要用我的呀
