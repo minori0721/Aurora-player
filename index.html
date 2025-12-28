@@ -10,6 +10,10 @@
     <!-- 全局可修改的 API 地址（调试用），修改该值即可切换后端 -->
     <script>
         window.API_BASE_URL = '';
+        // 【新增】下载代理 Worker 的地址
+        // 如果你部署了 Worker，填入你的 Worker 地址，例如 'https://music-proxy.xxx.workers.dev'
+        // 如果这里留空，代码会默认使用相对路径 (适用于 Pages 同源部署)
+        window.DOWNLOAD_PROXY_URL = 'https://musicproxy.3101909160.workers.dev';
     </script>
     <!-- 动态添加 Preconnect/DNS prefetch，使用可修改的 window.API_BASE_URL -->
     <script>
@@ -940,6 +944,7 @@
         }
 
         // 弹出下载模态并检测各音质可用性
+        // 弹出下载模态并检测各音质可用性
         downloadBtn.onclick = async function() {
             const playing = window._currentPlaying || null;
             if (!playing) {
@@ -980,125 +985,95 @@
 
                 (async function(it, level){
                     try {
-                        // Logic Strategy: 分层策略
-                        // neteaseVipType: 0=普通, 1=VIP, 2=SVIP, 3=音乐包
+                        // === 1. 构建获取链接的 URL (分层策略) ===
+                        // VIP用户：伪装成 PC 客户端 (os=pc)，走正规流程
+                        // 普通用户 & 高音质：裸奔 (不带 os=pc)，触发 API 漏洞拿 FLAC
+                        // 普通用户 & 低音质：伪装 (os=pc)，正常拿 MP3
                         const isVipUser = neteaseUser && neteaseVipType > 0;
                         const isHighResTarget = (level === 'lossless' || level === 'hires');
                         
-                        let url;
-
+                        let apiUrl;
                         if (isVipUser) {
-                            // === 策略 A: VIP 用户 ===
-                            // 全都“伪装”。既然有权限，就用最标准的参数 (buildApiUrl 会加 randomCNIP)，再带上 os=pc
-                            // 这样最稳定，不容易因为 API 波动而出错
-                            url = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                            apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
                         } else {
-                            // === 策略 B: 普通/未登录用户 ===
                             if (isHighResTarget) {
-                                // 目标是无损/Hi-Res：使用“不伪装”模式 (裸奔)
-                                // 绕过 randomCNIP 和 os=pc，利用 API 漏洞获取无损
-                                url = `${NETEASE_API_HOST}/song/url/v1?id=${songId}&level=${level}${cookieParam}`;
+                                // 关键：普通用户下高音质，直接拼 URL，不走 buildApiUrl (避免 randomCNIP)，也不带 os=pc
+                                apiUrl = `${NETEASE_API_HOST}/song/url/v1?id=${songId}&level=${level}${cookieParam}`;
                             } else {
-                                // 目标是普通音质 (320k及以下)：使用“伪装”模式
-                                // 正常请求，防止因为太裸奔被判定为机器人
-                                url = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                                apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
                             }
                         }
                         
-                        // 发起请求
-                        const json = await cachedFetchJson(url, { useQueue: true }, 30_000);
+                        // === 2. 获取直链 ===
+                        const json = await cachedFetchJson(apiUrl, { useQueue: true }, 30_000);
                         const data = json?.data && json.data[0] ? json.data[0] : null;
                         const metaEl = it.querySelector('.quality-meta');
                         const rightArea = it.querySelector('.quality-action');
                         
                         if (json && json.code === 200 && data && data.url) {
-                            // 更稳健的文件类型推断，避免把低码 mp3 误判为 FLAC
-                            const urlLower = (data.url || '').toLowerCase();
+                            // === 3. 智能修正格式 (修复 Bug 1) ===
+                            const urlLower = data.url.toLowerCase();
                             const br = data.br || 0;
                             const size = data.size || 0;
+                            
+                            let realExt = 'mp3'; // 默认
+                            let isLossless = false;
 
-                            // 优先使用 API 返回的 type（如果有且明确）
-                            let fileExt = (data.type || '').toLowerCase();
-                            if (!fileExt) {
-                                // 没有 type 时根据请求的 level 做默认推断
-                                if (level === 'lossless' || level === 'hires') fileExt = 'flac';
-                                else fileExt = 'mp3';
-                            }
+                            // 只要 URL 里有 flac，或者 API 说是 flac，或者文件极大，就认为是 FLAC
+                            if (urlLower.includes('.flac')) { realExt = 'flac'; isLossless = true; } 
+                            else if (data.type && data.type.toLowerCase() === 'flac') { realExt = 'flac'; isLossless = true; }
+                            else if (size > 20 * 1024 * 1024) { realExt = 'flac'; isLossless = true; }
 
-                            // 如果 URL 明显包含无损后缀，且满足一定条件，再强制判为 flac/wav
-                            const urlHasFlac = urlLower.includes('.flac');
-                            const urlHasWav = urlLower.includes('.wav');
-                            // 当且仅当：请求目标为无损，或码率非常高，或文件体积较大时，才把 URL 中的 .flac 作为判定依据
-                            if (urlHasFlac) {
-                                if (level === 'lossless' || level === 'hires' || br >= 900000 || size > 15 * 1024 * 1024) {
-                                    fileExt = 'flac';
-                                }
-                            } else if (urlHasWav) {
-                                if (level === 'lossless' || level === 'hires' || br >= 900000 || size > 15 * 1024 * 1024) {
-                                    fileExt = 'wav';
-                                }
-                            }
-
-                            // 构建展示文本：若为无损且码率为 0（未登录或被隐藏），只显示格式名
-                            let metaText = fileExt.toUpperCase();
+                            // === 4. 更新界面显示 ===
+                            let metaText = realExt.toUpperCase();
+                            const isUpgrade = (level === 'standard' || level === 'higher') && isLossless;
+                            if (isUpgrade) metaText += " (强制升级)"; // 提示用户 API 强制给了更好的
+                            
                             if (br > 0) metaText += ` ${Math.round(br/1000)}kbps`;
                             if (size > 0) metaText += ` ${(size/1024/1024).toFixed(1)}MB`;
                             
                             metaEl.textContent = metaText;
+                            if (isUpgrade) metaEl.style.color = '#e74c3c';
+
                             rightArea.innerHTML = '';
-                            
                             const dlBtn = document.createElement('button');
                             dlBtn.className = 'glass-btn';
                             dlBtn.textContent = '下载';
-                            dlBtn.onclick = async () => {
+                            
+                            // === 5. 下载动作 (修复 Bug 2) ===
+                            dlBtn.onclick = () => {
                                 const safeName = (songName + ' - ' + artists).replace(/[\\/:*?"<>|]+/g, '_').slice(0,120);
-                                const fileName = `${safeName}.${fileExt}`;
-                                // 优先尝试通过 fetch 下载为 Blob，这样能触发浏览器保存对话框；若跨域被阻止则回退到直接打开链接
-                                try {
-                                    const resp = await fetch(data.url, { method: 'GET', mode: 'cors' });
-                                    if (!resp.ok) throw new Error('网络错误');
-                                    const blob = await resp.blob();
-                                    const blobUrl = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = blobUrl;
-                                    a.download = fileName;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    a.remove();
-                                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-                                } catch (e) {
-                                    // 回退：使用新标签或直接触发下载（浏览器策略可能仍然打开新页）
-                                    try {
-                                        const a = document.createElement('a');
-                                        a.href = data.url;
-                                        a.target = '_blank';
-                                        a.rel = 'noopener noreferrer';
-                                        a.download = fileName;
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        a.remove();
-                                    } catch (e2) {
-                                        window.open(data.url, '_blank', 'noopener');
-                                    }
-                                }
+                                const fileName = `${safeName} [${level}].${realExt}`;
+                                
+                                // 优先使用全局配置的 Worker 地址，如果没配置则回退到相对路径（用于 Pages Function）
+                                const baseUrl = window.DOWNLOAD_PROXY_URL || '/proxy-download'; 
+                                const proxyUrl = `${baseUrl}?url=${encodeURIComponent(data.url)}&filename=${encodeURIComponent(fileName)}`;
+                                
+                                // 创建临时 a 标签触发下载
+                                // 因为是同源请求 (2.html 和 proxy-download 都在你的 pages 域名下)，下载会非常稳定！
+                                const a = document.createElement('a');
+                                a.href = proxyUrl;
+                                a.target = '_blank'; // 保险起见
+                                a.download = fileName; // 虽然 proxy 会加 header，但这作为双重保险
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
                             };
                             rightArea.appendChild(dlBtn);
                         } else {
-                            // 失败处理
                             it.classList.add('disabled');
-                            metaEl.textContent = '需 VIP';
+                            metaEl.textContent = '不可用';
                             rightArea.innerHTML = '';
                             const noBtn = document.createElement('button');
                             noBtn.className = 'glass-btn';
-                            noBtn.textContent = '无权限';
+                            noBtn.textContent = '无';
                             noBtn.disabled = true;
                             rightArea.appendChild(noBtn);
                         }
                     } catch (e) {
                         it.classList.add('disabled');
-                        const metaEl = it.querySelector('.quality-meta'); if (metaEl) metaEl.textContent = '检测失败';
+                        const metaEl = it.querySelector('.quality-meta'); if (metaEl) metaEl.textContent = 'Err';
                         const rightArea = it.querySelector('.quality-action'); rightArea.innerHTML = '';
-                        const noBtn = document.createElement('button'); noBtn.className = 'glass-btn'; noBtn.textContent = 'Err'; noBtn.disabled = true; rightArea.appendChild(noBtn);
                     }
                 })(item, q.key);
             }
