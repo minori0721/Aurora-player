@@ -7,9 +7,30 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
-    <!-- Preconnect/DNS prefetch for faster API warmup -->
-    <link rel="preconnect" href="https://minorimusicapi.zeabur.app" crossorigin>
-    <link rel="dns-prefetch" href="//minorimusicapi.zeabur.app">
+    <!-- 全局可修改的 API 地址（调试用），修改该值即可切换后端 -->
+    <script>
+        window.API_BASE_URL = '';
+    </script>
+    <!-- 动态添加 Preconnect/DNS prefetch，使用可修改的 window.API_BASE_URL -->
+    <script>
+        (function(){
+            const base = (window.API_BASE_URL || 'https://minorimusicapi.zeabur.app').replace(/\/$/, '');
+            try{
+                const pre = document.createElement('link');
+                pre.rel = 'preconnect';
+                pre.href = base;
+                pre.crossOrigin = 'anonymous';
+                document.head.appendChild(pre);
+            }catch(e){}
+            try{
+                const host = base.replace(/^https?:\/\//, '');
+                const dns = document.createElement('link');
+                dns.rel = 'dns-prefetch';
+                dns.href = '//' + host;
+                document.head.appendChild(dns);
+            }catch(e){}
+        })();
+    </script>
 
     <style>
         :root {
@@ -334,6 +355,19 @@
             margin-bottom: 8px; padding-left: 5px;
         }
 
+        /* 下载模态样式 */
+        .download-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 10000; }
+        .download-modal.show { display: flex; }
+        .download-panel { width: 420px; max-width: 92%; background: var(--glass-strong); border: 1px solid var(--border); padding: 16px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+        .download-header { display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:1rem; margin-bottom:6px }
+        .download-panel .panel-close { display:inline-block; background:none; border:none; font-size:1.4rem; cursor:pointer; color:var(--text-sub) }
+        .quality-item { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:8px; background: rgba(255,255,255,0.6); }
+        .quality-item > div:first-child { flex: 1 1 auto; min-width: 0; }
+        .quality-action button { padding:6px 10px; }
+        .quality-item.disabled { opacity:0.45; pointer-events:none; filter:grayscale(0.4); }
+        .quality-meta { color:var(--text-sub); font-size:0.9rem }
+        .quality-action { min-width:90px; display:flex; gap:8px; justify-content:flex-end }
+
         /* 高级菜单 */
         .advanced-menu-container { position: relative; }
         .advanced-menu {
@@ -494,6 +528,19 @@
     <canvas id="visual-canvas"></canvas>
     <div class="drag-mask"><h1>投喂音乐</h1><p>MP3 / FLAC / OGG / SLI</p></div>
 
+    <!-- 下载模态窗口（隐藏，点击下载按钮弹出） -->
+    <div id="download-modal" class="download-modal" style="display:none;">
+        <div class="download-panel">
+            <div class="download-header">
+                <span id="download-title">下载音质</span>
+                <button class="panel-close" id="download-close">&times;</button>
+            </div>
+            <div id="download-track-info" style="margin:8px 0;color:var(--text-sub);font-size:0.95rem"></div>
+            <div id="download-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+            <div style="text-align:right"><button class="glass-btn" id="download-cancel">关闭</button></div>
+        </div>
+    </div>
+
     <!-- 网易云搜索面板 -->
     <div class="netease-panel" id="netease-panel">
         <div class="netease-content">
@@ -573,6 +620,8 @@
             <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
             <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
             <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐">☁️ <span class="btn-text">云音乐</span></button>
+            <!-- 移动端下载按钮，放在云音乐右侧 -->
+            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载">⬇️</button>
             <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词">📝 <span class="btn-text">云词</span></button>
             <select id="effect-select" class="glass-btn desktop-only">
                 <option value="none">✨ 无特效</option>
@@ -684,6 +733,7 @@
                     <div class="vol-popup" id="vol-popup"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
                     <button class="btn" id="vol-btn" title="Volume"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
                 </div>
+                <button class="btn desktop-only" id="download-btn" title="下载" style="margin-left:8px"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h3.67v6h6V9h3.67L12 2z"/></svg></button>
             </div>
         </div>
     </div>
@@ -807,6 +857,20 @@
             } catch (e) { return false; }
         }
 
+        // 删除 IDB 中的键（用于刷新 cachedFetchJson 的缓存）
+        async function idbDelete(key) {
+            try {
+                const db = await openIdb();
+                return await new Promise((res, rej) => {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    const store = tx.objectStore(IDB_STORE);
+                    const r = store.delete(key);
+                    r.onsuccess = () => res(true);
+                    r.onerror = () => rej(r.error);
+                });
+            } catch (e) { return false; }
+        }
+
         // cachedFetch: 尝试从IDB获取 JSON 缓存，否则走队列请求并缓存
         async function cachedFetchJson(url, options = {}, ttl = 3600_000) {
             const key = 'json|' + url;
@@ -842,6 +906,202 @@
             volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range'),
             // Analyze UI
             anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMsg: document.getElementById('ana-msg')
+        };
+        // 下载 UI 元素
+        const downloadBtn = document.getElementById('download-btn');
+        const downloadBtnMobile = document.getElementById('download-btn-mobile');
+        const downloadModal = document.getElementById('download-modal');
+        const downloadClose = document.getElementById('download-close');
+        const downloadCancel = document.getElementById('download-cancel');
+        const downloadListEl = document.getElementById('download-list');
+        const downloadTitle = document.getElementById('download-title');
+        const downloadTrackInfo = document.getElementById('download-track-info');
+
+        const QUALITY_LEVELS = [
+            { key: 'standard', label: '标准 (128kbps)' },
+            { key: 'higher', label: '较高 (192kbps)' },
+            { key: 'exhigh', label: '极高 (320kbps)' },
+            { key: 'lossless', label: '无损 (FLAC)' },
+            { key: 'hires', label: 'Hi-Res' }
+        ];
+
+        function closeDownloadModal() {
+            downloadModal.classList.remove('show');
+            downloadModal.style.display = 'none';
+            downloadListEl.innerHTML = '';
+        }
+
+        downloadClose.onclick = closeDownloadModal;
+        downloadCancel.onclick = closeDownloadModal;
+
+        // 移动端按钮触发桌面下载逻辑（复用同一逻辑）
+        if (downloadBtnMobile) {
+            downloadBtnMobile.onclick = () => { if (downloadBtn) downloadBtn.click(); };
+        }
+
+        // 弹出下载模态并检测各音质可用性
+        downloadBtn.onclick = async function() {
+            const playing = window._currentPlaying || null;
+            if (!playing) {
+                alert('当前没有正在播放的可下载歌曲');
+                return;
+            }
+            if (!playing.netease) {
+                alert('当前仅支持网易云在线歌曲下载');
+                return;
+            }
+            const songId = playing.songId || playing.id || (playing.songData && (playing.songData.id || playing.songData.songId));
+            const songName = playing.songData?.name || playing.name || 'Unknown';
+            const artists = (playing.songData?.ar || playing.songData?.artists || []).map ? (playing.songData?.ar || playing.songData?.artists).map(a=>a.name).join(', ') : (playing.artists || '');
+
+            downloadTitle.textContent = '下载音质';
+            downloadTrackInfo.textContent = `${songName}${artists ? ' — ' + artists : ''}`;
+            downloadModal.style.display = 'flex';
+            setTimeout(()=>downloadModal.classList.add('show'), 10);
+
+            downloadListEl.innerHTML = '';
+            const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+
+            for (const q of QUALITY_LEVELS) {
+                const item = document.createElement('div');
+                item.className = 'quality-item';
+                item.dataset.level = q.key;
+                const left = document.createElement('div');
+                left.innerHTML = `<div style="font-weight:600">${q.label}</div><div class="quality-meta">检测中…</div>`;
+                const right = document.createElement('div');
+                right.className = 'quality-action';
+                const checkBtn = document.createElement('button');
+                checkBtn.className = 'glass-btn';
+                checkBtn.textContent = '检测';
+                right.appendChild(checkBtn);
+                item.appendChild(left);
+                item.appendChild(right);
+                downloadListEl.appendChild(item);
+
+                (async function(it, level){
+                    try {
+                        // Logic Strategy: 分层策略
+                        // neteaseVipType: 0=普通, 1=VIP, 2=SVIP, 3=音乐包
+                        const isVipUser = neteaseUser && neteaseVipType > 0;
+                        const isHighResTarget = (level === 'lossless' || level === 'hires');
+                        
+                        let url;
+
+                        if (isVipUser) {
+                            // === 策略 A: VIP 用户 ===
+                            // 全都“伪装”。既然有权限，就用最标准的参数 (buildApiUrl 会加 randomCNIP)，再带上 os=pc
+                            // 这样最稳定，不容易因为 API 波动而出错
+                            url = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                        } else {
+                            // === 策略 B: 普通/未登录用户 ===
+                            if (isHighResTarget) {
+                                // 目标是无损/Hi-Res：使用“不伪装”模式 (裸奔)
+                                // 绕过 randomCNIP 和 os=pc，利用 API 漏洞获取无损
+                                url = `${NETEASE_API_HOST}/song/url/v1?id=${songId}&level=${level}${cookieParam}`;
+                            } else {
+                                // 目标是普通音质 (320k及以下)：使用“伪装”模式
+                                // 正常请求，防止因为太裸奔被判定为机器人
+                                url = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                            }
+                        }
+                        
+                        // 发起请求
+                        const json = await cachedFetchJson(url, { useQueue: true }, 30_000);
+                        const data = json?.data && json.data[0] ? json.data[0] : null;
+                        const metaEl = it.querySelector('.quality-meta');
+                        const rightArea = it.querySelector('.quality-action');
+                        
+                        if (json && json.code === 200 && data && data.url) {
+                            // 更稳健的文件类型推断，避免把低码 mp3 误判为 FLAC
+                            const urlLower = (data.url || '').toLowerCase();
+                            const br = data.br || 0;
+                            const size = data.size || 0;
+
+                            // 优先使用 API 返回的 type（如果有且明确）
+                            let fileExt = (data.type || '').toLowerCase();
+                            if (!fileExt) {
+                                // 没有 type 时根据请求的 level 做默认推断
+                                if (level === 'lossless' || level === 'hires') fileExt = 'flac';
+                                else fileExt = 'mp3';
+                            }
+
+                            // 如果 URL 明显包含无损后缀，且满足一定条件，再强制判为 flac/wav
+                            const urlHasFlac = urlLower.includes('.flac');
+                            const urlHasWav = urlLower.includes('.wav');
+                            // 当且仅当：请求目标为无损，或码率非常高，或文件体积较大时，才把 URL 中的 .flac 作为判定依据
+                            if (urlHasFlac) {
+                                if (level === 'lossless' || level === 'hires' || br >= 900000 || size > 15 * 1024 * 1024) {
+                                    fileExt = 'flac';
+                                }
+                            } else if (urlHasWav) {
+                                if (level === 'lossless' || level === 'hires' || br >= 900000 || size > 15 * 1024 * 1024) {
+                                    fileExt = 'wav';
+                                }
+                            }
+
+                            // 构建展示文本：若为无损且码率为 0（未登录或被隐藏），只显示格式名
+                            let metaText = fileExt.toUpperCase();
+                            if (br > 0) metaText += ` ${Math.round(br/1000)}kbps`;
+                            if (size > 0) metaText += ` ${(size/1024/1024).toFixed(1)}MB`;
+                            
+                            metaEl.textContent = metaText;
+                            rightArea.innerHTML = '';
+                            
+                            const dlBtn = document.createElement('button');
+                            dlBtn.className = 'glass-btn';
+                            dlBtn.textContent = '下载';
+                            dlBtn.onclick = async () => {
+                                const safeName = (songName + ' - ' + artists).replace(/[\\/:*?"<>|]+/g, '_').slice(0,120);
+                                const fileName = `${safeName}.${fileExt}`;
+                                // 优先尝试通过 fetch 下载为 Blob，这样能触发浏览器保存对话框；若跨域被阻止则回退到直接打开链接
+                                try {
+                                    const resp = await fetch(data.url, { method: 'GET', mode: 'cors' });
+                                    if (!resp.ok) throw new Error('网络错误');
+                                    const blob = await resp.blob();
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = blobUrl;
+                                    a.download = fileName;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    a.remove();
+                                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                                } catch (e) {
+                                    // 回退：使用新标签或直接触发下载（浏览器策略可能仍然打开新页）
+                                    try {
+                                        const a = document.createElement('a');
+                                        a.href = data.url;
+                                        a.target = '_blank';
+                                        a.rel = 'noopener noreferrer';
+                                        a.download = fileName;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        a.remove();
+                                    } catch (e2) {
+                                        window.open(data.url, '_blank', 'noopener');
+                                    }
+                                }
+                            };
+                            rightArea.appendChild(dlBtn);
+                        } else {
+                            // 失败处理
+                            it.classList.add('disabled');
+                            metaEl.textContent = '需 VIP';
+                            rightArea.innerHTML = '';
+                            const noBtn = document.createElement('button');
+                            noBtn.className = 'glass-btn';
+                            noBtn.textContent = '无权限';
+                            noBtn.disabled = true;
+                            rightArea.appendChild(noBtn);
+                        }
+                    } catch (e) {
+                        it.classList.add('disabled');
+                        const metaEl = it.querySelector('.quality-meta'); if (metaEl) metaEl.textContent = '检测失败';
+                        const rightArea = it.querySelector('.quality-action'); rightArea.innerHTML = '';
+                        const noBtn = document.createElement('button'); noBtn.className = 'glass-btn'; noBtn.textContent = 'Err'; noBtn.disabled = true; rightArea.appendChild(noBtn);
+                    }
+                })(item, q.key);
+            }
         };
         const colorThief = new ColorThief();
         const canvasCtx = el.canvas.getContext('2d');
@@ -1224,6 +1484,18 @@
         async function playTrack(i) {
             if(i < 0 || i >= playlist.length) return;
             curIdx = i; renderPlaylist();
+            // 标记当前播放曲目信息，供下载按钮使用（可能来源于播放列表或本地文件）
+            try{
+                const trackInfo = playlist[i];
+                window._currentPlaying = {
+                    netease: !!trackInfo.netease,
+                    songData: trackInfo.songData || null,
+                    songId: trackInfo.songId || trackInfo.id || null,
+                    name: trackInfo.name || trackInfo.songData?.name || '',
+                    artists: (trackInfo.songData?.ar || trackInfo.artists || trackInfo.ar || []).map ? (trackInfo.songData?.ar || trackInfo.ar || trackInfo.artists).map(a=>a.name).join(', ') : (trackInfo.artists || '') ,
+                    file: trackInfo.file || null
+                };
+            }catch(e){}
             const track = playlist[i];
             stopAudio();
             currentAudioQuality = ''; // 先清除，后面会根据文件信息设置
@@ -1436,8 +1708,8 @@
             r.readAsText(file);
         }
 
-        // 网易云音乐API服务
-        const NETEASE_API_HOST = 'https://minorimusicapi.zeabur.app';
+        // 网易云音乐API服务（使用全局可修改的 API 地址）
+        const NETEASE_API_HOST = (window.API_BASE_URL || 'https://minorimusicapi.zeabur.app').replace(/\/$/, '');
         
         // Vercel部署需要添加的参数（绕过IP限制）
         function buildApiUrl(path) {
@@ -1754,8 +2026,25 @@
 
         el.playBtn.onclick = () => {
             if(actx.state === 'suspended') actx.resume();
-            if(playbackState.isPlaying) { playbackState.pauseTime = getCurrentTime(); stopAudio(); el.coverWrap.classList.remove('playing'); updatePlayIcon(); }
-            else { if(audioBuffer) { startAudio(playbackState.pauseTime); el.coverWrap.classList.add('playing'); updatePlayIcon(); } }
+            if(playbackState.isPlaying) {
+                playbackState.pauseTime = getCurrentTime();
+                stopAudio();
+                el.coverWrap.classList.remove('playing');
+                updatePlayIcon();
+            } else {
+                if (audioBuffer) {
+                    startAudio(playbackState.pauseTime);
+                    el.coverWrap.classList.add('playing');
+                    updatePlayIcon();
+                } else {
+                    // 如果没有已解码音频，尝试从当前索引加载并播放（例如恢复后的列表）
+                    if (typeof curIdx === 'number' && curIdx >= 0 && curIdx < playlist.length) {
+                        playTrackFromPlaylist(curIdx);
+                    } else if (playlist.length > 0) {
+                        playTrackFromPlaylist(0);
+                    }
+                }
+            }
         };
         
         // 进度条拖动支持
@@ -2379,6 +2668,17 @@
             const myPlayToken = ++window._playActionTokenSeed;
             window._currentPlayActionToken = myPlayToken;
 
+            // 标记当前播放为在线网易云歌曲（用于下载检测）
+            try {
+                window._currentPlaying = {
+                    netease: true,
+                    songData: song,
+                    songId: song.id,
+                    name: song.name,
+                    artists: (song.artists || song.ar || []).map(a => a.name).join(', ')
+                };
+            } catch (e) {}
+
             const songId = song.id;
             let songName = song.name;
             let artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
@@ -2419,23 +2719,26 @@
             // 创建新的 AbortController（与play token配合）
             if (window.currentAbortController) window.currentAbortController.abort();
             window.currentAbortController = new AbortController();
-            const signal = window.currentAbortController.signal;
+            const controller = window.currentAbortController;
+            const signal = controller.signal;
             
             try {
                 // 获取音频URL - 使用新版API指定音质，优先从缓存获取（短时缓存）
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                const levelParam = `&level=${neteaseQuality}`;
+                const levelParam = `&level=${neteaseQuality}&os=pc`;
                 if (window._currentPlayActionToken !== myPlayToken) throw new Error('stale');
                 const json = await cachedFetchJson(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`), { signal, useQueue: true }, 30_000);
-                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
                 
                 if (!json || json.code !== 200) throw new Error('获取音频失败');
-                if (json.code !== 200 || !json.data?.[0]?.url) {
-                    throw new Error('无法获取音频链接' + (neteaseCookie ? '' : '，登录后可播放更多歌曲'));
+                // 保证不会出现空引用
+                if (json.code !== 200) throw new Error('获取音频失败');
+                let audioInfo = (json.data && json.data[0]) ? json.data[0] : null;
+                // 如果连第一个都没有，抛出特定错误以便后续触发强制解灰
+                if (!audioInfo || !audioInfo.url) {
+                    throw new Error('NO_URL_FROM_OFFICIAL');
                 }
-                
-                let audioUrl = json.data[0].url;
-                const audioInfo = json.data[0];
+                let audioUrl = audioInfo.url;
                 // 获取音质信息 - API可能返回: br(比特率), type(格式), level, sr(采样率)等
                 const brKbps = audioInfo.br ? Math.round(audioInfo.br / 1000) : null;
                 const audioType = (audioInfo.type || 'mp3').toUpperCase();
@@ -2483,18 +2786,18 @@
                 
                 // 获取音频数据
                 // 二次检查：确保仍是当前播放请求
-                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
                 const audioResp = await fetch(audioUrl, { signal });
-                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
                 if (!audioResp.ok) throw new Error('音频加载失败');
                 
                 el.bufferLine.style.width = '60%';
                 const ab = await audioResp.arrayBuffer();
-                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
                 
                 el.bufferLine.style.width = '80%';
                 audioBuffer = await actx.decodeAudioData(ab);
-                if (window._currentPlayActionToken !== myPlayToken) { signal.abort(); throw new Error('stale'); }
+                if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
                 
                 el.bufferLine.style.width = '100%';
                 playbackState.duration = audioBuffer.duration;
@@ -2533,6 +2836,25 @@
                     // 过期或被取消，不记录为错误
                     log('Play request aborted/stale');
                     return;
+                }
+                // 如果是没有官方链接或 404，尝试强制触发解灰并重试（最多重试一次）
+                const errMsg = (e && e.message) ? e.message : '';
+                const isNoUrl = errMsg === 'NO_URL_FROM_OFFICIAL' || errMsg.includes('404') || errMsg.includes('HTTP 404');
+                window._playRetryMap = window._playRetryMap || {};
+                const alreadyRetried = window._playRetryMap[songId] || 0;
+                if (isNoUrl && alreadyRetried < 1) {
+                    window._playRetryMap[songId] = alreadyRetried + 1;
+                    log('⚠️ 官方无链接或链接失效，尝试强制触发解灰并重试...', 'warn');
+                    try {
+                        const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+                        // 清除原始缓存（若有）
+                        try { await idbDelete('json|' + buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`)); } catch(_) {}
+                        // 强制以 standard 请求并带时间戳绕过缓存，触发服务器重新生成链接
+                        const retryUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=standard&noCache=${Date.now()}&os=pc${cookieParam}`);
+                        try { await cachedFetchJson(retryUrl, { useQueue: true }, 30_000); } catch (_) {}
+                    } catch (_) {}
+                    // 重新发起播放请求（新的请求会重新走获取逻辑）
+                    return playNeteaseSong(song);
                 }
                 log('Play error: ' + e.message, 'error');
                 el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${e.message}</div>`;
@@ -2818,15 +3140,27 @@
             }
         }
         
-        // 修改 handleNext 使用新的播放函数
+        // 修改 handleNext：区分手动点击 和 自动播放结束
+        // 点击按钮时会传入 Event 对象（truthy），自动播放结束调用时没有参数（falsy）
         const originalHandleNext = handleNext;
-        handleNext = function() {
+        handleNext = function(e) {
             if (playlist.length === 0) return;
+
+            const isAuto = !e; // 自动触发（播放结束）时为 true
+
+            // 仅在自动触发且为单曲循环时，直接重放内存中的已解码音频（瞬时，无网络/解码开销）
+            if (isAuto && playMode === 2 && audioBuffer) {
+                log('Single Loop: Auto Replay ⚡️');
+                startAudio(0);
+                try { if (el && el.coverWrap) el.coverWrap.classList.add('playing'); } catch(err) {}
+                return;
+            }
+
+            // 否则（手动点击或非单曲循环），切换到下一首
             let nextIdx;
             if (playMode === 1) nextIdx = Math.floor(Math.random() * playlist.length);
-            else if (playMode === 2) nextIdx = curIdx;
             else nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
-            
+
             playTrackFromPlaylist(nextIdx);
         };
         
@@ -2922,6 +3256,88 @@
         
         // 初始化懒加载
         lazyLoadImages();
+
+        // ========== 播放列表持久化保存 (新增功能) ==========
+
+        // 保存播放列表 (仅限网易云资源)
+        function saveCurrentPlaylist() {
+            try {
+                const savedList = playlist
+                    .filter(track => track.netease)
+                    .map(track => ({
+                        name: track.name,
+                        id: track.songId || track.songData?.id,
+                        ar: track.songData?.artists || track.songData?.ar || [],
+                        al: track.songData?.album || track.songData?.al || {}
+                    }));
+
+                if (savedList.length > 0) {
+                    localStorage.setItem('aurora_saved_playlist', JSON.stringify(savedList));
+                    localStorage.setItem('aurora_saved_index', String(curIdx || 0));
+                    // 不用频繁 log，保持轻量
+                } else {
+                    localStorage.removeItem('aurora_saved_playlist');
+                    localStorage.removeItem('aurora_saved_index');
+                }
+            } catch (e) {
+                console.warn('saveCurrentPlaylist error', e);
+            }
+        }
+
+        // 恢复播放列表
+        function restoreSavedPlaylist() {
+            try {
+                const rawList = localStorage.getItem('aurora_saved_playlist');
+                const rawIdx = localStorage.getItem('aurora_saved_index');
+                if (!rawList) return;
+                const parsedList = JSON.parse(rawList);
+                if (!Array.isArray(parsedList) || parsedList.length === 0) return;
+
+                const restoredTracks = parsedList.map(item => ({
+                    name: item.name,
+                    netease: true,
+                    songId: item.id,
+                    songData: {
+                        id: item.id,
+                        name: (item.name || '').split(' - ')[0] || item.name,
+                        ar: item.ar || [],
+                        al: item.al || {},
+                        artists: item.ar || [],
+                        album: item.al || {}
+                    }
+                }));
+
+                if (playlist.length === 0) {
+                    playlist = restoredTracks;
+                    curIdx = Math.max(0, Math.min(restoredTracks.length - 1, parseInt(rawIdx) || 0));
+                    renderPlaylist();
+                    log(`📚 Restored ${playlist.length} songs from history`, 'success');
+
+                    // 恢复 UI 显示但不自动播放
+                    const currentTrack = playlist[curIdx];
+                    if (currentTrack) {
+                        el.title.textContent = currentTrack.name || '';
+                        el.artist.textContent = 'Ready to play';
+                        const cover = currentTrack.songData?.al?.picUrl;
+                        if (cover) {
+                            el.img.src = cover + '?param=500y500';
+                            el.img.style.opacity = 1;
+                            setTimeout(() => updateTheme(el.img), 200);
+                        }
+                        const items = el.plContainer.children;
+                        if (items[curIdx]) items[curIdx].classList.add('active');
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to restore playlist:', e);
+            }
+        }
+
+        // 页面卸载时自动保存（刷新/关闭）
+        window.addEventListener('beforeunload', saveCurrentPlaylist);
+
+        // 页面载入时尝试恢复
+        restoreSavedPlaylist();
         
     </script>
 </body>
