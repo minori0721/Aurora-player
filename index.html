@@ -565,7 +565,7 @@
             </div>
             <!-- 音质选择 -->
             <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
-                <label>🎧 音质:</label>
+                <label for="netease-quality-select">🎧 音质:</label>
                 <select id="netease-quality-select" class="netease-quality-select">
                     <option value="standard">标准 (128kbps)</option>
                     <option value="higher">较高 (192kbps)</option>
@@ -786,6 +786,48 @@
         let loopState = { active: false, start: 0, end: 0 };
         let particles = [];
         let currentAbortController = null; // 用于取消之前的网络请求
+        // ---- 下一首预加载相关 ----
+        let nextSongRawData = null; // 存放预加载的 ArrayBuffer（下一首）
+        let nextSongAbortController = null; // AbortController（用于取消预加载请求）
+        let hasPreloaded = false; // 是否已完成预加载
+        let nextPreloadIndex = null; // 预加载对应的播放列表索引
+        let prefetchAttempted = false; // 是否尝试过预取
+        let prefetchInProgress = false; // 防止重复发起预取
+        let nextSongFetchPromise = null; // 如果预取正在进行，保存其 Promise（用于播放时复用）
+
+        // 等待预取完成（短等待），返回 true 表示预取已完成且数据可用
+        async function waitForPrefetchCompletion(timeoutMs = 3000) {
+            if (hasPreloaded && nextSongRawData) return true;
+            if (!prefetchInProgress) return false;
+            return await new Promise(resolve => {
+                const intervalMs = 50;
+                let elapsed = 0;
+                const iv = setInterval(() => {
+                    if (hasPreloaded && nextSongRawData) {
+                        clearInterval(iv); clearTimeout(to);
+                        resolve(true);
+                    } else if (!prefetchInProgress) {
+                        clearInterval(iv); clearTimeout(to);
+                        resolve(false);
+                    }
+                    elapsed += intervalMs;
+                }, intervalMs);
+                const to = setTimeout(() => {
+                    clearInterval(iv);
+                    resolve(false);
+                }, timeoutMs);
+            });
+        }
+
+        // 等待任意 Promise 在限定时间内解析（返回 {ok, value}）
+        function waitForPromiseWithTimeout(promise, timeoutMs) {
+            if (!promise) return Promise.resolve({ ok: false });
+            let timer;
+            return Promise.race([
+                promise.then(v => ({ ok: true, value: v })).catch(e => ({ ok: false, err: e })),
+                new Promise(res => { timer = setTimeout(() => res({ ok: false, timeout: true }), timeoutMs); })
+            ]).then(r => { if (timer) clearTimeout(timer); return r; });
+        }
         let currentPlaylistSongs = []; // 当前歌单的所有歌曲
         let currentPage = 0; // 当前页码
         const SONGS_PER_PAGE = 50; // 每页显示的歌曲数量
@@ -810,23 +852,6 @@
             });
         }
 
-        // 预取队列（并发1）
-        const prefetchQueue = [];
-        let prefetchActive = 0;
-        function _processPrefetch() {
-            if (prefetchActive >= 1) return;
-            const task = prefetchQueue.shift();
-            if (!task) return;
-            prefetchActive++;
-            const {fn, resolve, reject} = task;
-            Promise.resolve().then(() => fn()).then(r => { resolve(r); }).catch(e => { reject(e); }).finally(() => { prefetchActive--; _processPrefetch(); });
-        }
-        function prefetchFetch(url, options={}) {
-            return new Promise((resolve, reject) => {
-                prefetchQueue.push({ fn: () => fetch(url, options), resolve, reject });
-                _processPrefetch();
-            });
-        }
 
         // 简单 IndexedDB 缓存（metadata only）
         const IDB_DB = 'aurora-cache';
@@ -896,6 +921,143 @@
             const data = await resp.json();
             try { await idbSet(key, { ts: Date.now(), data }); } catch (e) {}
             return data;
+        }
+
+        // 取消下一首预加载
+        function cancelNextPreload() {
+            try {
+                if (nextSongAbortController) {
+                    try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); }
+                    catch(e) {}
+                    nextSongAbortController = null;
+                }
+            } finally {
+                nextSongRawData = null;
+                hasPreloaded = false;
+                nextPreloadIndex = null;
+                prefetchAttempted = false; // <--- 切歌时重置为 false
+                prefetchInProgress = false;
+                try { nextSongFetchPromise = null; } catch (e) {}
+            }
+            log('Next-song preload cancelled', 'warn');
+        }
+
+        // 预加载下一首原始数据（ArrayBuffer），支持本地与网易云
+        async function prefetchNextSong() {
+            try {
+                if (!playlist || playlist.length === 0 || curIdx < 0) return;
+                
+                // 单曲循环模式下，不要预加载下一首，省流
+                if (playMode === 2) return; 
+
+                // 决定下一首索引
+                let nextIdx;
+                if (playMode === 1) {
+                    if (playlist.length === 1) return; 
+                    // 随机模式：预判下一首
+                    nextIdx = Math.floor(Math.random() * playlist.length);
+                    if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
+                } else {
+                    nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+                }
+
+                if (hasPreloaded && nextPreloadIndex === nextIdx) return; 
+                if (prefetchInProgress) return; 
+                prefetchInProgress = true;
+
+                // 取消旧的
+                if (nextSongAbortController) {
+                    try { nextSongAbortController.abort(); } catch(e) {}
+                    nextSongAbortController = null;
+                }
+                nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false; // <--- 切歌时重置为 false
+
+                const nextTrack = playlist[nextIdx];
+                if (!nextTrack) { prefetchInProgress = false; return; }
+
+                let controller = null;
+
+                // --- 本地文件预加载 ---
+                if (nextTrack.file) {
+                    controller = { aborted: false, abort() { this.aborted = true; } };
+                    nextSongAbortController = controller;
+                    try {
+                        const ab = await nextTrack.file.arrayBuffer();
+                        if (controller.aborted) return;
+                        nextSongRawData = ab;
+                        hasPreloaded = true;
+                        nextPreloadIndex = nextIdx;
+                        log(`Preloaded local file: ${nextTrack.name}`, 'success');
+                    } catch (e) {
+                        log('Local prefetch error', 'warn');
+                    }
+                    prefetchInProgress = false;
+                    return;
+                }
+
+                // --- 网易云在线预加载 ---
+                controller = new AbortController();
+                nextSongAbortController = controller;
+                // 立即记录预加载目标索引，便于播放路径复用正在进行的 Promise
+                nextPreloadIndex = nextIdx;
+                prefetchAttempted = true;
+                // 构造 fetch promise 并保存到 nextSongFetchPromise，供播放时复用
+                try {
+                    const songId = nextTrack.songId || nextTrack.songData?.id;
+                    if (!songId) throw new Error('No ID');
+
+                    const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+                    const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`);
+
+                    // 保存 Promise（包含获取链接与下载 ArrayBuffer 的完整流程）
+                    nextSongFetchPromise = (async () => {
+                        prefetchInProgress = true;
+                        try {
+                            const json = await cachedFetchJson(apiUrl, { signal: controller.signal, useQueue: true }, 30_000);
+                            const audioUrl = json?.data?.[0]?.url?.replace('http://', 'https://');
+                            if (!audioUrl) throw new Error('No URL (May need VIP)');
+                            const br = json?.data?.[0]?.br || 0;
+                            const size = json?.data?.[0]?.size || 0;
+                            const sizeMB = (size / 1024 / 1024).toFixed(1);
+
+                            const resp = await fetch(audioUrl, { signal: controller.signal });
+                            if (!resp.ok) throw new Error('Fetch failed');
+                            const ab = await resp.arrayBuffer();
+                            return { ab, br, sizeMB };
+                        } finally {
+                            // 不在这里清理 prefetchInProgress — 让调用方根据状态处理
+                        }
+                    })();
+
+                    // 处理 Promise 结果：填充缓存并记录信息
+                    nextSongFetchPromise.then(res => {
+                        if (!res || controller.signal.aborted) return;
+                        nextSongRawData = res.ab;
+                        hasPreloaded = true;
+                        nextPreloadIndex = nextIdx;
+                        log(`Preloaded: ${nextTrack.name} [${res.br>0 ? Math.round(res.br/1000)+'k' : 'Unknown'}] ${res.sizeMB}MB`, 'success');
+                        // 写入辅助缓存以便 metadata 可用
+                        cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
+                        cachedFetchJson(buildApiUrl(`/lyric?id=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
+                    }).catch(e => {
+                        if (e && e.name === 'AbortError') {
+                            // aborted by cancelNextPreload
+                        } else {
+                            log('Prefetch net error: ' + (e && e.message), 'warn');
+                        }
+                    }).finally(() => {
+                        prefetchInProgress = false;
+                        // 保留 nextSongFetchPromise until consumed or cancelled
+                    });
+
+                } catch (e) {
+                    if (e.name !== 'AbortError') log('Prefetch setup error: ' + e.message, 'warn');
+                    prefetchInProgress = false;
+                    nextSongFetchPromise = null;
+                }
+            } catch (e) {
+                prefetchInProgress = false;
+            }
         }
 
         const el = {
@@ -1642,6 +1804,7 @@
 
         async function playTrack(i) {
             if(i < 0 || i >= playlist.length) return;
+            prefetchAttempted = false; // 新增：无论怎么切歌，先重置预加载状态
             curIdx = i; renderPlaylist();
             // 标记当前播放曲目信息，供下载按钮使用（可能来源于播放列表或本地文件）
             try{
@@ -1668,7 +1831,36 @@
             log(`Track: ${track.name}`);
 
             try {
-                const ab = await track.file.arrayBuffer();
+                let ab = null;
+                // 如果该索引是已预加载的下一首，尝试短等待预取完成（最多800ms），否则取消预取并走本地读取
+                if (nextPreloadIndex === i) {
+                    try {
+                        if (hasPreloaded && nextSongRawData) {
+                            // 直接使用
+                        } else if (prefetchInProgress) {
+                            const ok = await waitForPrefetchCompletion(800);
+                            if (!ok || !hasPreloaded || !nextSongRawData) {
+                                try { cancelNextPreload(); } catch(e) {}
+                            }
+                        }
+
+                        if (hasPreloaded && nextSongRawData) {
+                            ab = nextSongRawData;
+                            // 释放预加载状态，解码后释放内存
+                            nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false;
+                            if (nextSongAbortController) { try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); } catch(e) {} nextSongAbortController = null; }
+                            log('Using preloaded raw data for local track', 'success');
+                        } else {
+                            ab = await track.file.arrayBuffer();
+                        }
+                    } catch (e) {
+                        log('Error while attempting to use preloaded local data, fallback: ' + (e && e.message), 'warn');
+                        try { cancelNextPreload(); } catch(_) {}
+                        ab = await track.file.arrayBuffer();
+                    }
+                } else {
+                    ab = await track.file.arrayBuffer();
+                }
                 el.bufferLine.style.width = '30%';
                 let meta = null;
                 if(track.file.name.toLowerCase().endsWith('.flac')) {
@@ -1701,21 +1893,21 @@
                             if(!track.lrcFile) {
                                 if (neteaseSearchEnabled) {
                                     const songName = el.title.textContent;
-                                    // 延迟搜索，等待 duration 设置完成
-                                    const trySearch = () => {
-                                        if (playbackState.duration > 0) {
-                                            searchNeteaselyrics(songName, '', playbackState.duration);
-                                        } else {
-                                            if (!trySearch.attempts) trySearch.attempts = 0;
-                                            trySearch.attempts++;
-                                            if (trySearch.attempts < 30) {
-                                                setTimeout(trySearch, 100);
-                                            } else {
-                                                searchNeteaselyrics(songName, '', 0);
+                                    // 立即并行尝试获取歌词（即使 duration 还未准备好）
+                                    // 如果之后 duration 可用，再以准确时长重试一次以提高匹配准确度
+                                    searchNeteaselyrics(songName, '', playbackState.duration || 0);
+                                    if (!playbackState.duration) {
+                                        let attempts = 0;
+                                        const reTry = () => {
+                                            attempts++;
+                                            if (playbackState.duration > 0) {
+                                                searchNeteaselyrics(songName, '', playbackState.duration);
+                                            } else if (attempts < 30) {
+                                                setTimeout(reTry, 100);
                                             }
-                                        }
-                                    };
-                                    trySearch();
+                                        };
+                                        reTry();
+                                    }
                                 } else {
                                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
                                 }
@@ -1835,26 +2027,23 @@
             } else if(lyrics.length === 0) {
                 // 没有内嵌歌词
                 if (neteaseSearchEnabled) {
-                    // 开启了网易云搜索，尝试搜索
+                    // 开启了网易云搜索，立即并行尝试搜索（不再阻塞等待 duration）
                     const songName = el.title.textContent;
                     const artistName = common.artist || '';
-                    // 延迟搜索，等待 duration 设置完成
-                    const trySearch = () => {
-                        if (playbackState.duration > 0) {
-                            searchNeteaselyrics(songName, artistName, playbackState.duration);
-                        } else {
-                            // duration 还没准备好，100ms 后重试，最多重试 30 次
-                            if (!trySearch.attempts) trySearch.attempts = 0;
-                            trySearch.attempts++;
-                            if (trySearch.attempts < 30) {
-                                setTimeout(trySearch, 100);
-                            } else {
-                                // 超时，直接搜索不带时长
-                                searchNeteaselyrics(songName, artistName, 0);
+                    searchNeteaselyrics(songName, artistName, playbackState.duration || 0);
+                    // 若当前时长尚未准备好，稍后重试一次以提高匹配准确度
+                    if (!playbackState.duration) {
+                        let attempts = 0;
+                        const reTry = () => {
+                            attempts++;
+                            if (playbackState.duration > 0) {
+                                searchNeteaselyrics(songName, artistName, playbackState.duration);
+                            } else if (attempts < 30) {
+                                setTimeout(reTry, 100);
                             }
-                        }
-                    };
-                    trySearch();
+                        };
+                        reTry();
+                    }
                 } else {
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Pure Music</div>';
                 }
@@ -2131,7 +2320,15 @@
             requestAnimationFrame(renderLoop);
             const now = getCurrentTime();
             el.currTime.textContent = fmtTime(now);
-            if(playbackState.duration) el.progLine.style.width = (now / playbackState.duration) * 100 + '%';
+            if(playbackState.duration) {
+                const pct = (now / playbackState.duration) * 100;
+                el.progLine.style.width = pct + '%';
+                // 当剩余播放时间 <= 10 秒时，非阻塞地预取下一首原始数据（比按百分比更稳定）
+                if (playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
+                    prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
+                    try { prefetchNextSong(); } catch(e) {}
+                }
+            }
             // 刷新歌词高亮与居中（会做防抖判断）
             try { refreshLyricHighlightAndCenter(); } catch(e) {}
             renderVisuals();
@@ -2296,7 +2493,8 @@
                 const d = document.createElement('div'); d.className = `pl-item ${i === curIdx ? 'active' : ''}`;
                 const icon = t.netease ? '☁️ ' : '';
                 d.innerHTML = `<span style="width:20px; opacity:0.5">${i+1}</span> ${icon}${t.name}`;
-                d.onclick = () => playTrackFromPlaylist(i); el.plContainer.appendChild(d);
+                d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(i); };
+                el.plContainer.appendChild(d);
             });
         }
         function updateTheme(img) {
@@ -2779,6 +2977,7 @@
         async function playNeteaseSong(song) {
             // play token 防止旧的播放请求完成后覆盖新的播放
             if (!window._playActionTokenSeed) window._playActionTokenSeed = 1;
+            prefetchAttempted = false; // 确保新歌开始时，允许触发预加载
             const myPlayToken = ++window._playActionTokenSeed;
             window._currentPlayActionToken = myPlayToken;
 
@@ -2830,12 +3029,83 @@
             resetLoopUI();
             lyrics = [];
             
+            // 如果有正在进行的 next-song 预取 Promise，且它对应当前要播放的歌曲，则复用该 Promise（避免重复下载）
+            try {
+                const nextPrefetchMatches = nextSongFetchPromise && (typeof nextPreloadIndex === 'number') && playlist[nextPreloadIndex] && ((playlist[nextPreloadIndex].songId || playlist[nextPreloadIndex].songData?.id) == songId);
+                if (nextPrefetchMatches) {
+                    // 优化：优先检查是否已完成（事件驱动），否则用单次超时等待（最多6000ms）——无轮询，完成时立即响应
+                    let res = null;
+                    if (hasPreloaded && nextSongRawData) {
+                        res = { ab: nextSongRawData };
+                    } else if (nextSongFetchPromise) {
+                        const wrapped = await waitForPromiseWithTimeout(nextSongFetchPromise, 6000);
+                        res = wrapped.ok ? wrapped.value : null;
+                    }
+
+                    if (res && res.ab) {
+                        el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
+                        el.loadTip.style.display = 'block';
+                        el.bufferLine.style.width = '30%';
+
+                        const ab = res.ab;
+                        // 清理预加载状态并防止后续复用
+                        nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false;
+                        try { nextSongFetchPromise = null; } catch(e) {}
+                        if (nextSongAbortController) { try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); } catch(e) {} nextSongAbortController = null; }
+
+                        el.bufferLine.style.width = '60%';
+                        audioBuffer = await actx.decodeAudioData(ab);
+                        el.bufferLine.style.width = '100%';
+                        playbackState.duration = audioBuffer.duration;
+                        el.totalTime.textContent = fmtTime(playbackState.duration);
+                        el.loadTip.style.display = 'none';
+
+                        // 播放成功，清除重试计数，防止内存泄漏 
+                        if (window._playRetryMap && window._playRetryMap[songId]) {
+                            delete window._playRetryMap[songId];
+                        }
+
+
+                        if (playlist[curIdx]) playlist[curIdx].songData = song;
+                        renderPlaylist();
+
+                        startAudio(0);
+                        el.coverWrap.classList.add('playing');
+                        updatePlayIcon();
+                        updateMediaSession();
+
+                        try { fetchLyricById(songId); } catch(_) {}
+
+                        // 预取下一首的元数据（并发1）
+                        try {
+                            const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
+                            if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
+                                const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
+                                if (nextId) {
+                                    const cookieParamLocal = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+                                    cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParamLocal}`), { useQueue: true }).catch(()=>{});
+                                    cachedFetchJson(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}&os=pc${cookieParamLocal}`), { useQueue: true }).catch(()=>{});
+                                }
+                            }
+                        } catch (_) {}
+
+                        return;
+                    } else {
+                        // 预取未在短时间内完成，放弃复用，取消预取并继续后续正常流程
+                        try { cancelNextPreload(); } catch(e) {}
+                    }
+                }
+            } catch (e) {
+                log('Prefetch reuse error, fallback: ' + (e && e.message), 'warn');
+                try { cancelNextPreload(); } catch(e) {}
+            }
+
             // 创建新的 AbortController（与play token配合）
             if (window.currentAbortController) window.currentAbortController.abort();
             window.currentAbortController = new AbortController();
             const controller = window.currentAbortController;
             const signal = controller.signal;
-            
+
             try {
                 // 获取音频URL - 使用新版API指定音质，优先从缓存获取（短时缓存）
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
@@ -2918,6 +3188,11 @@
                 el.totalTime.textContent = fmtTime(playbackState.duration);
                 el.loadTip.style.display = 'none';
                 
+                // 播放成功，清除重试计数，防止内存泄漏
+                if (window._playRetryMap && window._playRetryMap[songId]) {
+                delete window._playRetryMap[songId];
+}
+                
                 // 更新当前播放项的 songData（不覆盖整个播放列表）
                 if (playlist[curIdx]) {
                     playlist[curIdx].songData = song;
@@ -2929,21 +3204,23 @@
                 updatePlayIcon();
                 updateMediaSession();
                 
-                // 直接用歌曲ID获取歌词（已知ID无需搜索），传入当前播放的abort signal
-                try { fetchLyricById(songId, window.currentAbortController); } catch(_) {}
+                // 直接用歌曲ID获取歌词（已知ID无需搜索）
+                try { fetchLyricById(songId); } catch(_) {}
 
-                // 预取下一首的元数据（并发1）
-                try {
-                    const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
-                    if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
-                        const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
-                        if (nextId) {
-                            // 预取 song/detail 和 song/url（短时缓存）
-                            prefetchFetch(buildApiUrl(`/song/detail?ids=${nextId}`)).catch(()=>{});
-                            prefetchFetch(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}`)).catch(()=>{});
+                    // 预取下一首的元数据（并发1），带 cookie 以避免权限/匹配问题
+                    try {
+                        const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
+                        if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
+                            const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
+                            if (nextId) {
+                                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+                                // 预取 song/detail 和 song/url（短时缓存）
+                                // 使用 cachedFetchJson 替代 prefetchFetch，确保结果被写入 IDB 缓存
+                                cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParam}`), { useQueue: true }).catch(()=>{});
+                                cachedFetchJson(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}&os=pc${cookieParam}`), { useQueue: true }).catch(()=>{});
+                            }
                         }
-                    }
-                } catch (_) {}
+                    } catch (_) {}
                 
             } catch (e) {
                 if (e.message === 'stale' || e.name === 'AbortError') {
@@ -3230,6 +3507,7 @@
             curIdx = i;
             renderPlaylist();
             
+            
             if (track.netease) {
                 // 网易云歌曲
                 if (track.songData) {
@@ -3269,11 +3547,28 @@
                 try { if (el && el.coverWrap) el.coverWrap.classList.add('playing'); } catch(err) {}
                 return;
             }
-
-            // 否则（手动点击或非单曲循环），切换到下一首
+            // 确定目标下一首索引（在决定后再评估是否取消预取，以便在手动切歌时复用预加载）
             let nextIdx;
-            if (playMode === 1) nextIdx = Math.floor(Math.random() * playlist.length);
-            else nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+            if (playMode === 1) {
+                if (playlist.length === 1) return;
+                // 优先使用已预加载的随机目标（如果存在），以提升命中率
+                if (hasPreloaded && nextPreloadIndex !== null && nextPreloadIndex !== curIdx) nextIdx = nextPreloadIndex;
+                else {
+                    nextIdx = Math.floor(Math.random() * playlist.length);
+                    if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
+                }
+            } else {
+                nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+            }
+
+            // 手动触发时：仅在目标不是当前正在/已预加载的那一首时才取消预取（否则保留以复用）
+            if (!isAuto) {
+                const prefetchMatchesTarget = (nextPreloadIndex !== null && nextPreloadIndex === nextIdx);
+                const hasOngoingPrefetch = prefetchInProgress || hasPreloaded || !!nextSongFetchPromise;
+                if (!prefetchMatchesTarget || !hasOngoingPrefetch) {
+                    try { cancelNextPreload(); } catch(err) {}
+                }
+            }
 
             playTrackFromPlaylist(nextIdx);
         };
@@ -3281,6 +3576,7 @@
         // 修改上一曲/下一曲按钮
         document.getElementById('prev-btn').onclick = () => {
             if (playlist.length === 0) return;
+            try { cancelNextPreload(); } catch(e) {}
             playTrackFromPlaylist(curIdx - 1 < 0 ? playlist.length - 1 : curIdx - 1);
         };
         document.getElementById('next-btn').onclick = handleNext;
