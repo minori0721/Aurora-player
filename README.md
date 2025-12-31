@@ -13,19 +13,20 @@
 
 ## 🚀 核心功能
 
-### ☁️ 网易云音乐深度集成 (NEW!)
+### ☁️ 网易云音乐深度集成 (Enhanced)
 
 不再局限于本地文件，Aurora Player 现已接入完整的网易云音乐生态：
 
-* **全功能搜索面板**：点击「☁️ 云音乐」即可搜索全网歌曲，支持按歌名、歌手搜索。
+* **全功能搜索面板**：点击「☁️ 云音乐」即可搜索全网歌曲，支持按歌名、歌手智能匹配。
+* **无损音质下载 (NEW!)**：支持直接下载歌曲文件。系统会自动检测并提供 **标准 (128k) / 较高 (192k) / 极高 (320k) / 无损 (FLAC) / Hi-Res** 等多种音质选项（视账号权益而定）。
+* **账号登录**：支持 **APP 扫码登录**，同步加载「我创建的歌单」和「我收藏的歌单」，解锁 VIP 音质。
 * **歌单导入**：支持粘贴网易云歌单链接或 ID，一键导入整张歌单到播放列表。
-* **账号登录**：支持 **APP 扫码登录**，同步加载「我创建的歌单」和「我收藏的歌单」。
-* **无损音质**：支持切换 **标准 / 极高 / 无损 (FLAC) / Hi-Res** 音质（需 VIP 账号）。
-* **云端歌词**：自动匹配并加载云端歌词，支持精确的时间轴同步。
+* **双语歌词 (NEW!)**：内置歌词翻译切换功能，支持“仅原文”与“原文+翻译”模式，精准时间轴同步。
 
-### 🎧 专业音频回放
+### 🎧 专业音频回放 & 体验
 
 * **全格式支持**：完美播放 MP3, FLAC, OGG, WAV, M4A 等主流格式。
+* **智能断点记忆 (NEW!)**：利用 `localStorage` 自动保存当前的播放列表和播放索引，刷新页面或关闭浏览器后归来，音乐依旧。
 * **无缝循环 (Seamless Loop)**：基于 Web Audio API 的采样级（Sample-Accurate）无间断循环，彻底告别卡顿感。
 * **SLI 支持**：原生支持 `.sli` (Sound Loop Information) 格式，自动识别 Galgame/RPG 游戏的循环断点。
 
@@ -33,7 +34,11 @@
 
 * **多端适配**：精心设计的响应式布局，在 **手机、平板** 和 **桌面端** 均有完美表现。
 * **手势操作**：移动端支持底部面板滑出、触摸拖动进度条。
-* **自适应菜单**：桌面端显示完整工具栏，移动端自动折叠至「⚙️ 高级」菜单。
+* **自适应菜单**：
+* 桌面端：显示完整工具栏。
+* 移动端：自动折叠至「⚙️ 高级」菜单（包含 Debug、智能分析、循环设定、特效切换等）。
+
+
 
 ### 🔍 智能循环分析
 
@@ -45,6 +50,7 @@
 
 * **流体极光背景**：使用 `ColorThief` 提取专辑封面主色调，生成动态流体背景。
 * **动态特效**：内置多种 Canvas 可视化效果：
+* ✨ **无特效** (纯净模式)
 * ❄️ **凛冬飞雪** (随低音鼓点加速)
 * 📊 **律动频谱**
 * 🌊 **极光波浪**
@@ -69,7 +75,7 @@
 1. 点击顶部工具栏的 **「☁️ 云音乐」** 按钮打开面板。
 2. **搜索**：输入歌名或歌手，点击播放。
 3. **扫码登录**：点击「🔐 扫码登录」，使用网易云 APP 扫码，即可解锁完整歌单和高音质权限。
-4. **导入歌单**：在「📋 导入歌单」标签页粘贴链接，将喜欢的歌单加入播放列表。
+4. **下载音乐**：播放歌曲时，点击控制栏右侧的 **下载图标** (⬇️)，选择心仪的音质进行下载。
 
 ### 方式三：智能循环制作
 
@@ -80,35 +86,38 @@
 
 ## 📦 部署说明
 
-本项目为纯静态页面，但网易云功能依赖后端 API 代理。
+本项目为纯静态页面，但网易云功能及下载代理功能依赖后端 API。
 
 ### 1. 静态页面托管
 
-将 `index.html` 上传至 GitHub Pages, Vercel, 或 Cloudflare Pages 即可。
+将 `index.html` (及相关资源) 上传至 GitHub Pages, Vercel, 或 Cloudflare Pages 即可。
 
 ### 2. 后端 API 配置 (重要)
 
-网易云功能依赖 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/)。
-但是试用网站使用了我fork后修改的版本 [api-enhanced](https://github.com/minori0721/api-enhanced)
-项目代码中默认配置了 API 地址：
+HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 
-```javascript
-// index.html 中的配置
-const NETEASE_API_HOST = 'https://minorimusicapi.zeabur.app'; 
+```html
+<script>
+    // 全局 API 地址 (网易云音乐 API)
+    window.API_BASE_URL = 'https://minorimusicapi.zeabur.app';
+    
+    // 下载代理 Worker 地址 (用于绕过 Referer 限制下载音频)
+    window.DOWNLOAD_PROXY_URL = 'https://proxy.minori0721.dpdns.org';
+</script>
 
 ```
+
+* **API_BASE_URL**: 依赖 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/) ，我的网页使用了经我小优化的 Fork 版本（ [api-enhanced](https://github.com/minori0721/api-enhanced)）。
+* **DOWNLOAD_PROXY_URL**: 需要一个简单的 Cloudflare Worker 或 Nginx 反代，用于处理跨域和 Referer 头，以便浏览器能触发文件下载。
+
 经我测试，国内可直连的部署服务包括：
-[zeabur](https://zeabur.com/)
-
-[hugging face](https://huggingface.co/)
-
-如果你部署了自己的 API 服务，请在代码中搜索 `NETEASE_API_HOST` 并修改为你自己的地址。（不要用我的呀
+[zeabur](https://zeabur.com/) | [hugging face](https://huggingface.co/)
 
 ## 🔧 技术栈
 
 * **Core**: HTML5, CSS3, ES6+ JavaScript
 * **Audio**: Web Audio API (`AudioContext`, `AudioBuffer`)
-* **UI Framework**: Vanilla CSS (Glassmorphism, Grid/Flexbox)
+* **UI Framework**: Vanilla CSS (Glassmorphism, Grid/Flexbox, Responsive)
 * **Visualization**: HTML5 Canvas API
 * **Libraries**:
 * `jsmediatags`: ID3 标签解析
@@ -118,7 +127,7 @@ const NETEASE_API_HOST = 'https://minorimusicapi.zeabur.app';
 * **Self-Developed Modules**:
 * `NativeFlacParser`: 手写 FLAC 二进制解析器 (无需 Wasm)
 * `LoopAnalyzer`: 波形匹配与过零点分析算法
-* `NeteaseIntegrator`: 网易云 API 完整对接模块
+* `NeteaseIntegrator`: 网易云 API 完整对接模块 (含二维码登录/下载逻辑)
 
 
 
