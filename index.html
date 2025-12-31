@@ -7,18 +7,16 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
-    <!-- 全局可修改的 API 地址（调试用），修改该值即可切换后端 -->
     <script>
-        window.API_BASE_URL = '';
-        // 【新增】下载代理 Worker 的地址
-        // 如果你部署了 Worker，填入你的 Worker 地址，例如 'https://music-proxy.xxx.workers.dev'
-        // 如果这里留空，代码会默认使用相对路径 (适用于 Pages 同源部署)
-        window.DOWNLOAD_PROXY_URL = 'https://proxy.minori0721.dpdns.org';
+        //全局 API 地址
+        window.API_BASE_URL = ''|| 'https://minorimusicapi.zeabur.app';
+        // 下载代理 Worker 的地址
+        window.DOWNLOAD_PROXY_URL = ''||'https://proxy.minori0721.dpdns.org';
     </script>
     <!-- 动态添加 Preconnect/DNS prefetch，使用可修改的 window.API_BASE_URL -->
     <script>
         (function(){
-            const base = (window.API_BASE_URL || 'https://minorimusicapi.zeabur.app').replace(/\/$/, '');
+            const base = (window.API_BASE_URL ).replace(/\/$/, '');
             try{
                 const pre = document.createElement('link');
                 pre.rel = 'preconnect';
@@ -141,6 +139,9 @@
         .lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; }
         .lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 14px 0; cursor: pointer; opacity: 0.6; transition: 0.2s; line-height: 1.4; }
         .lyric-line.active { color: var(--text-main); font-size: 1.4rem; font-weight: 800; opacity: 1; transform-origin: left center; }
+
+        /* 翻译行样式（显示在原歌词下方，字体较小且颜色偏淡） */
+        .lyric-translation { font-size: 0.9rem; color: var(--text-sub); margin-top: 4px; line-height: 1.2; }
 
         .controls-row { display: flex; align-items: center; justify-content: flex-start; gap: 25px; padding-top: 20px; }
         .btn { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s; position: relative; }
@@ -647,6 +648,7 @@
                     <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
                     <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
                     <button class="advanced-menu-item" data-action="netease-lyrics">📝 云词开关</button>
+                    <button class="advanced-menu-item" data-action="lyric-toggle">🈂️ 切换歌词翻译</button>
                     <button class="advanced-menu-item" data-action="effects">✨ 视觉特效</button>
                 </div>
             </div>
@@ -738,6 +740,7 @@
                     <button class="btn" id="vol-btn" title="Volume"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
                 </div>
                 <button class="btn desktop-only" id="download-btn" title="下载" style="margin-left:8px"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h3.67v6h6V9h3.67L12 2z"/></svg></button>
+                <button class="btn desktop-only" id="lyric-toggle-btn" title="切换歌词显示(原文/原+译)" style="margin-left:8px; opacity:0.45"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM4 12h16v2H4zM4 18h16v2H4z"/></svg></button>
             </div>
         </div>
     </div>
@@ -921,6 +924,161 @@
         const downloadTitle = document.getElementById('download-title');
         const downloadTrackInfo = document.getElementById('download-track-info');
 
+        // 歌词显示切换控件与状态
+        const lyricToggleBtn = document.getElementById('lyric-toggle-btn');
+        let lyricDisplayMode = localStorage.getItem('lyric_mode') || 'original'; // 'original' or 'both'
+        let originalLyricsText = '';
+        let translatedLyricsText = '';
+        let originalLyricsArr = [];
+        let translatedLyricsArr = [];
+
+        function parseLyricsToArray(text) {
+            if(!text) return [];
+            const lines = text.split(/\r?\n/);
+            const timeReg = /\[(\d{1,2}):(\d{2})(?:[:.](\d{2,3}))?\]/g;
+            const out = [];
+            lines.forEach(l => {
+                const line = l.trim(); if(!line) return;
+                const times = []; let match;
+                while ((match = timeReg.exec(line)) !== null) {
+                    const min = parseInt(match[1]); const sec = parseInt(match[2]); let ms = match[3] ? parseInt(match[3]) : 0;
+                    if (match[3] && match[3].length === 2) ms *= 10;
+                    times.push(min*60 + sec + ms/1000);
+                }
+                timeReg.lastIndex = 0;
+                const txt = line.replace(/\[\d{1,2}:\d{2}(?:[:.\d]+)?\]/g, '').replace(/\[[a-zA-Z]+:.*?\]/g, '').trim();
+                if(times.length > 0 && txt) { times.forEach(t => out.push({t, txt})); }
+                else if (txt) out.push({t: -1, txt});
+            });
+            out.sort((a,b)=>a.t - b.t);
+            return out;
+        }
+
+        function updateLyricToggleUI(enabled) {
+            if(!lyricToggleBtn) return;
+            lyricToggleBtn.disabled = !enabled;
+            lyricToggleBtn.style.opacity = enabled ? '' : '0.45';
+            if(!enabled) lyricToggleBtn.title = '暂无歌词翻译';
+            else lyricToggleBtn.title = lyricDisplayMode === 'original' ? '切换为：原文 + 翻译' : '切换为：仅原文';
+        }
+
+        // Safe set artist tags (avoid duplicate appends)
+        function setArtistTag(sourceText, qualityText) {
+            const artistEl = el.artist;
+            // Remove existing tag spans
+            const existingSource = artistEl.querySelector('.tag-source');
+            if (existingSource) existingSource.remove();
+            const existingQuality = artistEl.querySelector('.tag-quality');
+            if (existingQuality) existingQuality.remove();
+            // Append new ones if provided
+            if (sourceText) {
+                const sp = document.createElement('span');
+                sp.className = 'tag-source';
+                sp.textContent = sourceText;
+                artistEl.appendChild(document.createTextNode(' '));
+                artistEl.appendChild(sp);
+            }
+            if (qualityText) {
+                const sp2 = document.createElement('span');
+                sp2.className = 'tag-quality';
+                sp2.textContent = qualityText;
+                artistEl.appendChild(document.createTextNode(' '));
+                artistEl.appendChild(sp2);
+            }
+        }
+
+        // 渲染函数（在切换显示模式时复用）
+        function renderLyricsFromArrays(source) {
+            const hasSynced = originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0);
+            isSyncedLyrics = hasSynced;
+            // 合并时间点（保留三位小数作为key）
+            const timeSet = new Set();
+            originalLyricsArr.filter(l=>l.t>=0).forEach(l=>timeSet.add(l.t.toFixed(3)));
+            translatedLyricsArr.filter(l=>l.t>=0).forEach(l=>timeSet.add(l.t.toFixed(3)));
+            const times = Array.from(timeSet).map(t=>parseFloat(t)).sort((a,b)=>a-b);
+            // 构建主 lyrics 数组（用于高亮与滚动）
+            lyrics = [];
+            el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
+
+            if(hasSynced && times.length) {
+                times.forEach(t => {
+                    const orig = originalLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                    const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                    const otext = orig ? orig.txt : (trans ? trans.txt : '');
+                    const ttext = trans ? trans.txt : '';
+
+                    lyrics.push({ t, txt: otext });
+
+                    const container = document.createElement('div');
+                    container.className = 'lyric-line';
+                    container.dataset.time = t;
+                    container.onclick = () => startAudio(t);
+
+                    if(lyricDisplayMode === 'original') {
+                        container.textContent = otext || ttext || '';
+                    } else {
+                        const odiv = document.createElement('div'); odiv.textContent = otext || '';
+                        const tdiv = document.createElement('div'); tdiv.className = 'lyric-translation'; tdiv.textContent = ttext || '';
+                        container.appendChild(odiv); container.appendChild(tdiv);
+                    }
+                    el.lyricBox.appendChild(container);
+                });
+                el.lyricBox.innerHTML += '<div style="height:150px"></div>';
+                // 设置来源和音质标签（避免重复）
+                setArtistTag(source || '', currentAudioQuality || '');
+            } else if(!hasSynced) {
+                // 无时间标签的纯文本歌词
+                const origText = originalLyricsArr.map(l=>l.txt).join('\n');
+                const transText = translatedLyricsArr.map(l=>l.txt).join('\n');
+                if(lyricDisplayMode === 'original') {
+                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${origText || transText || '暂无歌词'}</div>`;
+                } else {
+                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${origText}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${transText}</div>`;
+                }
+            } else {
+                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
+            }
+            // 尝试立即刷新高亮并居中当前播放位置
+            try { refreshLyricHighlightAndCenter(); } catch(e) {}
+        }
+
+        if(lyricToggleBtn) {
+            lyricToggleBtn.onclick = () => {
+                lyricDisplayMode = lyricDisplayMode === 'original' ? 'both' : 'original';
+                localStorage.setItem('lyric_mode', lyricDisplayMode);
+
+                // If lyrics are time-synced, perform incremental DOM update to avoid layout jitter
+                const lines = el.lyricBox.querySelectorAll('.lyric-line');
+                if (lines && lines.length && (originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0))) {
+                    if (lyricDisplayMode === 'both') {
+                        // Add translation divs under each corresponding line if available
+                        lines.forEach(lineEl => {
+                            if (lineEl.querySelector('.lyric-translation')) return; // already added
+                            const t = parseFloat(lineEl.dataset.time || -1);
+                            if (isNaN(t) || t < 0) return;
+                            const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                            if (trans && trans.txt) {
+                                const tdiv = document.createElement('div');
+                                tdiv.className = 'lyric-translation';
+                                tdiv.textContent = trans.txt;
+                                lineEl.appendChild(tdiv);
+                            }
+                        });
+                    } else {
+                        // Remove all translation divs
+                        el.lyricBox.querySelectorAll('.lyric-translation').forEach(n => n.remove());
+                    }
+                    updateLyricToggleUI(true);
+                    return;
+                }
+
+                // Fallback: non-synced or no existing DOM lines — rebuild
+                renderLyricsFromArrays();
+                updateLyricToggleUI(true);
+            };
+            updateLyricToggleUI(false);
+        }
+
         const QUALITY_LEVELS = [
             { key: 'standard', label: '标准 (128kbps)' },
             { key: 'higher', label: '较高 (192kbps)' },
@@ -943,7 +1101,6 @@
             downloadBtnMobile.onclick = () => { if (downloadBtn) downloadBtn.click(); };
         }
 
-        // 弹出下载模态并检测各音质可用性
         // 弹出下载模态并检测各音质可用性
         downloadBtn.onclick = async function() {
             const playing = window._currentPlaying || null;
@@ -1010,64 +1167,91 @@
                         const metaEl = it.querySelector('.quality-meta');
                         const rightArea = it.querySelector('.quality-action');
                         
+                        // 判断请求是否成功且有数据
                         if (json && json.code === 200 && data && data.url) {
-                            // === 3. 智能修正格式 (修复 Bug 1) ===
+                            // ----------------- 成功获取链接 -----------------
+                            
+                            // 1. 移除禁用状态（防止重试时状态残留）
+                            it.classList.remove('disabled');
+
+                            // 2. 智能推断真实格式
                             const urlLower = data.url.toLowerCase();
                             const br = data.br || 0;
                             const size = data.size || 0;
                             
-                            let realExt = 'mp3'; // 默认
+                            let realExt = 'mp3'; // 默认格式
                             let isLossless = false;
 
-                            // 只要 URL 里有 flac，或者 API 说是 flac，或者文件极大，就认为是 FLAC
+                            // 判定逻辑：URL含flac / API类型为flac / 文件体积巨大
                             if (urlLower.includes('.flac')) { realExt = 'flac'; isLossless = true; } 
                             else if (data.type && data.type.toLowerCase() === 'flac') { realExt = 'flac'; isLossless = true; }
                             else if (size > 20 * 1024 * 1024) { realExt = 'flac'; isLossless = true; }
 
-                            // === 4. 更新界面显示 ===
+                            // 3. 构建用户易读的信息文本
                             let metaText = realExt.toUpperCase();
+                            
+                            // 检测是否发生了“越级”获取（例如点标准音质，实际给了无损）
                             const isUpgrade = (level === 'standard' || level === 'higher') && isLossless;
-                            if (isUpgrade) metaText += " (强制升级)"; // 提示用户 API 强制给了更好的
+                            if (isUpgrade) {
+                                metaText += " (自动升级)"; // 提示
+                            }
                             
+                            // 拼接码率 (例如: 320kbps)
                             if (br > 0) metaText += ` ${Math.round(br/1000)}kbps`;
-                            if (size > 0) metaText += ` ${(size/1024/1024).toFixed(1)}MB`;
                             
+                            // 拼接大小 (例如: 12.5MB)
+                            if (size > 0) {
+                                const sizeMB = (size / 1024 / 1024).toFixed(1);
+                                metaText += ` ${sizeMB}MB`;
+                            }
+                            
+                            // 4. 更新界面显示
                             metaEl.textContent = metaText;
-                            if (isUpgrade) metaEl.style.color = '#e74c3c';
+                            // 如果是升级音质，用醒目颜色（例如红色或主题色）提示
+                            metaEl.style.color = isUpgrade ? '#e74c3c' : 'var(--text-sub)';
 
+                            // 5. 生成下载按钮
                             rightArea.innerHTML = '';
                             const dlBtn = document.createElement('button');
                             dlBtn.className = 'glass-btn';
                             dlBtn.textContent = '下载';
                             
-                            // === 5. 下载动作 (修复 Bug 2) ===
+                            // 绑定下载事件 (保持你之前的 Worker 代理逻辑)
                             dlBtn.onclick = () => {
                                 const safeName = (songName + ' - ' + artists).replace(/[\\/:*?"<>|]+/g, '_').slice(0,120);
                                 const fileName = `${safeName} [${level}].${realExt}`;
                                 
-                                // 优先使用全局配置的 Worker 地址，如果没配置则回退到相对路径（用于 Pages Function）
+                                // 使用配置好的 Worker 地址，如果没有则回退到相对路径
                                 const baseUrl = window.DOWNLOAD_PROXY_URL || '/proxy-download'; 
                                 const proxyUrl = `${baseUrl}?url=${encodeURIComponent(data.url)}&filename=${encodeURIComponent(fileName)}`;
                                 
-                                // 创建临时 a 标签触发下载
-                                // 因为是同源请求 (2.html 和 proxy-download 都在你的 pages 域名下)，下载会非常稳定！
                                 const a = document.createElement('a');
                                 a.href = proxyUrl;
-                                a.target = '_blank'; // 保险起见
-                                a.download = fileName; // 虽然 proxy 会加 header，但这作为双重保险
+                                a.target = '_blank';
+                                a.download = fileName;
                                 document.body.appendChild(a);
                                 a.click();
                                 a.remove();
                             };
                             rightArea.appendChild(dlBtn);
+
                         } else {
+                            // ----------------- 获取失败 (变灰处理) -----------------
+                            
+                            // 1. 给整行添加 disabled 类 (CSS中需设置 opacity: 0.5; pointer-events: none;)
                             it.classList.add('disabled');
-                            metaEl.textContent = '不可用';
+                            
+                            // 2. 更新文本提示
+                            metaEl.textContent = '暂无资源 / 需VIP';
+                            metaEl.style.color = 'var(--text-sub)'; // 恢复默认颜色
+                            
+                            // 3. 显示不可用按钮
                             rightArea.innerHTML = '';
                             const noBtn = document.createElement('button');
                             noBtn.className = 'glass-btn';
-                            noBtn.textContent = '无';
-                            noBtn.disabled = true;
+                            noBtn.textContent = '不可用';
+                            noBtn.disabled = true; // 禁用按钮交互
+                            noBtn.style.background = 'rgba(0,0,0,0.05)'; // 按钮颜色稍微变淡
                             rightArea.appendChild(noBtn);
                         }
                     } catch (e) {
@@ -1684,7 +1868,7 @@
         }
 
         // 网易云音乐API服务（使用全局可修改的 API 地址）
-        const NETEASE_API_HOST = (window.API_BASE_URL || 'https://minorimusicapi.zeabur.app').replace(/\/$/, '');
+        const NETEASE_API_HOST = (window.API_BASE_URL ).replace(/\/$/, '');
         
         // Vercel部署需要添加的参数（绕过IP限制）
         function buildApiUrl(path) {
@@ -1799,7 +1983,8 @@
                 
                 if (lyricData?.lrc?.lyric) {
                     log('Netease lyrics loaded!', 'success');
-                    parseAndRenderLyrics(lyricData.lrc.lyric, '网易云');
+                    const trans = lyricData?.tlyric?.lyric || lyricData?.trans?.lyric || '';
+                    parseAndRenderLyrics(lyricData.lrc.lyric, '网易云', trans);
                     return true;
                 } else if (lyricData?.nolyric || lyricData?.uncollected) {
                     log('Song has no lyrics (instrumental)', 'warn');
@@ -1833,7 +2018,8 @@
                 if (data) {
                     if (data?.lrc?.lyric) {
                         log('Lyrics loaded!', 'success');
-                        parseAndRenderLyrics(data.lrc.lyric, '网易云');
+                        const trans = data?.tlyric?.lyric || data?.trans?.lyric || '';
+                        parseAndRenderLyrics(data.lrc.lyric, '网易云', trans);
                         return true;
                     } else if (data?.nolyric || data?.uncollected) {
                         el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🎵 纯音乐，无歌词</div>';
@@ -1853,73 +2039,19 @@
             }
         }
 
-        function parseAndRenderLyrics(text, source) {
-            const lines = text.split(/[\r\n]/);
-            // 支持多种时间格式: [00:00.00], [00:00.000], [00:00:00], [0:00.00]
-            const timeReg = /\[(\d{1,2}):(\d{2})(?:[:.](\d{2,3}))?\]/g;
-            lyrics = [];
-            let hasTimeTag = false;
-            
-            lines.forEach(l => {
-                const line = l.trim();
-                if (!line) return;
-                
-                // 提取所有时间标签
-                const times = [];
-                let match;
-                while ((match = timeReg.exec(line)) !== null) {
-                    const min = parseInt(match[1]);
-                    const sec = parseInt(match[2]);
-                    let ms = match[3] ? parseInt(match[3]) : 0;
-                    // 如果毫秒是2位数，需要乘以10（如.12表示120毫秒）
-                    if (match[3] && match[3].length === 2) ms *= 10;
-                    times.push(min * 60 + sec + ms / 1000);
-                }
-                timeReg.lastIndex = 0; // 重置正则
-                
-                // 提取歌词文本（移除所有时间标签和元数据标签如[ti:xxx]）
-                const txt = line.replace(/\[\d{1,2}:\d{2}(?:[:.\d]+)?\]/g, '')
-                                .replace(/\[[a-zA-Z]+:.*?\]/g, '')
-                                .trim();
-                
-                if (times.length > 0 && txt) {
-                    hasTimeTag = true;
-                    // 一行可能有多个时间标签（合唱等）
-                    times.forEach(t => lyrics.push({ t, txt }));
-                } else if (txt && !line.match(/^\[[a-zA-Z]+:/)) {
-                    // 非元数据行才添加
-                    lyrics.push({ t: -1, txt });
-                }
-            });
-            
-            // 按时间排序
-            lyrics.sort((a, b) => a.t - b.t);
-            
-            el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
-            isSyncedLyrics = hasTimeTag && lyrics.some(l => l.t >= 0);
-            
-            if(isSyncedLyrics) {
-                lyrics.forEach(l => {
-                    if(l.t < 0 || !l.txt) return;
-                    const d = document.createElement('div'); 
-                    d.className = 'lyric-line'; 
-                    d.textContent = l.txt; 
-                    d.onclick = () => startAudio(l.t); 
-                    el.lyricBox.appendChild(d); 
-                });
-                el.artist.innerHTML += ` <span class="tag-source">${source}</span>`;
-                if (currentAudioQuality) el.artist.innerHTML += ` <span class="tag-quality">${currentAudioQuality}</span>`;
-                el.lyricBox.innerHTML += '<div style="height:150px"></div>';
-                log(`Lyrics: ${lyrics.filter(l => l.t >= 0).length} lines`, 'success');
-            } else if (lyrics.length > 0) {
-                // 有内容但无时间标签
-                const content = lyrics.map(l => l.txt).join('\n');
-                el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${content}</div>`;
-                el.artist.innerHTML += ` <span class="tag-source">Unsynced</span>`;
-                if (currentAudioQuality) el.artist.innerHTML += ` <span class="tag-quality">${currentAudioQuality}</span>`;
-            } else {
-                el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
-            }
+        function parseAndRenderLyrics(text, source, transText) {
+            // 保存原文与翻译文本，供切换时复用
+            originalLyricsText = text || '';
+            translatedLyricsText = transText || '';
+            originalLyricsArr = parseLyricsToArray(originalLyricsText);
+            translatedLyricsArr = parseLyricsToArray(translatedLyricsText);
+
+            const hasTranslation = translatedLyricsArr.length > 0;
+            // 如果检测到翻译可用，启用切换按钮
+            updateLyricToggleUI(hasTranslation);
+
+            renderLyricsFromArrays(source);
+            log(`Lyrics parsed. Original lines: ${originalLyricsArr.length}, Trans lines: ${translatedLyricsArr.length}` + (hasTranslation ? ' (translation available)' : ''), 'success');
         }
 
         function startAudio(offset) {
@@ -1979,22 +2111,29 @@
             return t;
         }
 
+        // 刷新当前高亮行并将其居中（可被外部调用以立即更新）
+        function refreshLyricHighlightAndCenter() {
+            if(!isSyncedLyrics || !lyrics || !lyrics.length) return;
+            const now = getCurrentTime();
+            let idx = lyrics.findIndex(l => l.t > now) - 1;
+            if(idx < 0) idx = lyrics.length - 1; if(now < lyrics[0]?.t) idx = -1;
+            const activeLine = el.lyricBox.children[idx + 1];
+            if(!activeLine) return;
+            // 总是更新高亮并居中（避免必须等待下一句）
+            document.querySelectorAll('.lyric-line').forEach(l => l.classList.remove('active'));
+            activeLine.classList.add('active');
+            const parentHeight = el.lyricBox.parentNode.offsetHeight || (window.innerHeight * 0.5);
+            const offset = activeLine.offsetTop - parentHeight/2 + activeLine.offsetHeight/2;
+            el.lyricBox.style.transform = `translateY(-${offset}px)`;
+        }
+
         function renderLoop() {
             requestAnimationFrame(renderLoop);
             const now = getCurrentTime();
             el.currTime.textContent = fmtTime(now);
             if(playbackState.duration) el.progLine.style.width = (now / playbackState.duration) * 100 + '%';
-            if(isSyncedLyrics && lyrics.length) {
-                let idx = lyrics.findIndex(l => l.t > now) - 1;
-                if(idx < 0) idx = lyrics.length - 1; if(now < lyrics[0]?.t) idx = -1;
-                const activeLine = el.lyricBox.children[idx + 1];
-                if(activeLine && !activeLine.classList.contains('active')) {
-                    document.querySelectorAll('.lyric-line').forEach(l => l.classList.remove('active'));
-                    activeLine.classList.add('active');
-                    const offset = activeLine.offsetTop - el.lyricBox.parentNode.offsetHeight/2 + activeLine.offsetHeight/2;
-                    el.lyricBox.style.transform = `translateY(-${offset}px)`;
-                }
-            }
+            // 刷新歌词高亮与居中（会做防抖判断）
+            try { refreshLyricHighlightAndCenter(); } catch(e) {}
             renderVisuals();
         }
         renderLoop();
@@ -3194,6 +3333,38 @@
                         const next = (current + 1) % options.length;
                         el.effectSel.value = options[next];
                         alert(`特效: ${names[next]}`);
+                    } else if (action === 'lyric-toggle') {
+                        // 优先复用桌面按钮逻辑（如果存在）
+                        if (lyricToggleBtn) {
+                            lyricToggleBtn.click();
+                        } else {
+                            // 备用：直接切换状态并触发渲染/增量更新
+                            lyricDisplayMode = lyricDisplayMode === 'original' ? 'both' : 'original';
+                            localStorage.setItem('lyric_mode', lyricDisplayMode);
+                            const lines = el.lyricBox.querySelectorAll('.lyric-line');
+                            if (lines && lines.length && (originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0))) {
+                                if (lyricDisplayMode === 'both') {
+                                    lines.forEach(lineEl => {
+                                        if (lineEl.querySelector('.lyric-translation')) return;
+                                        const t = parseFloat(lineEl.dataset.time || -1);
+                                        if (isNaN(t) || t < 0) return;
+                                        const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                                        if (trans && trans.txt) {
+                                            const tdiv = document.createElement('div');
+                                            tdiv.className = 'lyric-translation';
+                                            tdiv.textContent = trans.txt;
+                                            lineEl.appendChild(tdiv);
+                                        }
+                                    });
+                                } else {
+                                    el.lyricBox.querySelectorAll('.lyric-translation').forEach(n => n.remove());
+                                }
+                            } else {
+                                renderLyricsFromArrays();
+                            }
+                            updateLyricToggleUI(!!(translatedLyricsArr && translatedLyricsArr.length));
+                        }
+                        alert('已切换歌词显示模式');
                     }
                 });
             });
@@ -3317,4 +3488,3 @@
     </script>
 </body>
 </html>
-
