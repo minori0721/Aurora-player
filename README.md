@@ -1,6 +1,7 @@
 # 🎵 Aurora Player (极光播放器) preview.ver
 
 **在线体验**：[https://minori0721-test-1.aurora-player.pages.dev/](https://minori0721-test-1.aurora-player.pages.dev/)
+或：[https://player.minori0721.dpdns.org/](https://player.minori0721.dpdns.org/)
 
 > 一个基于 Web Audio API 的现代网页音乐播放器，专为 **无缝循环 (Seamless Loop)**、**高保真音频** 及 **跨平台体验** 设计。
 
