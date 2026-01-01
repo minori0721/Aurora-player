@@ -152,6 +152,10 @@
 
         .playlist-sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: var(--glass-strong); backdrop-filter: blur(30px); box-shadow: -10px 0 40px rgba(0,0,0,0.05); transform: translateX(100%); transition: transform 0.4s; z-index: 95; padding: 80px 30px 30px 30px; overflow-y: auto; }
         .playlist-sidebar.show { transform: translateX(0); }
+        .playlist-fab-group { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 12px; opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity 0.25s ease, transform 0.25s ease; z-index: 96; }
+        .playlist-sidebar.show + .playlist-fab-group { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        .playlist-fab { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--border); background: rgba(255,255,255,0.65); backdrop-filter: blur(12px); box-shadow: 0 6px 18px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; color: var(--text-main); cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
+        .playlist-fab:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.12); }
         .pl-item { padding: 12px; border-radius: 8px; cursor: pointer; font-size: 0.95rem; color: var(--text-sub); margin-bottom: 5px; display: flex; align-items: center; }
         .pl-item:hover { background: rgba(0,0,0,0.05); }
         .pl-item.active { background: #fff; color: var(--text-main); font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
@@ -698,7 +702,14 @@
         <div id="loop-msg" style="font-size:0.7rem; color:green; height:15px; text-align:right;"></div>
     </div>
 
-    <div class="playlist-sidebar" id="playlist-sidebar"><h3 style="margin-top:0;">PLAYLIST</h3><div id="pl-container"></div></div>
+    <div class="playlist-sidebar" id="playlist-sidebar">
+        <h3 style="margin-top:0;">PLAYLIST</h3>
+        <div id="pl-container"></div>
+    </div>
+    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions">
+        <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放">🎯</button>
+        <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部">⬆️</button>
+    </div>
 
     <div class="main-container">
         <div class="left-panel">
@@ -1066,7 +1077,9 @@
             lyricBox: document.getElementById('lyrics-content'),
             progBg: document.getElementById('prog-bg'), progLine: document.getElementById('prog-line'), bufferLine: document.getElementById('buffer-line'),
             currTime: document.getElementById('curr-time'), totalTime: document.getElementById('total-time'),
-            plContainer: document.getElementById('pl-container'), playBtn: document.getElementById('play-btn'),
+            plContainer: document.getElementById('pl-container'), plSidebar: document.getElementById('playlist-sidebar'),
+            plScrollCurrent: document.getElementById('pl-scroll-current'), plScrollTop: document.getElementById('pl-scroll-top'),
+            playBtn: document.getElementById('play-btn'),
             effectSel: document.getElementById('effect-select'), canvas: document.getElementById('visual-canvas'),
             loopPanel: document.getElementById('loop-panel'), loopStart: document.getElementById('loop-start'), loopEnd: document.getElementById('loop-end'), loopEnable: document.getElementById('loop-enable'),
             baseRateInput: document.getElementById('base-rate'), loopMsg: document.getElementById('loop-msg'),
@@ -2497,6 +2510,16 @@
                 el.plContainer.appendChild(d);
             });
         }
+        function scrollPlaylistToCurrent() {
+            if (!el.plSidebar || !playlist || playlist.length === 0 || curIdx < 0) return;
+            const active = el.plContainer.querySelector('.pl-item.active');
+            if (!active) return; // no current item in list, keep still
+            active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function scrollPlaylistToTop() {
+            if (!el.plSidebar) return;
+            el.plSidebar.scrollTo({ top: 0, behavior: 'smooth' });
+        }
         function updateTheme(img) {
             let c1 = "#e0c3fc", c2 = "#8ec5fc";
             if(img) { try { const rgb = colorThief.getColor(img); c1 = `rgb(${Math.floor((rgb[0]+255)/2)},${Math.floor((rgb[1]+255)/2)},${Math.floor((rgb[2]+255)/2)})`; c2 = `rgb(${Math.floor((rgb[0]+200)/2)},${Math.floor((rgb[1]+220)/2)},${Math.floor((rgb[2]+255)/2)})`; } catch(e){} }
@@ -2541,6 +2564,8 @@
         }
 
         document.getElementById('toggle-list').onclick = () => document.getElementById('playlist-sidebar').classList.toggle('show');
+        if (el.plScrollCurrent) el.plScrollCurrent.onclick = scrollPlaylistToCurrent;
+        if (el.plScrollTop) el.plScrollTop.onclick = scrollPlaylistToTop;
         document.getElementById('toggle-loop-panel').onclick = () => document.getElementById('loop-panel').classList.toggle('show');
         document.getElementById('toggle-analyze').onclick = () => document.getElementById('analyze-panel').classList.toggle('show');
         document.getElementById('toggle-debug').onclick = () => {
