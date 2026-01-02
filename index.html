@@ -64,7 +64,7 @@
         .top-bar { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; z-index: 100; }
         .tool-group { display: flex; gap: 10px; }
         .glass-btn {
-            background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border);
+            background: var(--glass); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid var(--border);
             padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; color: var(--text-main);
             display: flex; align-items: center; gap: 5px; transition: 0.2s; outline: none; white-space: nowrap;
         }
@@ -133,8 +133,8 @@
         .lyrics-box { 
             height: 350px; overflow: hidden; margin-bottom: 30px; position: relative; 
             padding-left: 20px;
-            mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
             -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
+            mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
         }
         .lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; }
         .lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 14px 0; cursor: pointer; opacity: 0.6; transition: 0.2s; line-height: 1.4; }
@@ -144,17 +144,17 @@
         .lyric-translation { font-size: 0.9rem; color: var(--text-sub); margin-top: 4px; line-height: 1.2; }
 
         .controls-row { display: flex; align-items: center; justify-content: flex-start; gap: 25px; padding-top: 20px; }
-        .btn { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s; position: relative; }
+        .btn { background: var(--glass); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s; position: relative; }
         .btn:hover { background: #fff; transform: translateY(-3px); }
         .btn svg { width: 20px; height: 20px; fill: currentColor; }
         .btn-play { width: 70px; height: 70px; background: var(--text-main); color: #fff; }
         .btn-play:hover { background: #000; }
 
-        .playlist-sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: var(--glass-strong); backdrop-filter: blur(30px); box-shadow: -10px 0 40px rgba(0,0,0,0.05); transform: translateX(100%); transition: transform 0.4s; z-index: 95; padding: 80px 30px 30px 30px; overflow-y: auto; }
+        .playlist-sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: var(--glass-strong); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); box-shadow: -10px 0 40px rgba(0,0,0,0.05); transform: translateX(100%); transition: transform 0.4s; z-index: 95; padding: 80px 30px 30px 30px; overflow-y: auto; }
         .playlist-sidebar.show { transform: translateX(0); }
         .playlist-fab-group { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 12px; opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity 0.25s ease, transform 0.25s ease; z-index: 96; }
         .playlist-sidebar.show + .playlist-fab-group { opacity: 1; pointer-events: auto; transform: translateY(0); }
-        .playlist-fab { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--border); background: rgba(255,255,255,0.65); backdrop-filter: blur(12px); box-shadow: 0 6px 18px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; color: var(--text-main); cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
+        .playlist-fab { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--border); background: rgba(255,255,255,0.65); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 6px 18px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; color: var(--text-main); cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
         .playlist-fab:hover { background: #fff; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.12); }
         .pl-item { padding: 12px; border-radius: 8px; cursor: pointer; font-size: 0.95rem; color: var(--text-sub); margin-bottom: 5px; display: flex; align-items: center; }
         .pl-item:hover { background: rgba(0,0,0,0.05); }
@@ -542,7 +542,7 @@
         <div class="download-panel">
             <div class="download-header">
                 <span id="download-title">下载音质</span>
-                <button class="panel-close" id="download-close">&times;</button>
+                <button class="panel-close" id="download-close" aria-label="关闭下载窗口">&times;</button>
             </div>
             <div id="download-track-info" style="margin:8px 0;color:var(--text-sub);font-size:0.95rem"></div>
             <div id="download-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
@@ -555,11 +555,11 @@
         <div class="netease-content">
             <div class="netease-header">
                 <h3>🎵 网易云音乐</h3>
-                <button class="netease-close" onclick="document.getElementById('netease-panel').classList.remove('show')">&times;</button>
+                <button class="netease-close" aria-label="关闭网易云面板" onclick="document.getElementById('netease-panel').classList.remove('show')">&times;</button>
             </div>
             <!-- 用户状态栏 -->
             <div id="netease-user-bar" class="netease-user-bar" style="display:none">
-                <img class="netease-avatar" id="netease-avatar" src="">
+                <img class="netease-avatar" id="netease-avatar" src="" alt="用户头像">
                 <div class="netease-user-info">
                     <div class="netease-nickname" id="netease-nickname">用户名</div>
                     <small class="netease-user-id" id="netease-user-id">ID: </small>
@@ -588,7 +588,7 @@
             <!-- 搜索歌曲 -->
             <div class="netease-tab-content" id="tab-search">
                 <div class="netease-search-box">
-                    <input type="text" class="netease-input" id="netease-search-input" placeholder="输入歌名、歌手...">
+                    <input type="text" class="netease-input" id="netease-search-input" placeholder="输入歌名、歌手..." aria-label="搜索关键词">
                     <button class="netease-search-btn" id="netease-search-btn">搜索</button>
                 </div>
                 <div class="netease-results" id="netease-search-results">
@@ -598,7 +598,7 @@
             <!-- 导入歌单 -->
             <div class="netease-tab-content" id="tab-playlist" style="display:none">
                 <div class="netease-search-box">
-                    <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或ID...">
+                    <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或ID..." aria-label="歌单链接或ID">
                     <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
                 </div>
                 <div id="netease-playlist-preview"></div>
@@ -628,22 +628,22 @@
         <div class="tool-group">
             <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
             <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
-            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐">☁️ <span class="btn-text">云音乐</span></button>
+            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板">☁️ <span class="btn-text">云音乐</span></button>
             <!-- 移动端下载按钮，放在云音乐右侧 -->
-            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载">⬇️</button>
-            <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词">📝 <span class="btn-text">云词</span></button>
-            <select id="effect-select" class="glass-btn desktop-only">
+            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载">⬇️</button>
+            <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词" aria-label="云词开关">📝 <span class="btn-text">云词</span></button>
+            <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
                 <option value="none">✨ 无特效</option>
                 <option value="snow">❄️ 凛冬飞雪</option>
                 <option value="bars">📊 律动频谱</option>
                 <option value="waves">🌊 极光波浪</option>
             </select>
-            <button id="toggle-debug" class="glass-btn desktop-only">🐞 Debug</button>
+            <button id="toggle-debug" class="glass-btn desktop-only" aria-label="打开调试控制台">🐞 Debug</button>
         </div>
         <div class="tool-group">
-            <button id="toggle-analyze" class="glass-btn desktop-only">🔍 智能分析</button>
-            <button id="toggle-loop-panel" class="glass-btn desktop-only">🔁 循环设定</button>
-            <button id="toggle-list" class="glass-btn">📜 <span class="btn-text">列表</span></button>
+            <button id="toggle-analyze" class="glass-btn desktop-only" aria-label="打开智能分析">🔍 智能分析</button>
+            <button id="toggle-loop-panel" class="glass-btn desktop-only" aria-label="打开循环设定">🔁 循环设定</button>
+            <button id="toggle-list" class="glass-btn" aria-label="打开播放列表">📜 <span class="btn-text">列表</span></button>
             <!-- 移动端高级菜单 -->
             <div class="advanced-menu-container mobile-only">
                 <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
@@ -668,11 +668,11 @@
         </div>
         <div class="panel-row">
             <span>Rough Start (A)</span>
-            <input type="number" id="ana-start" class="panel-input" step="0.1" placeholder="0.0">
+            <input type="number" id="ana-start" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略起点 A">
         </div>
         <div class="panel-row">
             <span>Rough End (B)</span>
-            <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0">
+            <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略终点 B">
         </div>
         
         <div class="analyze-btn-group">
@@ -691,10 +691,10 @@
 
     <div class="loop-panel panel-float" id="loop-panel">
         <h4 class="panel-title">Loop Controller<button class="panel-close" onclick="this.closest('.panel-float').classList.remove('show')">&times;</button></h4>
-        <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable"></div>
-        <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100"></div>
-        <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0"></div>
-        <div class="panel-row"><span>End (B)</span><input type="number" id="loop-end" class="panel-input" step="0.001" value="0"></div>
+        <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable" aria-label="开启循环"></div>
+        <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100" aria-label="循环基准采样率"></div>
+        <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0" aria-label="循环起点 A"></div>
+        <div class="panel-row"><span>End (B)</span><input type="number" id="loop-end" class="panel-input" step="0.001" value="0" aria-label="循环终点 B"></div>
         <div style="display:flex; gap:10px; margin-top:5px;">
             <button class="glass-btn" style="flex:1; justify-content:center;" onclick="setLoopPoint('a')">Set A</button>
             <button class="glass-btn" style="flex:1; justify-content:center;" onclick="setLoopPoint('b')">Set B</button>
@@ -707,15 +707,15 @@
         <div id="pl-container"></div>
     </div>
     <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions">
-        <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放">🎯</button>
-        <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部">⬆️</button>
+        <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放" aria-label="定位到当前播放">🎯</button>
+        <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部" aria-label="回到列表顶部">⬆️</button>
     </div>
 
     <div class="main-container">
         <div class="left-panel">
             <div class="cover-wrapper" id="cover-wrap">
                 <div class="default-disc"></div>
-                <img src="" class="album-img" id="album-img" crossorigin="anonymous">
+                <img src="" class="album-img" id="album-img" crossorigin="anonymous" alt="专辑封面">
                 <div class="loading-tip" id="loading-tip">Decoding Audio...</div>
             </div>
             <div class="progress-section">
@@ -783,6 +783,11 @@
                            !lower.startsWith('secure');
                 })
                 .join('; ');
+        }
+
+        // 强制将第三方资源 URL 统一升级为 https，避免 Mixed Content
+        function toHttps(url) {
+            return (url || '').replace(/^http:\/\//i, 'https://');
         }
 
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1018,17 +1023,42 @@
                     if (!songId) throw new Error('No ID');
 
                     const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                    const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`);
-
+                    
                     // 保存 Promise（包含获取链接与下载 ArrayBuffer 的完整流程）
                     nextSongFetchPromise = (async () => {
                         prefetchInProgress = true;
                         try {
+                            // 判断用户VIP状态
+                            const isVipUser = neteaseUser && neteaseVipType > 0;
+                            let audioUrl = null;
+                            let br = 0;
+                            let size = 0;
+                            
+                            // 先尝试使用正常接口
+                            const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`);
                             const json = await cachedFetchJson(apiUrl, { signal: controller.signal, useQueue: true }, 30_000);
-                            const audioUrl = json?.data?.[0]?.url?.replace('http://', 'https://');
+                            
+                            // 检查是否是VIP歌曲(fee == 1)
+                            const fee = json?.data?.[0]?.fee || 0;
+                            audioUrl = json?.data?.[0]?.url;
+                            br = json?.data?.[0]?.br || 0;
+                            size = json?.data?.[0]?.size || 0;
+                            
+                            // 如果没有链接且用户不是VIP，尝试使用match接口
+                            if ((!audioUrl || fee === 1) && !isVipUser) {
+                                try {
+                                    const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { signal: controller.signal, useQueue: true }, 30_000);
+                                    if (matchJson?.code === 200 && matchJson.data) {
+                                        audioUrl = matchJson.data;
+                                        // match接口不返回br和size，使用默认值
+                                    }
+                                } catch(e) {
+                                    log('Match API failed, fallback to normal: ' + e.message, 'warn');
+                                }
+                            }
+                            
                             if (!audioUrl) throw new Error('No URL (May need VIP)');
-                            const br = json?.data?.[0]?.br || 0;
-                            const size = json?.data?.[0]?.size || 0;
+                            audioUrl = audioUrl.replace('http://', 'https://');
                             const sizeMB = (size / 1024 / 1024).toFixed(1);
 
                             const resp = await fetch(audioUrl, { signal: controller.signal });
@@ -1317,33 +1347,76 @@
 
                 (async function(it, level){
                     try {
-                        // === 1. 构建获取链接的 URL (分层策略) ===
-                        // VIP用户：伪装成 PC 客户端 (os=pc)，走正规流程
-                        // 普通用户 & 高音质：裸奔 (不带 os=pc)，触发 API 漏洞拿 FLAC
-                        // 普通用户 & 低音质：伪装 (os=pc)，正常拿 MP3
+                        // === 1. 判断用户VIP状态 ===
                         const isVipUser = neteaseUser && neteaseVipType > 0;
-                        const isHighResTarget = (level === 'lossless' || level === 'hires');
-                        
-                        let apiUrl;
-                        if (isVipUser) {
-                            apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
-                        } else {
-                            if (isHighResTarget) {
-                                // 关键：普通用户下高音质，直接拼 URL，不走 buildApiUrl (避免 randomCNIP)，也不带 os=pc
-                                apiUrl = `${NETEASE_API_HOST}/song/url/v1?id=${songId}&level=${level}${cookieParam}`;
-                            } else {
-                                apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
-                            }
-                        }
-                        
-                        // === 2. 获取直链 ===
-                        const json = await cachedFetchJson(apiUrl, { useQueue: true }, 30_000);
-                        const data = json?.data && json.data[0] ? json.data[0] : null;
                         const metaEl = it.querySelector('.quality-meta');
                         const rightArea = it.querySelector('.quality-action');
                         
+                        // === 2. 获取歌曲信息（检测fee字段） ===
+                        let songFee = 0; // 默认为免费歌曲
+                        let data = null;
+                        let useMatchForVip = false;
+                        
+                        // 先用song/url/v1检测歌曲类型
+                        let checkUrl;
+                        if (isVipUser) {
+                            checkUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                        } else {
+                            checkUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+                        }
+                        
+                        const json = await cachedFetchJson(checkUrl, { useQueue: true }, 30_000);
+                        if (json?.data?.[0]) {
+                            data = json.data[0];
+                            songFee = data.fee || 0;
+                        }
+                        
+                        // === 3. 根据用户状态和歌曲类型选择下载策略 ===
+                        if (!isVipUser) {
+                            if (songFee === 1) {
+                                // VIP歌曲 - 使用match接口
+                                useMatchForVip = true;
+                                try {
+                                    const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { useQueue: true }, 30_000);
+                                    if (matchJson?.code === 200 && matchJson.data) {
+                                        // 重构data对象
+                                        data = {
+                                            url: matchJson.data,
+                                            br: 0,
+                                            size: 0,
+                                            type: 'flac', // match通常返回高品质
+                                            fee: 1
+                                        };
+                                    }
+                                } catch(e) {
+                                    // match失败，保持原data
+                                }
+                            } else {
+                                // 非VIP歌曲 - 使用download接口获取更高质量
+                                try {
+                                    const downloadJson = await cachedFetchJson(buildApiUrl(`/song/download/url/v1?id=${songId}&level=${level}${cookieParam}`), { useQueue: true }, 30_000);
+                                    if (downloadJson?.data && downloadJson.data.url) {
+                                        data = downloadJson.data;
+                                    }
+                                } catch(e) {
+                                    // 如果download接口失败，使用原来的song/url/v1结果
+                                }
+                            }
+                        } else {
+                            // VIP用户直接使用song/download/url/v1获取最高质量
+                            try {
+                                const downloadJson = await cachedFetchJson(buildApiUrl(`/song/download/url/v1?id=${songId}&level=${level}${cookieParam}`), { useQueue: true }, 30_000);
+                                if (downloadJson?.data && downloadJson.data.url) {
+                                    data = downloadJson.data;
+                                }
+                            } catch(e) {
+                                // 如果download接口失败，使用song/url/v1的结果
+                            }
+                        }
+                        
+                        // === 4. 判断是否成功获取链接 ===
                         // 判断请求是否成功且有数据
-                        if (json && json.code === 200 && data && data.url) {
+                        if (data && data.url) {
                             // ----------------- 成功获取链接 -----------------
                             
                             // 1. 移除禁用状态（防止重试时状态残留）
@@ -1365,6 +1438,11 @@
                             // 3. 构建用户易读的信息文本
                             let metaText = realExt.toUpperCase();
                             
+                            // 如果使用了match接口获取VIP歌曲
+                            if (useMatchForVip) {
+                                metaText += " (VIP歌曲已解锁)";
+                            }
+                            
                             // 检测是否发生了“越级”获取（例如点标准音质，实际给了无损）
                             const isUpgrade = (level === 'standard' || level === 'higher') && isLossless;
                             if (isUpgrade) {
@@ -1382,8 +1460,14 @@
                             
                             // 4. 更新界面显示
                             metaEl.textContent = metaText;
-                            // 如果是升级音质，用醒目颜色（例如红色或主题色）提示
-                            metaEl.style.color = isUpgrade ? '#e74c3c' : 'var(--text-sub)';
+                            // 根据不同情况设置颜色：VIP解锁用绿色，升级用红色
+                            if (useMatchForVip) {
+                                metaEl.style.color = '#27ae60'; // 绿色表示VIP解锁成功
+                            } else if (isUpgrade) {
+                                metaEl.style.color = '#e74c3c'; // 红色表示音质升级
+                            } else {
+                                metaEl.style.color = 'var(--text-sub)'; // 默认颜色
+                            }
 
                             // 5. 生成下载按钮
                             rightArea.innerHTML = '';
@@ -2695,7 +2779,7 @@
             const qualityBar = document.getElementById('netease-quality-bar');
             
             if (neteaseUser) {
-                document.getElementById('netease-avatar').src = neteaseUser.avatarUrl;
+                document.getElementById('netease-avatar').src = toHttps(neteaseUser.avatarUrl);
                 document.getElementById('netease-nickname').textContent = neteaseUser.nickname;
                 document.getElementById('netease-user-id').textContent = 'ID: ' + neteaseUser.userId;
                 
@@ -2761,7 +2845,7 @@
                 if (!imgResp.ok) throw new Error('无法生成二维码图片');
                 const imgJson = await imgResp.json();
                 if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
-                imgWrap.innerHTML = `<img src="${imgJson.data.qrimg}" alt="QR Code">`;
+                imgWrap.innerHTML = `<img src="${toHttps(imgJson.data.qrimg)}" alt="QR Code">`;
                 // 轮询检查扫码状态
                 qrCheckTimer = setInterval(async () => {
                     try {
@@ -2855,7 +2939,7 @@
                     created.forEach(p => {
                         html += `
                             <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" src="${p.coverImgUrl}?param=100y100">
+                                <img class="netease-item-cover" src="${toHttps(p.coverImgUrl)}?param=100y100" alt="歌单封面">
                                 <div class="netease-item-info">
                                     <div class="netease-item-name">${p.name}</div>
                                     <div class="netease-item-artist">${p.trackCount} 首</div>
@@ -2870,7 +2954,7 @@
                     collected.forEach(p => {
                         html += `
                             <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" src="${p.coverImgUrl}?param=100y100">
+                                <img class="netease-item-cover" src="${toHttps(p.coverImgUrl)}?param=100y100" alt="歌单封面">
                                 <div class="netease-item-info">
                                     <div class="netease-item-name">${p.name}</div>
                                     <div class="netease-item-artist">${p.trackCount} 首 · ${p.creator?.nickname || ''}</div>
@@ -2945,17 +3029,17 @@
                 const artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
                 const album = song.album?.name || song.al?.name || '';
                 const duration = song.duration || song.dt || 0;
-                const cover = song.album?.picUrl || song.al?.picUrl || '';
+                const cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
                 const item = document.createElement('div');
                 item.className = 'netease-item';
                 item.innerHTML = `
-                    <img class="netease-item-cover" data-src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'" loading="lazy">
+                    <img class="netease-item-cover" data-src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'" loading="lazy" alt="歌曲封面">
                     <div class="netease-item-info">
                         <div class="netease-item-name">${song.name}</div>
                         <div class="netease-item-artist">${artists}${album ? ' · ' + album : ''}</div>
                     </div>
                     <span class="netease-item-duration">${fmtTime(duration / 1000)}</span>
-                    <button class="netease-item-play">▶</button>
+                    <button class="netease-item-play" aria-label="播放">▶</button>
                 `;
                 item.querySelector('.netease-item-play').onclick = (e) => {
                     e.stopPropagation();
@@ -3020,7 +3104,7 @@
             const songId = song.id;
             let songName = song.name;
             let artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
-            let cover = song.album?.picUrl || song.al?.picUrl || '';
+            let cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
             
             log(`Playing: ${songName} - ${artists}`);
             neteasePanel.classList.remove('show');
@@ -3031,7 +3115,7 @@
                     const detailJson = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}`), { useQueue: true }, 60_000);
                     if (detailJson?.songs?.[0]) {
                         const detail = detailJson.songs[0];
-                        cover = detail.al?.picUrl || '';
+                        cover = toHttps(detail.al?.picUrl || '');
                         artists = (detail.ar || []).map(a => a.name).join(', ');
                     }
                 } catch (e) {}
@@ -3143,11 +3227,36 @@
                 // 保证不会出现空引用
                 if (json.code !== 200) throw new Error('获取音频失败');
                 let audioInfo = (json.data && json.data[0]) ? json.data[0] : null;
+                
+                // 判断用户VIP状态
+                const isVipUser = neteaseUser && neteaseVipType > 0;
+                let audioUrl = audioInfo?.url;
+                const fee = audioInfo?.fee || 0;
+                
+                // 如果是VIP歌曲且用户不是VIP，尝试使用match接口
+                if ((fee === 1 || !audioUrl) && !isVipUser) {
+                    try {
+                        log('检测到VIP歌曲，尝试使用match接口...', 'info');
+                        const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { signal, useQueue: true }, 30_000);
+                        if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
+                        
+                        if (matchJson?.code === 200 && matchJson.data) {
+                            audioUrl = matchJson.data;
+                            // 更新audioInfo以使用match返回的URL
+                            if (!audioInfo) audioInfo = {};
+                            audioInfo.url = audioUrl;
+                            log('成功通过match接口获取VIP歌曲链接', 'success');
+                        }
+                    } catch(e) {
+                        log('Match API failed: ' + (e?.message || 'Unknown error'), 'warn');
+                    }
+                }
+                
                 // 如果连第一个都没有，抛出特定错误以便后续触发强制解灰
                 if (!audioInfo || !audioInfo.url) {
                     throw new Error('NO_URL_FROM_OFFICIAL');
                 }
-                let audioUrl = audioInfo.url;
+                audioUrl = audioInfo.url;
                 // 获取音质信息 - API可能返回: br(比特率), type(格式), level, sr(采样率)等
                 const brKbps = audioInfo.br ? Math.round(audioInfo.br / 1000) : null;
                 const audioType = (audioInfo.type || 'mp3').toUpperCase();
@@ -3342,7 +3451,7 @@
                 const trackCount = data.trackCount || 0;
                 playlistPreview.innerHTML = `
                     <div class=\"netease-playlist-info\">
-                        <img class=\"netease-playlist-cover\" data-src=\"${data.coverImgUrl}?param=200y200\" loading=\"lazy\">
+                        <img class=\"netease-playlist-cover\" data-src=\"${toHttps(data.coverImgUrl)}?param=200y200\" loading=\"lazy\" alt=\"歌单封面\">
                         <div class=\"netease-playlist-meta\">
                             <div class=\"netease-playlist-name\">${data.name}</div>
                             <div class=\"netease-playlist-desc\">${trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount/10000) + '万播放' : ''}</div>
@@ -3708,7 +3817,7 @@
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
                         const img = entry.target;
-                        img.src = img.dataset.src;
+                        img.src = toHttps(img.dataset.src);
                         img.classList.remove('lazy');
                         observer.unobserve(img);
                     }
@@ -3785,7 +3894,7 @@
                     if (currentTrack) {
                         el.title.textContent = currentTrack.name || '';
                         el.artist.textContent = 'Ready to play';
-                        const cover = currentTrack.songData?.al?.picUrl;
+                        const cover = toHttps(currentTrack.songData?.al?.picUrl);
                         if (cover) {
                             el.img.src = cover + '?param=500y500';
                             el.img.style.opacity = 1;
