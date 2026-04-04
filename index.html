@@ -146,7 +146,7 @@
         .time-display { font-size: 0.9rem; color: var(--text-sub); margin-bottom: 12px; font-weight: 500; display: flex; justify-content: space-between;}
         .progress-bar-bg { width: 100%; height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; cursor: pointer; transition: height 0.2s; overflow: visible;}
         .progress-bar-bg:hover { height: 12px; }
-        .progress-line { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: var(--text-main); border-radius: 4px; }
+        .progress-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--text-main); border-radius: 4px; transform-origin: left; transform: scaleX(0); }
         .buffer-line { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: rgba(255,255,255,0.6); border-radius: 4px; transition: width 0.2s; }
         
         .loop-marker { 
@@ -1298,6 +1298,7 @@
             el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
 
             if(hasSynced && times.length) {
+                const frag = document.createDocumentFragment();
                 times.forEach(t => {
                     const orig = originalLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
                     const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
@@ -1318,9 +1319,10 @@
                         const tdiv = document.createElement('div'); tdiv.className = 'lyric-translation'; tdiv.textContent = ttext || '';
                         container.appendChild(odiv); container.appendChild(tdiv);
                     }
-                    el.lyricBox.appendChild(container);
+                    frag.appendChild(container);
                 });
-                el.lyricBox.innerHTML += '<div style="height:150px"></div>';
+                const botPad = document.createElement('div'); botPad.style.height = '150px'; frag.appendChild(botPad);
+                el.lyricBox.appendChild(frag);
                 // 设置来源和音质标签（避免重复）
                 setArtistTag(source || '', currentAudioQuality || '');
             } else if(!hasSynced) {
@@ -1996,11 +1998,12 @@
             }catch(e){}
             const track = playlist[i];
             stopAudio();
+            audioBuffer = null; // 显式释放内存
             currentAudioQuality = ''; // 先清除，后面会根据文件信息设置
 
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
             el.img.style.opacity = 0; el.img.src = ''; el.loadTip.style.display = 'block';
-            el.progLine.style.width = '0%'; el.bufferLine.style.width = '0%';
+            el.progLine.style.transform = 'scaleX(0)'; el.bufferLine.style.width = '0%';
             lyrics = []; isSyncedLyrics = true;
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
             resetLoopUI();
@@ -2513,8 +2516,8 @@
                 _lastTimeStr = timeStr;
             }
             if(playbackState.duration) {
-                const pct = (now / playbackState.duration) * 100;
-                el.progLine.style.width = pct + '%';
+                const pct = now / playbackState.duration;
+                el.progLine.style.transform = `scaleX(${pct})`;
                 // 当剩余播放时间 <= 10 秒时，非阻塞地预取下一首原始数据（比按百分比更稳定）
                 if (playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
                     prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
@@ -2560,7 +2563,7 @@
             const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
             const pct = Math.max(0, Math.min(1, x / rect.width));
             const target = pct * playbackState.duration;
-            el.progLine.style.width = pct * 100 + '%';
+            el.progLine.style.transform = `scaleX(${pct})`;
             el.currTime.textContent = fmtTime(target);
             return target;
         }
@@ -2622,7 +2625,7 @@
             else if (e.code === 'ArrowUp') { e.preventDefault(); el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); } 
             else if (e.code === 'ArrowDown') { e.preventDefault(); el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); }
         });
-        function updateUI(t) { el.currTime.textContent = fmtTime(t); el.progLine.style.width = (t / playbackState.duration) * 100 + '%'; }
+        function updateUI(t) { el.currTime.textContent = fmtTime(t); el.progLine.style.transform = `scaleX(${t / playbackState.duration})`; }
 
         function handleNext() {
             if(playMode === 1) playTrack(Math.floor(Math.random()*playlist.length));
@@ -2681,13 +2684,15 @@
         function fmtTime(s) { const m = Math.floor(s/60); const sc = Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`; }
         function renderPlaylist() {
             el.plContainer.innerHTML = '';
+            const frag = document.createDocumentFragment();
             playlist.forEach((t, i) => {
                 const d = document.createElement('div'); d.className = `pl-item ${i === curIdx ? 'active' : ''}`;
                 const icon = t.netease ? '☁️ ' : '';
                 d.innerHTML = `<span style="width:20px; opacity:0.5">${i+1}</span> ${icon}${t.name}`;
                 d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(i); };
-                el.plContainer.appendChild(d);
+                frag.appendChild(d);
             });
+            el.plContainer.appendChild(frag);
         }
         function scrollPlaylistToCurrent() {
             if (!el.plSidebar || !playlist || playlist.length === 0 || curIdx < 0) return;
@@ -2705,13 +2710,14 @@
             document.body.style.setProperty('--bg-1', c1); document.body.style.setProperty('--bg-2', c2);
         }
         let freqData = null;
+        window.addEventListener('resize', () => {
+            if(el.canvas) { el.canvas.width = window.innerWidth; el.canvas.height = window.innerHeight; }
+        });
+        if(el.canvas) {
+            el.canvas.width = window.innerWidth; el.canvas.height = window.innerHeight;
+        }
         function renderVisuals() {
             const mode = el.effectSel.value;
-            // 避免每帧重新分配画布引起显存激增
-            if (el.canvas.width !== window.innerWidth || el.canvas.height !== window.innerHeight) {
-                el.canvas.width = window.innerWidth;
-                el.canvas.height = window.innerHeight;
-            }
             const w = el.canvas.width, h = el.canvas.height;
             canvasCtx.clearRect(0,0,w,h); if(mode==='none') return;
             

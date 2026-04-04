@@ -26,6 +26,7 @@
 ### 🎧 专业音频回放 & 体验
 
 * **全格式支持**：完美播放 MP3, FLAC, OGG, WAV, M4A 等主流格式。
+* **极致性能优化 (NEW!)**：通过 GPU 硬件加速 (`transform`) 重构动画、应用 `DocumentFragment` 解决 DOM 重排阻塞、以及精确的 AudioBuffer 内存池主动释放，确保持续平稳的高帧率与极低内存/显存占用。
 * **智能断点记忆 (NEW!)**：利用 `localStorage` 自动保存当前的播放列表和播放索引，刷新页面或关闭浏览器后归来，音乐依旧。
 * **无缝循环 (Seamless Loop)**：基于 Web Audio API 的采样级（Sample-Accurate）无间断循环，彻底告别卡顿感。
 * **SLI 支持**：原生支持 `.sli` (Sound Loop Information) 格式，自动识别 Galgame/RPG 游戏的循环断点。
