@@ -1323,8 +1323,6 @@
                 });
                 const botPad = document.createElement('div'); botPad.style.height = '150px'; frag.appendChild(botPad);
                 el.lyricBox.appendChild(frag);
-                // 设置来源和音质标签（避免重复）
-                setArtistTag(source || '', currentAudioQuality || '');
             } else if(!hasSynced) {
                 // 无时间标签的纯文本歌词
                 const origText = originalLyricsArr.map(l=>l.txt).join('\n');
@@ -1337,6 +1335,10 @@
             } else {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
             }
+            
+            // 无论有没有歌词，都设置来源和音质标签（修复无歌词时不显示标签的bug）
+            setArtistTag(source || '', currentAudioQuality || '');
+            
             // 尝试立即刷新高亮并居中当前播放位置
             try { refreshLyricHighlightAndCenter(); } catch(e) {}
         }
