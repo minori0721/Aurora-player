@@ -260,9 +260,21 @@
                 inset -2px -2px 8px var(--glass-shadow),
                 0 15px 25px rgba(0,0,0,0.15); 
         }
-        .pl-item { padding: 12px; border-radius: 8px; cursor: pointer; font-size: 0.95rem; color: var(--text-sub); margin-bottom: 5px; display: flex; align-items: center; }
+        .pl-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 0.95rem; color: var(--text-sub); margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
         .pl-item:hover { background: rgba(0,0,0,0.05); }
         .pl-item.active { background: #fff; color: var(--text-main); font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .pl-item-index { width: 22px; opacity: 0.55; flex-shrink: 0; text-align: right; }
+        .pl-item-cover {
+            width: 30px; height: 30px; border-radius: 6px; object-fit: cover;
+            background: rgba(0,0,0,0.08); flex-shrink: 0;
+        }
+        .pl-item-cover.empty {
+            background: linear-gradient(135deg, rgba(0,0,0,0.10), rgba(0,0,0,0.04));
+        }
+        .pl-item-title {
+            flex: 1; min-width: 0; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
 
         .drag-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: 0.3s; }
         body.drag-on .drag-mask { opacity: 1; pointer-events: all; }
@@ -2835,7 +2847,31 @@
             playlist.forEach((t, i) => {
                 const d = document.createElement('div'); d.className = `pl-item ${i === curIdx ? 'active' : ''}`;
                 const icon = t.netease ? '☁️ ' : '';
-                d.innerHTML = `<span style="width:20px; opacity:0.5">${i+1}</span> ${icon}${t.name}`;
+                const coverUrl = toHttps(t.songData?.album?.picUrl || t.songData?.al?.picUrl || '');
+
+                const indexEl = document.createElement('span');
+                indexEl.className = 'pl-item-index';
+                indexEl.textContent = String(i + 1);
+
+                const coverEl = document.createElement('img');
+                coverEl.className = 'pl-item-cover';
+                coverEl.alt = '歌曲封面';
+                coverEl.loading = 'lazy';
+                coverEl.referrerPolicy = 'no-referrer';
+                if (coverUrl) {
+                    coverEl.src = `${coverUrl}?param=80y80`;
+                    coverEl.onerror = () => { coverEl.classList.add('empty'); coverEl.removeAttribute('src'); };
+                } else {
+                    coverEl.classList.add('empty');
+                }
+
+                const titleEl = document.createElement('span');
+                titleEl.className = 'pl-item-title';
+                titleEl.textContent = `${icon}${t.name}`;
+
+                d.appendChild(indexEl);
+                d.appendChild(coverEl);
+                d.appendChild(titleEl);
                 d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(i); };
                 frag.appendChild(d);
             });
@@ -3257,7 +3293,7 @@
             searchBtn.disabled = true;
             
             try {
-                const resp = await fetch(buildApiUrl(`/search?keywords=${encodeURIComponent(keyword)}&limit=30`));
+                const resp = await fetch(buildApiUrl(`/cloudsearch?keywords=${encodeURIComponent(keyword)}&limit=30&randomCNIP=true`));
                 if (!resp.ok) throw new Error('搜索失败');
                 
                 const json = await resp.json();
@@ -3287,6 +3323,7 @@
             const end = Math.min(start + SONGS_PER_PAGE, songs.length);
             const pageSongs = songs.slice(start, end);
             container.innerHTML = '';
+            const fallbackCover = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="12" fill="#e8edf3"/><circle cx="50" cy="50" r="26" fill="#c7d2de"/><circle cx="50" cy="50" r="8" fill="#f8fbff"/></svg>');
             // 使用 DocumentFragment 批量添加元素，提高性能
             const fragment = document.createDocumentFragment();
             pageSongs.forEach(song => {
@@ -3294,10 +3331,11 @@
                 const album = song.album?.name || song.al?.name || '';
                 const duration = song.duration || song.dt || 0;
                 const cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
+                const coverSrc = cover ? `${cover}?param=100y100` : fallbackCover;
                 const item = document.createElement('div');
                 item.className = 'netease-item';
                 item.innerHTML = `
-                    <img class="netease-item-cover" data-src="${cover ? cover + '?param=100y100' : ''}" onerror="this.style.display='none'" loading="lazy" alt="歌曲封面">
+                    <img class="netease-item-cover" src="${coverSrc}" onerror="this.src='${fallbackCover}'" loading="lazy" referrerpolicy="no-referrer" alt="歌曲封面">
                     <div class="netease-item-info">
                         <div class="netease-item-name">${song.name}</div>
                         <div class="netease-item-artist">${artists}${album ? ' · ' + album : ''}</div>
@@ -3509,6 +3547,17 @@
                             // 更新audioInfo以使用match返回的URL
                             if (!audioInfo) audioInfo = {};
                             audioInfo.url = audioUrl;
+                            // match接口通常不返回可靠的type/br/sr，改为按URL后缀推断格式，避免误显示为MP3
+                            const lowerUrl = String(audioUrl).toLowerCase();
+                            if (lowerUrl.includes('.flac')) audioInfo.type = 'flac';
+                            else if (lowerUrl.includes('.wav')) audioInfo.type = 'wav';
+                            else if (lowerUrl.includes('.aiff') || lowerUrl.includes('.aif')) audioInfo.type = 'aiff';
+                            else if (lowerUrl.includes('.ogg')) audioInfo.type = 'ogg';
+                            else if (lowerUrl.includes('.m4a')) audioInfo.type = 'm4a';
+                            else if (lowerUrl.includes('.aac')) audioInfo.type = 'aac';
+                            else audioInfo.type = 'mp3';
+                            audioInfo.br = null;
+                            audioInfo.sr = null;
                             log('成功通过match接口获取VIP歌曲链接', 'success');
                         }
                     } catch(e) {
