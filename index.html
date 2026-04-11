@@ -2843,19 +2843,108 @@
         function fmtTime(s) { const m = Math.floor(s/60); const sc = Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`; }
 
         let playlistCoverObserver = null;
+        const PLAYLIST_COVER_CONCURRENCY = 4;
+        const PLAYLIST_COVER_BATCH_INTERVAL_MS = 120;
+        const PLAYLIST_COVER_RETRY_MAX = 2;
+        const PLAYLIST_COVER_RETRY_BASE_MS = 400;
+        const PLAYLIST_COVER_FAILURE_COOLDOWN_MS = 30 * 1000;
+        let playlistCoverActive = 0;
+        let playlistCoverQueue = [];
+        let playlistCoverPumpTimer = null;
+
+        function getPlaylistCoverBatchSize() {
+            return window.innerWidth <= 768 ? 10 : 16;
+        }
+
+        function schedulePlaylistCoverPump(delay = 0) {
+            if (playlistCoverPumpTimer) return;
+            playlistCoverPumpTimer = setTimeout(() => {
+                playlistCoverPumpTimer = null;
+                pumpPlaylistCoverQueue();
+            }, delay);
+        }
+
+        function enqueuePlaylistCover(img) {
+            if (!img || !img.dataset.src) return;
+            if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
+            const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
+            if (nextRetryAt > Date.now()) return;
+            img.dataset.queued = '1';
+            playlistCoverQueue.push(img);
+            schedulePlaylistCoverPump(0);
+        }
+
+        function loadPlaylistCoverWithRetry(img, src, attempt = 0) {
+            return new Promise(resolve => {
+                const probe = new Image();
+                probe.referrerPolicy = 'no-referrer';
+                probe.decoding = 'async';
+
+                probe.onload = () => {
+                    img.src = toHttps(src);
+                    img.classList.remove('empty');
+                    img.removeAttribute('data-src');
+                    img.removeAttribute('data-next-retry-at');
+                    img.dataset.loading = '0';
+                    resolve();
+                };
+
+                probe.onerror = () => {
+                    if (attempt < PLAYLIST_COVER_RETRY_MAX) {
+                        const delay = PLAYLIST_COVER_RETRY_BASE_MS * Math.pow(3, attempt) + Math.floor(Math.random() * 120);
+                        setTimeout(() => {
+                            loadPlaylistCoverWithRetry(img, src, attempt + 1).then(resolve);
+                        }, delay);
+                        return;
+                    }
+
+                    // 最终失败后保留 data-src，后续可在冷却后重试
+                    img.classList.add('empty');
+                    img.dataset.loading = '0';
+                    img.dataset.nextRetryAt = String(Date.now() + PLAYLIST_COVER_FAILURE_COOLDOWN_MS);
+                    resolve();
+                };
+
+                probe.src = toHttps(src);
+            });
+        }
+
+        function pumpPlaylistCoverQueue() {
+            if (!el.plSidebar || !el.plSidebar.classList.contains('show')) return;
+            const batchSize = getPlaylistCoverBatchSize();
+            let launched = 0;
+
+            while (playlistCoverQueue.length > 0 && playlistCoverActive < PLAYLIST_COVER_CONCURRENCY && launched < batchSize) {
+                const img = playlistCoverQueue.shift();
+                if (!img) continue;
+                img.dataset.queued = '0';
+
+                if (!img.dataset.src || img.dataset.loading === '1') continue;
+                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
+                if (nextRetryAt > Date.now()) continue;
+
+                launched++;
+                playlistCoverActive++;
+                img.dataset.loading = '1';
+                const src = img.dataset.src;
+                loadPlaylistCoverWithRetry(img, src).finally(() => {
+                    playlistCoverActive = Math.max(0, playlistCoverActive - 1);
+                    schedulePlaylistCoverPump(0);
+                });
+            }
+
+            if (playlistCoverQueue.length > 0) schedulePlaylistCoverPump(PLAYLIST_COVER_BATCH_INTERVAL_MS);
+        }
+
         function ensurePlaylistCoverObserver() {
             if (playlistCoverObserver || !el.plSidebar) return;
             playlistCoverObserver = new IntersectionObserver((entries, observer) => {
                 entries.forEach(entry => {
                     if (!entry.isIntersecting) return;
                     const img = entry.target;
-                    const src = img.dataset.src;
-                    if (src) {
-                        img.src = toHttps(src);
-                        img.removeAttribute('data-src');
-                    }
                     img.removeAttribute('data-observing');
                     observer.unobserve(img);
+                    enqueuePlaylistCover(img);
                 });
             }, {
                 root: el.plSidebar,
@@ -2873,6 +2962,7 @@
                 img.dataset.observing = '1';
                 playlistCoverObserver.observe(img);
             });
+            schedulePlaylistCoverPump(0);
         }
 
         function updatePlaylistActiveItem() {
@@ -2901,19 +2991,21 @@
                 coverEl.removeAttribute('src');
                 coverEl.removeAttribute('data-src');
                 coverEl.removeAttribute('data-observing');
+                coverEl.removeAttribute('data-loading');
+                coverEl.removeAttribute('data-queued');
+                coverEl.removeAttribute('data-next-retry-at');
                 return;
             }
 
             const src = `${coverUrl}?param=80y80`;
             coverEl.classList.remove('empty');
+            coverEl.dataset.src = src;
+            coverEl.removeAttribute('src');
+            coverEl.removeAttribute('data-observing');
+            coverEl.removeAttribute('data-next-retry-at');
             if (el.plSidebar && el.plSidebar.classList.contains('show')) {
-                if (coverEl.getAttribute('src') !== src) coverEl.src = src;
-                coverEl.removeAttribute('data-src');
-                coverEl.removeAttribute('data-observing');
-            } else {
-                coverEl.dataset.src = src;
-                coverEl.removeAttribute('src');
-                coverEl.removeAttribute('data-observing');
+                enqueuePlaylistCover(coverEl);
+                observePlaylistCovers();
             }
         }
 
@@ -2941,7 +3033,6 @@
                 coverEl.referrerPolicy = 'no-referrer';
                 if (coverUrl) {
                     coverEl.dataset.src = `${coverUrl}?param=80y80`;
-                    coverEl.onerror = () => { coverEl.classList.add('empty'); coverEl.removeAttribute('src'); };
                 } else {
                     coverEl.classList.add('empty');
                 }
