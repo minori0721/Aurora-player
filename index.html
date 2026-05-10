@@ -280,7 +280,7 @@
         body.drag-on .drag-mask { opacity: 1; pointer-events: all; }
         .loading-tip { position: absolute; bottom: 20px; font-size: 0.8rem; color: #2980b9; display: none; font-weight: bold; }
         .tag-source { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); margin-left: 10px; vertical-align: middle;}
-        .tag-quality { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; background: linear-gradient(135deg, #3498db, #2980b9); color: white; margin-left: 8px; vertical-align: middle; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+        .tag-quality { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; background: linear-gradient(135deg, #3498db, #2980b9); color: white; margin-left: 8px; vertical-align: middle; font-weight: 600; letter-spacing: 0.5px; }
 
         #debug-console {
             position: fixed; top: 70px; left: 20px; width: 350px; max-height: 200px;
@@ -924,6 +924,376 @@
             return (url || '').replace(/^http:\/\//i, 'https://');
         }
 
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[ch]);
+        }
+
+        function getAudioUrlCandidates(...sources) {
+            const urls = [];
+            const addUrl = (url) => {
+                if (!url) return;
+                const normalized = toHttps(String(url));
+                if (normalized && !urls.includes(normalized)) urls.push(normalized);
+            };
+            sources.forEach(source => {
+                if (!source) return;
+                if (typeof source === 'string') {
+                    addUrl(source);
+                } else {
+                    addUrl(source.url);
+                    addUrl(source.proxyUrl);
+                    addUrl(source.data);
+                }
+            });
+            return urls;
+        }
+
+        function isNeteaseTrialOnly(info) {
+            if (!info) return false;
+            const trialInfo = info.freeTrialInfo;
+            if (trialInfo != null && trialInfo !== '' && trialInfo !== 'null') return true;
+            if (info.freeTrialPrivilege?.resConsumable === true) return true;
+            const durationMs = Number(info.time || 0);
+            return Number(info.fee) === 1 && Number(info.payed || 0) === 0 && durationMs > 0 && durationMs <= 35_000 && info.urlSource === 0;
+        }
+
+        const NETEASE_MATCH_SOURCE_ORDERS = {
+            balanced: ['msls', 'qijieya', 'baka', 'bikonoo', 'gdmusic', 'unm', null],
+            lossless: ['bikonoo', 'msls', 'qijieya', 'baka', 'gdmusic', 'unm', null]
+        };
+        const NETEASE_RESOLVED_AUDIO_CACHE_TTL = 10 * 60_000;
+        const neteaseResolvedAudioCache = new Map();
+        let nextSongUrlPrewarmController = null;
+
+        function getNeteaseMatchStrategy(level = neteaseQuality) {
+            return (level === 'lossless' || level === 'hires') ? 'lossless' : 'balanced';
+        }
+
+        function getNeteaseMatchSources(strategy = 'balanced') {
+            if (Array.isArray(strategy)) return strategy;
+            return NETEASE_MATCH_SOURCE_ORDERS[strategy] || NETEASE_MATCH_SOURCE_ORDERS.balanced;
+        }
+
+        function clearNeteaseResolvedAudioCache() {
+            neteaseResolvedAudioCache.clear();
+        }
+
+        function hashCacheScope(value) {
+            let hash = 0;
+            const input = String(value || '');
+            for (let i = 0; i < input.length; i++) hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+            return Math.abs(hash).toString(36);
+        }
+
+        function getNeteaseResolvedAudioCacheKey(songId, level = neteaseQuality) {
+            const authScope = neteaseCookie ? hashCacheScope(cleanCookie(neteaseCookie)) : 'anon';
+            return `${songId}|${level}|${authScope}`;
+        }
+
+        function inferAudioTypeFromUrl(url, fallbackType = '') {
+            const rawType = String(fallbackType || '').toLowerCase();
+            const rawUrl = String(url || '').toLowerCase();
+            let path = rawUrl;
+            try { path = new URL(rawUrl).pathname.toLowerCase(); } catch (_) {}
+            if (path.includes('.flac') || rawType === 'flac') return 'flac';
+            if (path.includes('.wav') || rawType === 'wav') return 'wav';
+            if (path.includes('.aiff') || path.includes('.aif') || rawType === 'aiff' || rawType === 'aif') return 'aiff';
+            if (path.includes('.ogg') || rawType === 'ogg' || rawType === 'opus') return rawType === 'opus' ? 'opus' : 'ogg';
+            if (path.includes('.m4a') || rawType === 'm4a') return 'm4a';
+            if (path.includes('.aac') || rawType === 'aac') return 'aac';
+            if (path.includes('.mp3') || rawType === 'mp3') return 'mp3';
+            return rawType || 'mp3';
+        }
+
+        function formatSampleRate(sampleRate) {
+            const sr = Number(sampleRate || 0);
+            if (!sr) return '';
+            return sr >= 1000 ? (sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1) + 'kHz' : sr + 'Hz';
+        }
+
+        function getAverageBitrateKbps(bufferOrByteLength, durationSeconds) {
+            const seconds = Number(durationSeconds || 0);
+            const byteLength = typeof bufferOrByteLength === 'number'
+                ? bufferOrByteLength
+                : Number(bufferOrByteLength?.byteLength || 0);
+            if (!byteLength || seconds <= 0 || !Number.isFinite(seconds)) return null;
+            return Math.round((byteLength * 8) / seconds / 1000);
+        }
+
+        function findAsciiSignatureOffset(buffer, signature, maxScanBytes = 65536) {
+            if (!buffer || !signature) return -1;
+            const bytes = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, maxScanBytes));
+            const sig = Array.from(signature, ch => ch.charCodeAt(0));
+            outer: for (let i = 0; i <= bytes.length - sig.length; i++) {
+                for (let j = 0; j < sig.length; j++) {
+                    if (bytes[i + j] !== sig[j]) continue outer;
+                }
+                return i;
+            }
+            return -1;
+        }
+
+        function parseFlacStreamInfoFromBuffer(buffer) {
+            try {
+                if (!buffer || buffer.byteLength < 26) return null;
+                const view = new DataView(buffer);
+                const flacOffset = findAsciiSignatureOffset(buffer, 'fLaC');
+                if (flacOffset < 0) return null;
+                let offset = flacOffset + 4;
+                let loopLimit = 0;
+                while (offset + 4 <= view.byteLength && loopLimit < 100) {
+                    loopLimit++;
+                    const header = view.getUint8(offset);
+                    const isLast = (header & 0x80) !== 0;
+                    const type = header & 0x7F;
+                    const len = view.getUint32(offset) & 0x00FFFFFF;
+                    offset += 4;
+                    if (type === 0 && len >= 18 && offset + 18 <= view.byteLength) {
+                        const byte10 = view.getUint8(offset + 10);
+                        const byte11 = view.getUint8(offset + 11);
+                        const byte12 = view.getUint8(offset + 12);
+                        const byte13 = view.getUint8(offset + 13);
+                        const sampleRate = (byte10 << 12) | (byte11 << 4) | (byte12 >> 4);
+                        const channels = ((byte12 & 0x0E) >> 1) + 1;
+                        const bitsPerSample = (((byte12 & 0x01) << 4) | (byte13 >> 4)) + 1;
+                        return { sampleRate, channels, bitsPerSample };
+                    }
+                    offset += len;
+                    if (isLast) break;
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        function parseWavStreamInfoFromBuffer(buffer) {
+            try {
+                if (!buffer || buffer.byteLength < 44) return null;
+                const view = new DataView(buffer);
+                if (view.getUint32(0, false) !== 0x52494646 || view.getUint32(8, false) !== 0x57415645) return null; // RIFF/WAVE
+                let offset = 12;
+                let loopLimit = 0;
+                while (offset + 8 <= view.byteLength && loopLimit < 100) {
+                    loopLimit++;
+                    const chunkId = view.getUint32(offset, false);
+                    const chunkLen = view.getUint32(offset + 4, true);
+                    offset += 8;
+                    if (chunkId === 0x666d7420 && chunkLen >= 16 && offset + 16 <= view.byteLength) { // fmt
+                        const channels = view.getUint16(offset + 2, true);
+                        const sampleRate = view.getUint32(offset + 4, true);
+                        const bitsPerSample = view.getUint16(offset + 14, true);
+                        return { sampleRate, channels, bitsPerSample };
+                    }
+                    offset += chunkLen + (chunkLen % 2);
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        function describeAudioQualityFromInfo(audioInfo, audioUrl = '') {
+            const type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
+            const brKbps = audioInfo?.br ? Math.round(audioInfo.br / 1000) : null;
+            const sampleRate = audioInfo?.sr || null;
+            const srText = formatSampleRate(sampleRate);
+            let label = type;
+            if (type === 'FLAC' || type === 'WAV' || type === 'AIFF') {
+                if (srText) label = `${type} ${srText}`;
+                else if (brKbps) label = `${type} ${brKbps}kbps`;
+            } else if (brKbps) {
+                label = `${type} ${brKbps}kbps`;
+            }
+            return { label, type, brKbps, sampleRate };
+        }
+
+        function createAudioQualityProbe(buffer, audioUrl, audioInfo = {}) {
+            const type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
+            return {
+                type,
+                byteLength: Number(buffer?.byteLength || audioInfo?.size || 0),
+                flacInfo: type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null,
+                wavInfo: type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null
+            };
+        }
+
+        function describeAudioQualityFromBuffer(buffer, audioUrl, decodedBuffer, audioInfo = {}) {
+            const probe = audioInfo?._qualityProbe || null;
+            const type = (probe?.type || inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type)).toUpperCase();
+            const duration = decodedBuffer?.duration || Number(audioInfo?.time || 0) / 1000 || 0;
+            const byteLength = probe?.byteLength || buffer?.byteLength || audioInfo?.size || 0;
+            const averageBitrateKbps = getAverageBitrateKbps(byteLength, duration);
+            const apiBitrateKbps = audioInfo?.br ? Math.round(audioInfo.br / 1000) : null;
+            const bitrateKbps = averageBitrateKbps || apiBitrateKbps;
+            const decodedSampleRate = decodedBuffer?.sampleRate || null;
+            const channels = decodedBuffer?.numberOfChannels || null;
+            const flacInfo = probe?.flacInfo || (type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null);
+            const wavInfo = probe?.wavInfo || (type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null);
+            const sourceSampleRate = flacInfo?.sampleRate || wavInfo?.sampleRate || audioInfo?.sr || null;
+            const sourceChannels = flacInfo?.channels || wavInfo?.channels || null;
+            const bitsPerSample = flacInfo?.bitsPerSample || wavInfo?.bitsPerSample || null;
+            const srText = formatSampleRate(sourceSampleRate);
+            let label = type;
+
+            if (type === 'FLAC') {
+                if (srText && bitsPerSample) label = `FLAC ${srText}/${bitsPerSample}bit`;
+                else if (srText) label = `FLAC ${srText}`;
+                else if (bitrateKbps) label = `FLAC ${bitrateKbps}kbps`;
+            } else if (type === 'WAV') {
+                if (srText && bitsPerSample) label = `WAV ${srText}/${bitsPerSample}bit`;
+                else if (srText) label = `WAV ${srText}`;
+                else if (bitrateKbps) label = `WAV ${bitrateKbps}kbps`;
+            } else if (type === 'AIFF' || type === 'AIF') {
+                label = srText ? `${type} ${srText}` : (bitrateKbps ? `${type} ${bitrateKbps}kbps` : type);
+            } else if (type === 'APE' || type === 'TTA' || type === 'TAK') {
+                label = srText ? `${type} ${srText}` : (bitrateKbps ? `${type} ${bitrateKbps}kbps` : type);
+            } else if (bitrateKbps) {
+                label = `${type} ${bitrateKbps}kbps`;
+            }
+
+            return { label, type, bitrateKbps, sampleRate: sourceSampleRate, channels: sourceChannels || channels, decodedSampleRate };
+        }
+
+        function isLikelyTrialAudioUrl(url) {
+            if (!url) return false;
+            const raw = String(url).toLowerCase();
+            let decoded = raw;
+            try { decoded = decodeURIComponent(raw); } catch (_) {}
+            return raw.includes('/jd-musicrep-ts/') ||
+                   raw.includes('/musicrep-ts/') ||
+                   decoded.includes('/jd-musicrep-ts/') ||
+                   decoded.includes('/musicrep-ts/');
+        }
+
+        async function fetchNeteaseMatchAudio(songId, cookieParam = '', options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy()) {
+            let skippedTrial = false;
+            let lastError = null;
+
+            for (const source of getNeteaseMatchSources(strategy)) {
+                const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
+                try {
+                    const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${sourceParam}${cookieParam}`), options, ttl);
+                    const dataUrl = matchJson?.code === 200 ? toHttps(matchJson.data) : '';
+                    const proxyUrl = matchJson?.code === 200 ? toHttps(matchJson.proxyUrl) : '';
+                    const dataIsTrial = isLikelyTrialAudioUrl(dataUrl);
+                    const proxyIsTrial = isLikelyTrialAudioUrl(proxyUrl);
+                    if (dataIsTrial || proxyIsTrial) skippedTrial = true;
+
+                    if (dataUrl && !dataIsTrial) {
+                        return {
+                            audioUrl: dataUrl,
+                            proxyUrl: proxyUrl && !proxyIsTrial ? proxyUrl : '',
+                            source: source || 'auto',
+                            skippedTrial
+                        };
+                    }
+                    if (proxyUrl && !proxyIsTrial) {
+                        return {
+                            audioUrl: proxyUrl,
+                            proxyUrl: '',
+                            source: source || 'auto',
+                            skippedTrial
+                        };
+                    }
+                } catch (e) {
+                    if (e.name === 'AbortError') throw e;
+                    lastError = e;
+                }
+            }
+
+            return { audioUrl: '', proxyUrl: '', source: '', skippedTrial, error: lastError };
+        }
+
+        async function resolveNeteaseAudioUrl(songId, cookieParam = '', level = neteaseQuality, options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy(level)) {
+            const cacheKey = getNeteaseResolvedAudioCacheKey(songId, level);
+            const now = Date.now();
+            const cached = neteaseResolvedAudioCache.get(cacheKey);
+            if (cached && (now - cached.ts) < NETEASE_RESOLVED_AUDIO_CACHE_TTL) {
+                return {
+                    ...cached.value,
+                    audioInfo: cached.value.audioInfo ? { ...cached.value.audioInfo } : null,
+                    candidates: [...cached.value.candidates]
+                };
+            }
+
+            const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+            const json = await cachedFetchJson(apiUrl, options, ttl);
+            if (!json || json.code !== 200) throw new Error('获取音频失败');
+
+            let audioInfo = json?.data?.[0] || null;
+            let audioUrl = audioInfo?.url ? toHttps(audioInfo.url) : '';
+            let proxyUrl = audioInfo?.proxyUrl ? toHttps(audioInfo.proxyUrl) : '';
+            const trialOnly = isNeteaseTrialOnly(audioInfo);
+            const needsUnblock = !audioUrl || trialOnly;
+            let usedMatch = false;
+            let matchSource = '';
+            let skippedTrial = false;
+
+            if (needsUnblock) {
+                audioUrl = '';
+                proxyUrl = '';
+                const matchResult = await fetchNeteaseMatchAudio(songId, cookieParam, options, ttl, strategy);
+                skippedTrial = !!matchResult.skippedTrial;
+                if (matchResult.audioUrl) {
+                    usedMatch = true;
+                    matchSource = matchResult.source || '';
+                    audioUrl = toHttps(matchResult.audioUrl);
+                    proxyUrl = toHttps(matchResult.proxyUrl || '');
+                    if (!audioInfo) audioInfo = {};
+                    audioInfo.url = audioUrl;
+                    audioInfo.proxyUrl = proxyUrl;
+                    audioInfo.type = inferAudioTypeFromUrl(audioUrl, audioInfo.type);
+                    audioInfo.br = null;
+                    audioInfo.sr = null;
+                    audioInfo.freeTrialInfo = null;
+                }
+            }
+
+            const candidates = needsUnblock ? getAudioUrlCandidates(audioUrl, proxyUrl) : getAudioUrlCandidates(audioInfo);
+            const result = {
+                audioInfo,
+                audioUrl,
+                proxyUrl,
+                candidates,
+                trialOnly,
+                needsUnblock,
+                usedMatch,
+                matchSource,
+                skippedTrial
+            };
+
+            if (candidates.length) {
+                neteaseResolvedAudioCache.set(cacheKey, {
+                    ts: now,
+                    value: {
+                        ...result,
+                        audioInfo: result.audioInfo ? { ...result.audioInfo } : null,
+                        candidates: [...result.candidates]
+                    }
+                });
+            }
+
+            return result;
+        }
+
+        async function fetchAudioWithFallback(candidates, options = {}) {
+            let lastError = null;
+            for (const audioUrl of candidates) {
+                try {
+                    const resp = await fetch(audioUrl, options);
+                    if (resp.ok) return { resp, audioUrl };
+                    lastError = new Error(`HTTP ${resp.status}`);
+                } catch (e) {
+                    if (e.name === 'AbortError') throw e;
+                    lastError = e;
+                }
+            }
+            throw lastError || new Error('Audio fetch failed');
+        }
+
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let actx = new AudioContext();
         let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
@@ -944,6 +1314,7 @@
         let prefetchAttempted = false; // 是否尝试过预取
         let prefetchInProgress = false; // 防止重复发起预取
         let nextSongFetchPromise = null; // 如果预取正在进行，保存其 Promise（用于播放时复用）
+        let nextSongPreloadMeta = null; // 保存预取音频的 URL/音质信息，供命中预取时刷新标签
 
         // 等待预取完成（短等待），返回 true 表示预取已完成且数据可用
         async function waitForPrefetchCompletion(timeoutMs = 3000) {
@@ -1081,6 +1452,10 @@
                     catch(e) {}
                     nextSongAbortController = null;
                 }
+                if (nextSongUrlPrewarmController) {
+                    try { nextSongUrlPrewarmController.abort(); } catch(e) {}
+                    nextSongUrlPrewarmController = null;
+                }
             } finally {
                 nextSongRawData = null;
                 hasPreloaded = false;
@@ -1088,8 +1463,54 @@
                 prefetchAttempted = false; // <--- 切歌时重置为 false
                 prefetchInProgress = false;
                 try { nextSongFetchPromise = null; } catch (e) {}
+                try { nextSongPreloadMeta = null; } catch (e) {}
             }
-            log('Next-song preload cancelled', 'warn');
+            log('Next-song preload cancelled');
+        }
+
+        function getLikelyNextPlaylistIndex() {
+            if (!playlist || playlist.length === 0 || curIdx < 0 || playMode === 2) return null;
+            if (playMode === 1) {
+                if (playlist.length === 1) return null;
+                if (nextPreloadIndex !== null && nextPreloadIndex !== curIdx) return nextPreloadIndex;
+                let nextIdx = Math.floor(Math.random() * playlist.length);
+                if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
+                return nextIdx;
+            }
+            return curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+        }
+
+        function prewarmNextNeteaseSongUrl() {
+            try {
+                const nextIdx = getLikelyNextPlaylistIndex();
+                if (nextIdx === null) return;
+                const nextTrack = playlist[nextIdx];
+                if (!nextTrack || !nextTrack.netease) return;
+                const songId = nextTrack.songId || nextTrack.songData?.id;
+                if (!songId) return;
+
+                if (nextSongUrlPrewarmController) {
+                    try { nextSongUrlPrewarmController.abort(); } catch(e) {}
+                }
+                const controller = new AbortController();
+                nextSongUrlPrewarmController = controller;
+                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+                const strategy = getNeteaseMatchStrategy(neteaseQuality);
+                resolveNeteaseAudioUrl(songId, cookieParam, neteaseQuality, { signal: controller.signal, useQueue: true }, 30_000, strategy)
+                    .then(result => {
+                        if (controller.signal.aborted) return;
+                        if (result?.candidates?.length) {
+                            const detail = result.usedMatch ? ` via match${result.matchSource ? `/${result.matchSource}` : ''}` : '';
+                            log(`Prewarmed next URL: ${nextTrack.name}${detail}`, 'success');
+                        }
+                    })
+                    .catch(e => {
+                        if (e?.name !== 'AbortError') log('Next URL prewarm failed: ' + (e?.message || 'Unknown error'), 'warn');
+                    })
+                    .finally(() => {
+                        if (nextSongUrlPrewarmController === controller) nextSongUrlPrewarmController = null;
+                    });
+            } catch (_) {}
         }
 
         // 预加载下一首原始数据（ArrayBuffer），支持本地与网易云
@@ -1101,15 +1522,8 @@
                 if (playMode === 2) return; 
 
                 // 决定下一首索引
-                let nextIdx;
-                if (playMode === 1) {
-                    if (playlist.length === 1) return; 
-                    // 随机模式：预判下一首
-                    nextIdx = Math.floor(Math.random() * playlist.length);
-                    if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
-                } else {
-                    nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
-                }
+                const nextIdx = getLikelyNextPlaylistIndex();
+                if (nextIdx === null) return;
 
                 if (hasPreloaded && nextPreloadIndex === nextIdx) return; 
                 if (prefetchInProgress) return; 
@@ -1162,43 +1576,23 @@
                     nextSongFetchPromise = (async () => {
                         prefetchInProgress = true;
                         try {
-                            // 判断用户VIP状态
-                            const isVipUser = neteaseUser && neteaseVipType > 0;
-                            let audioUrl = null;
-                            let br = 0;
-                            let size = 0;
-                            
-                            // 先尝试使用正常接口
-                            const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`);
-                            const json = await cachedFetchJson(apiUrl, { signal: controller.signal, useQueue: true }, 30_000);
-                            
-                            // 检查是否是VIP歌曲(fee == 1)
-                            const fee = json?.data?.[0]?.fee || 0;
-                            audioUrl = json?.data?.[0]?.url;
-                            br = json?.data?.[0]?.br || 0;
-                            size = json?.data?.[0]?.size || 0;
-                            
-                            // 如果没有链接且用户不是VIP，尝试使用match接口
-                            if ((!audioUrl || fee === 1) && !isVipUser) {
-                                try {
-                                    const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { signal: controller.signal, useQueue: true }, 30_000);
-                                    if (matchJson?.code === 200 && matchJson.data) {
-                                        audioUrl = matchJson.data;
-                                        // match接口不返回br和size，使用默认值
-                                    }
-                                } catch(e) {
-                                    log('Match API failed, fallback to normal: ' + e.message, 'warn');
-                                }
-                            }
-                            
-                            if (!audioUrl) throw new Error('No URL (May need VIP)');
-                            audioUrl = audioUrl.replace('http://', 'https://');
-                            const sizeMB = (size / 1024 / 1024).toFixed(1);
-
-                            const resp = await fetch(audioUrl, { signal: controller.signal });
-                            if (!resp.ok) throw new Error('Fetch failed');
+                            const resolved = await resolveNeteaseAudioUrl(
+                                songId,
+                                cookieParam,
+                                neteaseQuality,
+                                { signal: controller.signal, useQueue: true },
+                                30_000,
+                                getNeteaseMatchStrategy(neteaseQuality)
+                            );
+                            const audioInfo = resolved.audioInfo || {};
+                            const durationSeconds = Number(nextTrack.songData?.dt || nextTrack.songData?.duration || audioInfo.time || 0) / 1000;
+                            const audioCandidates = resolved.candidates || [];
+                            if (!audioCandidates.length) throw new Error('No URL (May need VIP)');
+                            const { resp, audioUrl: loadedAudioUrl } = await fetchAudioWithFallback(audioCandidates, { signal: controller.signal });
                             const ab = await resp.arrayBuffer();
-                            return { ab, br, sizeMB };
+                            const sizeMB = (ab.byteLength / 1024 / 1024).toFixed(1);
+                            const br = audioInfo.br || (durationSeconds > 0 ? getAverageBitrateKbps(ab, durationSeconds) * 1000 : 0);
+                            return { ab, br, sizeMB, audioInfo, audioUrl: loadedAudioUrl };
                         } finally {
                             // 不在这里清理 prefetchInProgress — 让调用方根据状态处理
                         }
@@ -1208,9 +1602,11 @@
                     nextSongFetchPromise.then(res => {
                         if (!res || controller.signal.aborted) return;
                         nextSongRawData = res.ab;
+                        nextSongPreloadMeta = { audioInfo: res.audioInfo || null, audioUrl: res.audioUrl || '' };
                         hasPreloaded = true;
                         nextPreloadIndex = nextIdx;
-                        log(`Preloaded: ${nextTrack.name} [${res.br>0 ? Math.round(res.br/1000)+'k' : 'Unknown'}] ${res.sizeMB}MB`, 'success');
+                        const preloadBr = res.br > 0 ? ` [${Math.round(res.br / 1000)}k]` : '';
+                        log(`Preloaded: ${nextTrack.name}${preloadBr} ${res.sizeMB}MB`, 'success');
                         // 写入辅助缓存以便 metadata 可用
                         cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
                         cachedFetchJson(buildApiUrl(`/lyric/new?id=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
@@ -1377,6 +1773,8 @@
             const times = Array.from(timeSet).map(t=>parseFloat(t)).sort((a,b)=>a-b);
             // 构建主 lyrics 数组（用于高亮与滚动）
             lyrics = [];
+            _lastActiveLyric = null;
+            el.lyricBox.style.transform = 'translateY(0)';
             el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
 
             if(hasSynced && times.length) {
@@ -1447,10 +1845,10 @@
                 const transText = translatedLyricsArr.map(l=>l.txt).join('\n');
                 const romaText = romanLyricsArr.map(l=>l.txt).join('\n');
                 if(lyricDisplayMode === 'original') {
-                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${origText || transText || romaText || '暂无歌词'}</div>`;
+                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${escapeHtml(origText || transText || romaText || '暂无歌词')}</div>`;
                 } else {
                     const subText = lyricDisplayMode === 'both' ? transText : romaText;
-                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${origText}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${subText}</div>`;
+                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${escapeHtml(origText)}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${escapeHtml(subText)}</div>`;
                 }
             } else {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
@@ -1460,7 +1858,7 @@
             setArtistTag(source || '', currentAudioQuality || '');
             
             // 尝试立即刷新高亮并居中当前播放位置
-            try { refreshLyricHighlightAndCenter(); } catch(e) {}
+            try { refreshLyricHighlightAndCenter(true); } catch(e) {}
         }
 
         if(lyricToggleBtn) {
@@ -1550,10 +1948,6 @@
             downloadListEl.innerHTML = '';
             const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
 
-            // === 直接使用播放时获取的歌曲信息 ===
-            const isVipUser = neteaseUser && neteaseVipType > 0;
-            const songFee = playing.songData?.fee || playing.fee || 0; // 从播放数据中读取fee
-
             for (const q of QUALITY_LEVELS) {
                 const item = document.createElement('div');
                 item.className = 'quality-item';
@@ -1577,29 +1971,27 @@
                         
                         let data = null;
                         let useMatchForVip = false;
+                        let matchSource = '';
                         
-                        // 1. 无脑先尝试使用原生官方接口获取 (可能会因无版权或需VIP返回空)
+                        // 1. 优先尝试官方客户端下载接口；如果只有试听或没有链接，再交给 match 兜底。
                         try {
                             const downloadJson = await cachedFetchJson(buildApiUrl(`/song/download/url/v1?id=${songId}&level=${level}${cookieParam}`), { useQueue: true }, 30_000);
-                            if (downloadJson?.data && downloadJson.data.url) {
+                            if (downloadJson?.data?.url && !isNeteaseTrialOnly(downloadJson.data)) {
                                 data = downloadJson.data;
                             }
                         } catch(e) {
                             // 接口拉取失败
                         }
-                        
-                        // 2. 如果正常接口没拿到有效数据，无缝切入 match 接口强行解锁兜底！
+
+                        // 2. 如果官方下载接口没拿到完整音频，无缝切入 match 接口兜底。
                         if (!data || !data.url) {
                             useMatchForVip = true;
                             try {
-                                const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { useQueue: true }, 30_000);
-                                if (matchJson?.code === 200 && matchJson.data) {
-                                    const matchUrl = matchJson.data;
-                                    let matchExt = 'mp3';
-                                    if (matchUrl.toLowerCase().includes('.flac')) matchExt = 'flac';
-                                    else if (matchUrl.toLowerCase().includes('.m4a')) matchExt = 'm4a';
-                                    else if (matchUrl.toLowerCase().includes('.ogg')) matchExt = 'ogg';
-                                    else if (matchUrl.toLowerCase().includes('.wav')) matchExt = 'wav';
+                                const matchResult = await fetchNeteaseMatchAudio(songId, cookieParam, { useQueue: true }, 30_000, getNeteaseMatchStrategy(level));
+                                if (matchResult.audioUrl) {
+                                    const matchUrl = matchResult.audioUrl;
+                                    let matchExt = inferAudioTypeFromUrl(matchUrl);
+                                    matchSource = matchResult.source || '';
                                     
                                     data = {
                                         url: matchUrl,
@@ -1641,9 +2033,9 @@
                             // 3. 构建用户易读的信息文本
                             let metaText = realExt.toUpperCase();
                             
-                            // 如果使用了match接口获取VIP歌曲
+                            // 如果使用了 match 接口兜底
                             if (useMatchForVip) {
-                                metaText += " (VIP歌曲已解锁)";
+                                metaText += matchSource ? ` (match兜底/${matchSource})` : " (match兜底)";
                             }
                             
                             // 检测是否发生了“越级”获取（例如点标准音质，实际给了无损）
@@ -1663,9 +2055,9 @@
                             
                             // 4. 更新界面显示
                             metaEl.textContent = metaText;
-                            // 根据不同情况设置颜色：VIP解锁用绿色，升级用红色
+                            // 根据不同情况设置颜色：match 兜底用绿色，升级用红色
                             if (useMatchForVip) {
-                                metaEl.style.color = '#27ae60'; // 绿色表示VIP解锁成功
+                                metaEl.style.color = '#27ae60'; // 绿色表示已通过 match 兜底
                             } else if (isUpgrade) {
                                 metaEl.style.color = '#e74c3c'; // 红色表示音质升级
                             } else {
@@ -2175,7 +2567,8 @@
                     // 对于MP3等文件，计算比特率
                     const fileSize = track.file.size;
                     const ext = track.file.name.split('.').pop().toUpperCase();
-                    
+                    pendingQualityInfo = { size: fileSize, ext: ext, fileName: track.file.name };
+
                     jsmediatags.read(track.file, {
                         onSuccess: (tag) => {
                             const c = {
@@ -2219,6 +2612,7 @@
                 if(meta) applyMetadata(meta, "Native");
 
                 el.bufferLine.style.width = '60%';
+                const localQualityProbe = createAudioQualityProbe(ab, track.file.name, { type: track.file.name.split('.').pop().toLowerCase(), size: track.file.size });
                 audioBuffer = await actx.decodeAudioData(ab);
                 el.bufferLine.style.width = '100%';
                 playbackState.duration = audioBuffer.duration;
@@ -2228,47 +2622,14 @@
                 // 根据不同格式计算并显示音质信息
                 if (pendingQualityInfo && playbackState.duration > 0) {
                     const ext = pendingQualityInfo.ext;
-                    const bitrateKbps = Math.round((pendingQualityInfo.size * 8) / playbackState.duration / 1000);
-                    const sampleRate = audioBuffer.sampleRate;
-                    const channels = audioBuffer.numberOfChannels;
-                    const srKhz = sampleRate >= 1000 ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : sampleRate + 'Hz';
-                    
-                    // 根据格式显示不同的信息
-                    switch(ext) {
-                        case 'WAV':
-                        case 'AIFF':
-                        case 'AIF':
-                            // 无损格式 - 显示采样率和声道
-                            const chStr = channels === 1 ? 'Mono' : (channels === 2 ? 'Stereo' : `${channels}ch`);
-                            currentAudioQuality = `${ext} ${srKhz} ${chStr}`;
-                            break;
-                        case 'OGG':
-                        case 'OPUS':
-                            // OGG/Opus - 显示比特率（有损）
-                            currentAudioQuality = `${ext} ~${bitrateKbps}kbps`;
-                            break;
-                        case 'AAC':
-                        case 'M4A':
-                        case 'MP4':
-                            // AAC - 显示比特率
-                            currentAudioQuality = `AAC ${bitrateKbps}kbps`;
-                            break;
-                        case 'WMA':
-                            currentAudioQuality = `WMA ${bitrateKbps}kbps`;
-                            break;
-                        case 'APE':
-                        case 'TTA':
-                        case 'TAK':
-                            // 无损压缩格式 - 显示采样率
-                            currentAudioQuality = `${ext} ${srKhz}`;
-                            break;
-                        case 'MP3':
-                        default:
-                            // MP3和其他格式 - 显示比特率
-                            currentAudioQuality = `${ext} ${bitrateKbps}kbps`;
-                            break;
-                    }
-                    log(`Audio: ${currentAudioQuality}, ${sampleRate}Hz, ${channels}ch`);
+                    const localQuality = describeAudioQualityFromBuffer(
+                        ab,
+                        pendingQualityInfo.fileName || '',
+                        audioBuffer,
+                        { type: ext.toLowerCase(), size: pendingQualityInfo.size, _qualityProbe: localQualityProbe }
+                    );
+                    currentAudioQuality = localQuality.label;
+                    log(`Audio: ${currentAudioQuality}`);
                     pendingQualityInfo = null;
                 }
                 
@@ -2304,7 +2665,7 @@
             if (common.sampleRate && common.bitsPerSample) {
                 // FLAC文件 - 显示位深度和采样率
                 const srKhz = common.sampleRate >= 1000 ? (common.sampleRate / 1000).toFixed(common.sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : common.sampleRate + 'Hz';
-                currentAudioQuality = `FLAC ${common.bitsPerSample}bit/${srKhz}`;
+                currentAudioQuality = `FLAC ${srKhz}/${common.bitsPerSample}bit`;
             } else if (common.fileSize && common.fileExt) {
                 // 其他格式 - 稍后在解码完成后根据格式显示合适信息
                 pendingQualityInfo = { size: common.fileSize, ext: common.fileExt };
@@ -2363,7 +2724,7 @@
         // Vercel部署需要添加的参数（绕过IP限制）
         function buildApiUrl(path) {
             const separator = path.includes('?') ? '&' : '?';
-            return `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
+            return path.includes('randomCNIP=') ? `${NETEASE_API_HOST}${path}` : `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
         }
 
         async function searchNeteaselyrics(songName, artist, duration) {
@@ -2625,7 +2986,8 @@
             if(!isSyncedLyrics || !lyrics || !lyrics.length) return;
             const now = getCurrentTime();
             let idx = lyrics.findIndex(l => l.t > now) - 1;
-            if(idx < 0) idx = lyrics.length - 1; if(now < lyrics[0]?.t) idx = -1;
+            if(idx < 0) idx = lyrics.length - 1;
+            if(now < lyrics[0]?.t) idx = 0;
             const activeLine = el.lyricBox.children[idx + 1];
             if(!activeLine) return;
             
@@ -2868,10 +3230,39 @@
             if (!img || !img.dataset.src) return;
             if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
             const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
-            if (nextRetryAt > Date.now()) return;
+            if (nextRetryAt > Date.now()) {
+                schedulePlaylistCoverPump(Math.max(0, nextRetryAt - Date.now()));
+                return;
+            }
             img.dataset.queued = '1';
             playlistCoverQueue.push(img);
             schedulePlaylistCoverPump(0);
+        }
+
+        function enqueueDuePlaylistCoverRetries() {
+            if (!el.plContainer) return;
+            const now = Date.now();
+            el.plContainer.querySelectorAll('.pl-item-cover[data-src][data-next-retry-at]').forEach(img => {
+                if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
+                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
+                if (!nextRetryAt || nextRetryAt > now) return;
+                img.dataset.queued = '1';
+                playlistCoverQueue.push(img);
+            });
+        }
+
+        function getNextPlaylistCoverRetryDelay() {
+            if (!el.plContainer) return null;
+            const now = Date.now();
+            let nextDelay = null;
+            el.plContainer.querySelectorAll('.pl-item-cover[data-src][data-next-retry-at]').forEach(img => {
+                if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
+                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
+                if (!nextRetryAt || nextRetryAt <= now) return;
+                const delay = nextRetryAt - now;
+                if (nextDelay === null || delay < nextDelay) nextDelay = delay;
+            });
+            return nextDelay;
         }
 
         function loadPlaylistCoverWithRetry(img, src, attempt = 0) {
@@ -2911,6 +3302,7 @@
 
         function pumpPlaylistCoverQueue() {
             if (!el.plSidebar || !el.plSidebar.classList.contains('show')) return;
+            enqueueDuePlaylistCoverRetries();
             const batchSize = getPlaylistCoverBatchSize();
             let launched = 0;
 
@@ -2933,7 +3325,12 @@
                 });
             }
 
-            if (playlistCoverQueue.length > 0) schedulePlaylistCoverPump(PLAYLIST_COVER_BATCH_INTERVAL_MS);
+            if (playlistCoverQueue.length > 0) {
+                schedulePlaylistCoverPump(PLAYLIST_COVER_BATCH_INTERVAL_MS);
+            } else {
+                const nextDelay = getNextPlaylistCoverRetryDelay();
+                if (nextDelay !== null) schedulePlaylistCoverPump(Math.max(50, nextDelay));
+            }
         }
 
         function ensurePlaylistCoverObserver() {
@@ -3194,6 +3591,7 @@
         qualitySelect.value = neteaseQuality;
         qualitySelect.onchange = () => {
             neteaseQuality = qualitySelect.value;
+            clearNeteaseResolvedAudioCache();
             localStorage.setItem('netease_quality', neteaseQuality);
             log(`音质设置: ${qualitySelect.options[qualitySelect.selectedIndex].text}`);
         };
@@ -3323,7 +3721,7 @@
                 if (!imgResp.ok) throw new Error('无法生成二维码图片');
                 const imgJson = await imgResp.json();
                 if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
-                imgWrap.innerHTML = `<img src="${toHttps(imgJson.data.qrimg)}" alt="QR Code">`;
+                imgWrap.innerHTML = `<img src="${escapeHtml(toHttps(imgJson.data.qrimg))}" alt="QR Code">`;
                 // 轮询检查扫码状态
                 qrCheckTimer = setInterval(async () => {
                     try {
@@ -3347,6 +3745,7 @@
                             clearInterval(qrCheckTimer);
                             // 保存干净的 cookie（只保留核心凭证）
                             neteaseCookie = cleanCookie(checkJson.cookie || '');
+                            clearNeteaseResolvedAudioCache();
                             localStorage.setItem('netease_cookie', neteaseCookie);
                             // 获取用户信息
                             await checkLoginStatus();
@@ -3358,7 +3757,7 @@
                     } catch (e) {}
                 }, 2000);
             } catch (e) {
-                imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + e.message + '</div>';
+                imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + escapeHtml(e.message) + '</div>';
                 log('QR generate error: ' + e.message, 'error');
             }
         }
@@ -3369,6 +3768,7 @@
         // 退出登录
         window.neteaseLogout = function() {
             neteaseCookie = '';
+            clearNeteaseResolvedAudioCache();
             neteaseUser = null;
             myPlaylistsCache = null; // 清除歌单缓存
             localStorage.removeItem('netease_cookie');
@@ -3417,10 +3817,10 @@
                     created.forEach(p => {
                         html += `
                             <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" src="${toHttps(p.coverImgUrl)}?param=100y100" alt="歌单封面">
+                                <img class="netease-item-cover" src="${escapeHtml(toHttps(p.coverImgUrl))}?param=100y100" alt="歌单封面">
                                 <div class="netease-item-info">
-                                    <div class="netease-item-name">${p.name}</div>
-                                    <div class="netease-item-artist">${p.trackCount} 首</div>
+                                    <div class="netease-item-name">${escapeHtml(p.name)}</div>
+                                    <div class="netease-item-artist">${escapeHtml(p.trackCount)} 首</div>
                                 </div>
                             </div>
                         `;
@@ -3432,10 +3832,10 @@
                     collected.forEach(p => {
                         html += `
                             <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" src="${toHttps(p.coverImgUrl)}?param=100y100" alt="歌单封面">
+                                <img class="netease-item-cover" src="${escapeHtml(toHttps(p.coverImgUrl))}?param=100y100" alt="歌单封面">
                                 <div class="netease-item-info">
-                                    <div class="netease-item-name">${p.name}</div>
-                                    <div class="netease-item-artist">${p.trackCount} 首 · ${p.creator?.nickname || ''}</div>
+                                    <div class="netease-item-name">${escapeHtml(p.name)}</div>
+                                    <div class="netease-item-artist">${escapeHtml(p.trackCount)} 首 · ${escapeHtml(p.creator?.nickname || '')}</div>
                                 </div>
                             </div>
                         `;
@@ -3446,7 +3846,7 @@
                 container.innerHTML = html;
                 
             } catch (e) {
-                container.innerHTML = '<div class="netease-empty">加载失败: ' + e.message + '</div>';
+                container.innerHTML = '<div class="netease-empty">加载失败: ' + escapeHtml(e.message) + '</div>';
             }
         }
         
@@ -3482,7 +3882,7 @@
                 
                 renderSongList(json.result.songs, searchResults, 0);
             } catch (e) {
-                searchResults.innerHTML = '<div class="netease-empty">搜索失败: ' + e.message + '</div>';
+                searchResults.innerHTML = '<div class="netease-empty">搜索失败: ' + escapeHtml(e.message) + '</div>';
             } finally {
                 searchBtn.disabled = false;
             }
@@ -3510,13 +3910,14 @@
                 const duration = song.duration || song.dt || 0;
                 const cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
                 const coverSrc = cover ? `${cover}?param=120y120` : fallbackCover;
+                const artistAlbumText = `${artists}${album ? ' · ' + album : ''}`;
                 const item = document.createElement('div');
                 item.className = 'netease-item';
                 item.innerHTML = `
-                    <img class="netease-item-cover" src="${coverSrc}" onerror="this.src='${fallbackCover}'" loading="lazy" referrerpolicy="no-referrer" alt="歌曲封面">
+                    <img class="netease-item-cover" src="${escapeHtml(coverSrc)}" onerror="this.src='${fallbackCover}'" loading="lazy" referrerpolicy="no-referrer" alt="歌曲封面">
                     <div class="netease-item-info">
-                        <div class="netease-item-name">${song.name}</div>
-                        <div class="netease-item-artist">${artists}${album ? ' · ' + album : ''}</div>
+                        <div class="netease-item-name">${escapeHtml(song.name)}</div>
+                        <div class="netease-item-artist">${escapeHtml(artistAlbumText)}</div>
                     </div>
                     <span class="netease-item-duration">${fmtTime(duration / 1000)}</span>
                     <button class="netease-item-play" aria-label="播放">▶</button>
@@ -3625,7 +4026,7 @@
                     // 优化：优先检查是否已完成（事件驱动），否则用单次超时等待（最多6000ms）——无轮询，完成时立即响应
                     let res = null;
                     if (hasPreloaded && nextSongRawData) {
-                        res = { ab: nextSongRawData };
+                        res = { ab: nextSongRawData, ...(nextSongPreloadMeta || {}) };
                     } else if (nextSongFetchPromise) {
                         const wrapped = await waitForPromiseWithTimeout(nextSongFetchPromise, 6000);
                         res = wrapped.ok ? wrapped.value : null;
@@ -3640,10 +4041,16 @@
                         // 清理预加载状态并防止后续复用
                         nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false;
                         try { nextSongFetchPromise = null; } catch(e) {}
+                        try { nextSongPreloadMeta = null; } catch(e) {}
                         if (nextSongAbortController) { try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); } catch(e) {} nextSongAbortController = null; }
 
                         el.bufferLine.style.width = '60%';
+                        const preloadedProbe = createAudioQualityProbe(ab, res.audioUrl || '', res.audioInfo || {});
                         audioBuffer = await actx.decodeAudioData(ab);
+                        const preloadedQuality = describeAudioQualityFromBuffer(ab, res.audioUrl || '', audioBuffer, { ...(res.audioInfo || {}), _qualityProbe: preloadedProbe });
+                        currentAudioQuality = preloadedQuality.label;
+                        setArtistTag('网易云', currentAudioQuality);
+                        log(`Audio: ${currentAudioQuality}`, 'success');
                         el.bufferLine.style.width = '100%';
                         playbackState.duration = audioBuffer.duration;
                         el.totalTime.textContent = fmtTime(playbackState.duration);
@@ -3676,7 +4083,7 @@
                                 if (nextId) {
                                     const cookieParamLocal = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
                                     cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParamLocal}`), { useQueue: true }).catch(()=>{});
-                                    cachedFetchJson(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}&os=pc${cookieParamLocal}`), { useQueue: true }).catch(()=>{});
+                                    prewarmNextNeteaseSongUrl();
                                 }
                             }
                         } catch (_) {}
@@ -3701,116 +4108,58 @@
             try {
                 // 获取音频URL - 使用新版API指定音质，优先从缓存获取（短时缓存）
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                const levelParam = `&level=${neteaseQuality}&os=pc`;
                 if (window._currentPlayActionToken !== myPlayToken) throw new Error('stale');
-                const json = await cachedFetchJson(buildApiUrl(`/song/url/v1?id=${songId}${levelParam}${cookieParam}`), { signal, useQueue: true }, 30_000);
+
+                const resolved = await resolveNeteaseAudioUrl(
+                    songId,
+                    cookieParam,
+                    neteaseQuality,
+                    { signal, useQueue: true },
+                    30_000,
+                    getNeteaseMatchStrategy(neteaseQuality)
+                );
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                
-                if (!json || json.code !== 200) throw new Error('获取音频失败');
-                // 保证不会出现空引用
-                if (json.code !== 200) throw new Error('获取音频失败');
-                let audioInfo = (json.data && json.data[0]) ? json.data[0] : null;
-                
-                // 判断用户VIP状态
-                const isVipUser = neteaseUser && neteaseVipType > 0;
-                let audioUrl = audioInfo?.url;
-                const fee = audioInfo?.fee || 0;
-                
-                // 如果是VIP歌曲且用户不是VIP，尝试使用match接口
-                if ((fee === 1 || !audioUrl) && !isVipUser) {
-                    try {
-                        log('检测到VIP歌曲，尝试使用match接口...', 'info');
-                        const matchJson = await cachedFetchJson(buildApiUrl(`/song/url/match?id=${songId}${cookieParam}`), { signal, useQueue: true }, 30_000);
-                        if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                        
-                        if (matchJson?.code === 200 && matchJson.data) {
-                            audioUrl = matchJson.data;
-                            // 更新audioInfo以使用match返回的URL
-                            if (!audioInfo) audioInfo = {};
-                            audioInfo.url = audioUrl;
-                            // match接口通常不返回可靠的type/br/sr，改为按URL后缀推断格式，避免误显示为MP3
-                            const lowerUrl = String(audioUrl).toLowerCase();
-                            if (lowerUrl.includes('.flac')) audioInfo.type = 'flac';
-                            else if (lowerUrl.includes('.wav')) audioInfo.type = 'wav';
-                            else if (lowerUrl.includes('.aiff') || lowerUrl.includes('.aif')) audioInfo.type = 'aiff';
-                            else if (lowerUrl.includes('.ogg')) audioInfo.type = 'ogg';
-                            else if (lowerUrl.includes('.m4a')) audioInfo.type = 'm4a';
-                            else if (lowerUrl.includes('.aac')) audioInfo.type = 'aac';
-                            else audioInfo.type = 'mp3';
-                            audioInfo.br = null;
-                            audioInfo.sr = null;
-                            log('成功通过match接口获取VIP歌曲链接', 'success');
-                        }
-                    } catch(e) {
-                        log('Match API failed: ' + (e?.message || 'Unknown error'), 'warn');
-                    }
+
+                if (resolved.trialOnly || resolved.needsUnblock) {
+                    log(resolved.trialOnly ? '官方接口只返回试听片段，尝试使用match接口获取完整音频...' : '官方接口无可播放链接，尝试使用match接口兜底...', 'info');
                 }
-                
-                // 如果连第一个都没有，抛出特定错误以便后续触发强制解灰
-                if (!audioInfo || !audioInfo.url) {
+                if (resolved.skippedTrial) {
+                    log('Match返回了疑似试听片段，已跳过并尝试其他音源', 'warn');
+                }
+                if (resolved.usedMatch) {
+                    log(`成功通过match接口获取完整音频链接${resolved.matchSource ? ` (${resolved.matchSource})` : ''}`, 'success');
+                }
+
+                let audioInfo = resolved.audioInfo || null;
+                const audioCandidates = resolved.candidates || [];
+                if (!audioInfo || !audioCandidates.length) {
                     throw new Error('NO_URL_FROM_OFFICIAL');
                 }
-                audioUrl = audioInfo.url;
-                // 获取音质信息 - API可能返回: br(比特率), type(格式), level, sr(采样率)等
-                const brKbps = audioInfo.br ? Math.round(audioInfo.br / 1000) : null;
-                const audioType = (audioInfo.type || 'mp3').toUpperCase();
-                const sampleRate = audioInfo.sr || null; // 采样率 (如44100)
-                
-                // Debug显示原始信息
-                log(`Audio: ${audioType} ${brKbps || '?'}kbps${sampleRate ? ` ${sampleRate}Hz` : ''}`, 'success');
-                
-                // 根据格式和可用信息构建音质标签
-                let qualityStr = audioType;
-                if (audioType === 'FLAC' || audioType === 'WAV' || audioType === 'AIFF') {
-                    // 无损格式 - 优先显示采样率信息
-                    if (sampleRate) {
-                        const srKhz = sampleRate >= 1000 ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) + 'kHz' : sampleRate + 'Hz';
-                        // FLAC通常是16bit或24bit，根据比特率估算
-                        // 16bit/44.1kHz stereo ≈ 1411kbps, 24bit/96kHz stereo ≈ 4608kbps
-                        if (brKbps) {
-                            const estBitDepth = brKbps > 2000 ? 24 : 16;
-                            qualityStr = `${audioType} ${estBitDepth}bit/${srKhz}`;
-                        } else {
-                            qualityStr = `${audioType} ${srKhz}`;
-                        }
-                    } else if (brKbps) {
-                        // 没有采样率但有比特率，根据比特率估算
-                        const estBitDepth = brKbps > 2000 ? 24 : 16;
-                        const estSr = brKbps > 2000 ? '96kHz' : '44.1kHz';
-                        qualityStr = `${audioType} ${estBitDepth}bit/${estSr}`;
-                    }
-                } else {
-                    // 有损格式 - 显示比特率
-                    if (brKbps) {
-                        qualityStr = `${audioType} ${brKbps}kbps`;
-                    }
-                }
-                
-                currentAudioQuality = qualityStr;
-                
-                // 确保使用 https
-                audioUrl = audioUrl.replace('http://', 'https://');
-                log(`Audio URL: ${audioUrl}`);
-                
+                let audioUrl = audioCandidates[0];
+                log(`Audio URL: ${audioCandidates[0]}`);
+
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 加载音频...</div>';
                 el.loadTip.style.display = 'block';
                 el.bufferLine.style.width = '30%';
-                
                 // 获取音频数据
                 // 二次检查：确保仍是当前播放请求
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                const audioResp = await fetch(audioUrl, { signal });
+                const { resp: audioResp, audioUrl: loadedAudioUrl } = await fetchAudioWithFallback(audioCandidates, { signal });
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                if (!audioResp.ok) throw new Error('音频加载失败');
-                
+                audioUrl = loadedAudioUrl;
+
                 el.bufferLine.style.width = '60%';
                 const ab = await audioResp.arrayBuffer();
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                
+
                 el.bufferLine.style.width = '80%';
+                const actualProbe = createAudioQualityProbe(ab, audioUrl, audioInfo || {});
                 audioBuffer = await actx.decodeAudioData(ab);
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                
+                const actualQuality = describeAudioQualityFromBuffer(ab, audioUrl, audioBuffer, { ...(audioInfo || {}), _qualityProbe: actualProbe });
+                currentAudioQuality = actualQuality.label;
+                setArtistTag('网易云', currentAudioQuality);
+                log(`Audio: ${currentAudioQuality}`, 'success');
                 el.bufferLine.style.width = '100%';
                 playbackState.duration = audioBuffer.duration;
                 el.totalTime.textContent = fmtTime(playbackState.duration);
@@ -3846,7 +4195,7 @@
                                 // 预取 song/detail 和 song/url（短时缓存）
                                 // 使用 cachedFetchJson 替代 prefetchFetch，确保结果被写入 IDB 缓存
                                 cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParam}`), { useQueue: true }).catch(()=>{});
-                                cachedFetchJson(buildApiUrl(`/song/url/v1?id=${nextId}&level=${neteaseQuality}&os=pc${cookieParam}`), { useQueue: true }).catch(()=>{});
+                                prewarmNextNeteaseSongUrl();
                             }
                         }
                     } catch (_) {}
@@ -3942,13 +4291,14 @@
                 }
                 const data = json.playlist;
                 currentPlaylistData = data;
+                currentPlaylistData.tracksLoadIncomplete = false;
                 // 显示歌单基本信息（无tracks）
                 const trackCount = data.trackCount || 0;
                 playlistPreview.innerHTML = `
                     <div class=\"netease-playlist-info\">
-                        <img class=\"netease-playlist-cover\" data-src=\"${toHttps(data.coverImgUrl)}?param=200y200\" loading=\"lazy\" alt=\"歌单封面\">
+                        <img class=\"netease-playlist-cover\" data-src=\"${escapeHtml(toHttps(data.coverImgUrl))}?param=200y200\" loading=\"lazy\" alt=\"歌单封面\">
                         <div class=\"netease-playlist-meta\">
-                            <div class=\"netease-playlist-name\">${data.name}</div>
+                            <div class=\"netease-playlist-name\">${escapeHtml(data.name)}</div>
                             <div class=\"netease-playlist-desc\">${trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount/10000) + '万播放' : ''}</div>
                             <button class=\"netease-import-btn\" onclick=\"importPlaylistToQueue()\">📥 导入到播放列表</button>
                         </div>
@@ -3964,6 +4314,7 @@
                     const offsets = [];
                     for (let o = 0; o < trackCount; o += limit) offsets.push(o);
                     const resultsMap = new Map();
+                    const failedOffsets = new Set();
                     let idx = 0;
 
                     // 简单的 429/短期错误退避重试器（用于保护 Zeabur 端点）
@@ -4052,6 +4403,7 @@
                                 playlistResults.appendChild(progressDiv);
                             } catch (e) {
                                 if (e.name === 'AbortError') return;
+                                failedOffsets.add(myOffset);
                                 console.warn('batch error', e);
                             }
                         }
@@ -4062,22 +4414,30 @@
                     const sortedOffsets = Array.from(resultsMap.keys()).sort((a,b)=>a-b);
                     const mergedAll = [];
                     for (const o of sortedOffsets) mergedAll.push(...resultsMap.get(o));
-                    return mergedAll;
+                    return { tracks: mergedAll, failedOffsets: Array.from(failedOffsets).sort((a,b)=>a-b) };
                 }
 
                 try {
                     const concurrency = 3; // 可调：3~6 之间视服务稳定性而定
-                    const merged = await fetchBatchesConcurrently(concurrency);
+                    const batchResult = await fetchBatchesConcurrently(concurrency);
                     if (abortController.signal.aborted || window._currentPlaylistLoadToken !== myLoadToken) {
                         // 被取消或已切换歌单
                         loading = false;
                         return;
                     }
-                    allTracks = merged;
+                    allTracks = batchResult.tracks;
                     loading = false;
                     const old = playlistResults.querySelector('.netease-loading'); if (old) old.remove();
                     renderSongList(allTracks, playlistResults, 0);
                     currentPlaylistData.tracks = allTracks;
+                    currentPlaylistData.tracksLoadIncomplete = batchResult.failedOffsets.length > 0 || allTracks.length < trackCount;
+                    currentPlaylistData.failedOffsets = batchResult.failedOffsets;
+                    if (currentPlaylistData.tracksLoadIncomplete) {
+                        const warnDiv = document.createElement('div');
+                        warnDiv.className = 'netease-empty';
+                        warnDiv.textContent = `歌单加载不完整：已加载 ${allTracks.length}/${trackCount} 首，请重试后再导入。`;
+                        playlistResults.prepend(warnDiv);
+                    }
                 } catch (e) {
                     if (e.name === 'AbortError') {
                         // ignore
@@ -4090,7 +4450,7 @@
                 if (e.name === 'AbortError') {
                     playlistResults.innerHTML = '<div class="netease-empty">请求已取消或超时</div>';
                 } else {
-                    playlistResults.innerHTML = '<div class="netease-empty">获取失败: ' + e.message + '</div>';
+                    playlistResults.innerHTML = '<div class="netease-empty">获取失败: ' + escapeHtml(e.message) + '</div>';
                 }
             } finally {
                 playlistBtn.disabled = false;
@@ -4101,6 +4461,10 @@
         // 导入歌单到播放队列
         window.importPlaylistToQueue = async function() {
             if (!currentPlaylistData || !currentPlaylistData.tracks) return;
+            if (currentPlaylistData.tracksLoadIncomplete) {
+                alert('歌单还没有完整加载完成，请重新获取歌单后再导入。');
+                return;
+            }
             
             const tracks = currentPlaylistData.tracks;
             log(`Importing ${tracks.length} songs from playlist`);
