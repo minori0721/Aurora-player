@@ -1692,15 +1692,40 @@
         let originalLyricsArr = [];
         let translatedLyricsArr = [];
         let romanLyricsArr = [];
+        let lyricMetadataArr = [];
         let yrcData = null; // 逐字歌词数组，null 表示本首歌没有 YRC 数据
 
-        function parseLyricsToArray(text) {
+        function parseJsonLyricLine(line) {
+            if (!line || line[0] !== '{') return null;
+            try {
+                const obj = JSON.parse(line);
+                if (!obj || !Array.isArray(obj.c)) return null;
+                const txt = obj.c.map(part => part && typeof part.tx === 'string' ? part.tx : '').join('').trim();
+                if (!txt) return null;
+                const t = Number(obj.t);
+                if (Number.isFinite(t) && t >= 0) return { t: t / 1000, txt };
+                return { t: -1, txt, meta: true };
+            } catch(e) {
+                return null;
+            }
+        }
+
+        function parseLyricsToArray(text, metaBucket) {
             if(!text) return [];
             const lines = text.split(/\r?\n/);
             const timeReg = /\[(\d{1,2}):(\d{2})(?:[:.](\d{2,3}))?\]/g;
             const out = [];
             lines.forEach(l => {
                 const line = l.trim(); if(!line) return;
+                const jsonLine = parseJsonLyricLine(line);
+                if (jsonLine) {
+                    if (jsonLine.meta) {
+                        if (metaBucket) metaBucket.push({ t: -1, txt: jsonLine.txt });
+                    } else {
+                        out.push(jsonLine);
+                    }
+                    return;
+                }
                 const times = []; let match;
                 while ((match = timeReg.exec(line)) !== null) {
                     const min = parseInt(match[1]); const sec = parseInt(match[2]); let ms = match[3] ? parseInt(match[3]) : 0;
@@ -1868,11 +1893,23 @@
                 const origText = originalLyricsArr.map(l=>l.txt).join('\n');
                 const transText = translatedLyricsArr.map(l=>l.txt).join('\n');
                 const romaText = romanLyricsArr.map(l=>l.txt).join('\n');
+                const metaText = lyricMetadataArr.map(l=>l.txt).join('\n');
+                const metaOnlyHtml = metaText
+                    ? `<div class="lyric-line active" style="margin-top:100px; cursor:default;"><div>🎵 纯音乐，无歌词</div><div class="lyric-translation" style="white-space:pre-wrap;">${escapeHtml(metaText)}</div></div>`
+                    : `<div class="lyric-line active" style="margin-top:100px; cursor:default;">暂无歌词</div>`;
                 if(lyricDisplayMode === 'original') {
-                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${escapeHtml(origText || transText || romaText || '暂无歌词')}</div>`;
+                    if (origText || transText || romaText) {
+                        el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${escapeHtml(origText || transText || romaText)}</div>`;
+                    } else {
+                        el.lyricBox.innerHTML = metaOnlyHtml;
+                    }
                 } else {
                     const subText = lyricDisplayMode === 'both' ? transText : romaText;
-                    el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${escapeHtml(origText)}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${escapeHtml(subText)}</div>`;
+                    if (origText || subText) {
+                        el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${escapeHtml(origText)}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${escapeHtml(subText)}</div>`;
+                    } else {
+                        el.lyricBox.innerHTML = metaOnlyHtml;
+                    }
                 }
             } else {
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
@@ -3847,9 +3884,10 @@
             originalLyricsText = text || '';
             translatedLyricsText = transText || '';
             romanLyricsText = romaText || '';
-            originalLyricsArr = parseLyricsToArray(originalLyricsText);
-            translatedLyricsArr = parseLyricsToArray(translatedLyricsText);
-            romanLyricsArr = parseLyricsToArray(romanLyricsText);
+            lyricMetadataArr = [];
+            originalLyricsArr = parseLyricsToArray(originalLyricsText, lyricMetadataArr);
+            translatedLyricsArr = parseLyricsToArray(translatedLyricsText, lyricMetadataArr);
+            romanLyricsArr = parseLyricsToArray(romanLyricsText, lyricMetadataArr);
 
             const hasTranslation = translatedLyricsArr.length > 0;
             const hasRoman = romanLyricsArr.length > 0;
@@ -3857,7 +3895,7 @@
             updateLyricToggleUI(hasTranslation || hasRoman);
 
             renderLyricsFromArrays(source);
-            log(`Lyrics parsed. Original: ${originalLyricsArr.length}, Trans: ${translatedLyricsArr.length}, Roma: ${romanLyricsArr.length}`, 'success');
+            log(`Lyrics parsed. Original: ${originalLyricsArr.length}, Trans: ${translatedLyricsArr.length}, Roma: ${romanLyricsArr.length}${lyricMetadataArr.length ? `, Meta: ${lyricMetadataArr.length}` : ''}`, 'success');
         }
 
         function startAudio(offset) {
