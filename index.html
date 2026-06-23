@@ -808,7 +808,15 @@
             <span>Rough End (B)</span>
             <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略终点 B">
         </div>
-        
+        <div class="panel-row">
+            <span>匹配算法</span>
+            <select id="ana-mode" class="panel-input" aria-label="智能分析匹配算法" style="width:130px;">
+                <option value="balanced" selected>均衡推荐</option>
+                <option value="fast">速度优先</option>
+                <option value="full">准确优先</option>
+            </select>
+        </div>
+
         <div class="analyze-btn-group">
             <button class="glass-btn" onclick="capturePoint('a')">📍 定位 A</button>
             <button class="glass-btn" onclick="capturePoint('b')">📍 定位 B</button>
@@ -818,7 +826,7 @@
             <button class="glass-btn" onclick="previewPoint('b')">🔊 试听 B</button>
         </div>
         
-        <button class="glass-btn big-btn" onclick="runAnalysis()" style="margin-top:10px;">✨ 开始精确匹配</button>
+        <button class="glass-btn big-btn" id="ana-run" onclick="runAnalysis()" style="margin-top:10px;">✨ 开始精确匹配</button>
         <button class="glass-btn big-btn" onclick="exportSLI()" style="margin-top:8px; background:#27ae60;">💾 导出 .sli 文件</button>
         <div id="ana-msg" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
     </div>
@@ -1647,7 +1655,7 @@
             modeBtn: document.getElementById('mode-btn'), loadTip: document.getElementById('loading-tip'),
             volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range'),
             // Analyze UI
-            anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMsg: document.getElementById('ana-msg')
+            anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMode: document.getElementById('ana-mode'), anaRun: document.getElementById('ana-run'), anaMsg: document.getElementById('ana-msg')
         };
         // 下载 UI 元素
         const downloadBtn = document.getElementById('download-btn');
@@ -2119,144 +2127,211 @@
         const colorThief = new ColorThief();
         const canvasCtx = el.canvas.getContext('2d');
 
-        // --- 核心：自动波形匹配算法 (升级版：MSE + 过零点优化) ---
+        // --- 核心：自动循环匹配算法 (相位窗口 + 接缝评分) ---
         function runAnalysis() {
+            if (el.anaRun?.disabled) return;
             if (!audioBuffer) { el.anaMsg.textContent = "Please load audio first!"; return; }
-            
+
             const roughA = parseFloat(el.anaStart.value);
             const roughB = parseFloat(el.anaEnd.value);
             if (isNaN(roughA) || isNaN(roughB) || roughB <= roughA) {
                 el.anaMsg.textContent = "Invalid range (A must < B)"; return;
             }
 
-            el.anaMsg.textContent = "Analyzing... (This may take a moment)";
+            const mode = el.anaMode?.value || 'balanced';
+            const modeLabel = getLoopMatchModeLabel(mode);
+            el.anaMsg.textContent = `Analyzing... (${modeLabel})`;
             el.anaMsg.style.color = "var(--accent)";
+            const runButtonText = el.anaRun?.textContent;
+            if (el.anaRun) {
+                el.anaRun.disabled = true;
+                el.anaRun.textContent = "⏳ 匹配中...";
+            }
 
             requestAnimationFrame(() => {
                 setTimeout(() => {
                     try {
-                        // 尝试三次：原始B点、B+0.1s、B-0.1s
-                        const attempts = [
-                            { bOffset: 0, label: "原始" },
-                            { bOffset: 0.1, label: "B+0.1s" },
-                            { bOffset: -0.1, label: "B-0.1s" }
-                        ];
-                        
-                        let bestResult = null;
-                        let bestConfidence = 0;
-                        let bestLabel = "";
-                        
-                        for (const attempt of attempts) {
-                            const adjustedB = roughB + attempt.bOffset;
-                            if (adjustedB <= roughA) continue; // 跳过无效范围
-                            
-                            const result = findBestMatch(audioBuffer, roughA, adjustedB);
-                            if (result) {
-                                const confidence = Math.max(0, (1 - result.diff) * 100);
-                                log(`尝试 ${attempt.label}: 置信度 ${confidence.toFixed(1)}%`);
-                                
-                                // 如果置信度 >= 99%，立即采用
-                                if (confidence >= 99) {
-                                    bestResult = result;
-                                    bestConfidence = confidence;
-                                    bestLabel = attempt.label;
-                                    break; // 找到满意结果，停止尝试
-                                }
-                                
-                                // 记录最佳结果
-                                if (confidence > bestConfidence) {
-                                    bestResult = result;
-                                    bestConfidence = confidence;
-                                    bestLabel = attempt.label;
-                                }
-                            }
-                        }
-                        
-                        // 判断最终结果
-                        if (bestResult && bestConfidence >= 99) {
-                            applyLoop(bestResult.start, bestResult.end);
-                            el.anaMsg.textContent = `✨ 欸嘿嘿 找到了! [${bestLabel}] (置信度: ${bestConfidence.toFixed(1)}%)`;
+                        const result = findBestMatchByMode(audioBuffer, roughA, roughB, mode);
+                        const confidence = Number.isFinite(result.confidence)
+                            ? result.confidence
+                            : Math.max(0, (1 - result.diff) * 100);
+                        const tookText = result.elapsedMs ? ` / ${result.elapsedMs.toFixed(0)}ms` : "";
+
+                        if (confidence >= 80) {
+                            applyLoop(result.start, result.end);
+                            el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})`;
                             el.anaMsg.style.color = "#27ae60";
-                            log(`Auto-Loop: ${bestResult.start.toFixed(4)}s -> ${bestResult.end.toFixed(4)}s`, 'success');
-                        } else if (bestResult) {
-                            el.anaMsg.textContent = `❌ 好像不对哦？ (最高: ${bestConfidence.toFixed(1)}% < 99%). 请再调整 A/B 点试试吧！`;
-                            el.anaMsg.style.color = "#e74c3c";
-                            log(`All attempts failed. Best: ${bestConfidence.toFixed(1)}%`, 'error');
+                            log(`Auto-Loop [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'success');
+                        } else if (confidence >= 30) {
+                            applyLoop(result.start, result.end);
+                            el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})，建议先试听。`;
+                            el.anaMsg.style.color = "#f39c12";
+                            log(`Auto-Loop candidate [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'warn');
                         } else {
-                            el.anaMsg.textContent = "Could not find a seamless match nearby.";
+                            el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高: ${confidence.toFixed(1)}%${tookText})，请把 A/B 粗点靠近重复段。`;
                             el.anaMsg.style.color = "#e74c3c";
+                            log(`Auto-Loop failed [${modeLabel}]. Best=${confidence.toFixed(1)}%${tookText}`, 'error');
                         }
                     } catch (e) {
                         el.anaMsg.textContent = "Error: " + e.message;
                         console.error(e);
+                    } finally {
+                        if (el.anaRun) {
+                            el.anaRun.disabled = false;
+                            el.anaRun.textContent = runButtonText || "✨ 开始精确匹配";
+                        }
                     }
                 }, 50);
             });
         }
 
-        /**
-         * 寻找最佳循环点 (改良版)
-         * 1. 粗略搜索：使用均方差 (MSE) 找到波形最相似的位置
-         * 2. 精细调整：寻找最近的"过零点 (Zero Crossing)"，消除爆音
-         */
-        function findBestMatch(buffer, timeA, timeB) {
-            const chan0 = buffer.getChannelData(0); 
-            // 如果是双声道，取两个声道平均值进行分析，效果更准
+        const monoAnalysisCache = new WeakMap();
+        const downsampleAnalysisCache = new WeakMap();
+
+        function getMonoAnalysisData(buffer) {
+            const cached = monoAnalysisCache.get(buffer);
+            if (cached) return cached;
+            const chan0 = buffer.getChannelData(0);
+            if (buffer.numberOfChannels === 1) {
+                monoAnalysisCache.set(buffer, chan0);
+                return chan0;
+            }
+            const chan1 = buffer.getChannelData(1);
+            const mixed = new Float32Array(chan0.length);
+            for (let i = 0; i < chan0.length; i++) mixed[i] = (chan0[i] + chan1[i]) * 0.5;
+            monoAnalysisCache.set(buffer, mixed);
+            return mixed;
+        }
+
+        function getDownsampledAnalysisData(buffer, targetRate = 6000) {
+            let byRate = downsampleAnalysisCache.get(buffer);
+            if (!byRate) {
+                byRate = new Map();
+                downsampleAnalysisCache.set(buffer, byRate);
+            }
+            if (byRate.has(targetRate)) return byRate.get(targetRate);
+
+            const mono = getMonoAnalysisData(buffer);
+            const sourceRate = buffer.sampleRate;
+            const factor = Math.max(1, Math.floor(sourceRate / targetRate));
+            const rate = sourceRate / factor;
+            const length = Math.floor(mono.length / factor);
+            const data = new Float32Array(length);
+
+            for (let i = 0; i < length; i++) {
+                const from = i * factor;
+                let sum = 0;
+                for (let j = 0; j < factor; j++) sum += mono[from + j] || 0;
+                data[i] = sum / factor;
+            }
+
+            const result = { data, rate, factor };
+            byRate.set(targetRate, result);
+            return result;
+        }
+
+        function clampSampleIndex(index, length) {
+            return Math.max(1, Math.min(length - 2, Math.round(index)));
+        }
+
+        function getWindowRms(data, start, size, sampleStep = 16) {
+            const from = Math.max(0, Math.min(data.length - 1, start));
+            const to = Math.max(from + 1, Math.min(data.length, from + size));
+            let energy = 0;
+            let count = 0;
+            for (let i = from; i < to; i += sampleStep) {
+                const value = data[i] || 0;
+                energy += value * value;
+                count++;
+            }
+            return count ? Math.sqrt(energy / count) : 0;
+        }
+
+        function uniqueSampleCandidates(candidates, minDistance = 24) {
+            const sorted = candidates
+                .filter(v => Number.isFinite(v))
+                .map(v => Math.round(v))
+                .sort((a, b) => a - b);
+            const result = [];
+            for (const value of sorted) {
+                if (!result.some(item => Math.abs(item - value) < minDistance)) result.push(value);
+            }
+            return result;
+        }
+
+        function collectGridCandidates(center, radius, dataLength, step) {
+            const from = Math.max(1, center - radius);
+            const to = Math.min(dataLength - 2, center + radius);
+            const candidates = [center];
+            for (let i = from; i <= to; i += step) candidates.push(i);
+            candidates.push(to);
+            return candidates;
+        }
+
+        function getLoopMatchModeLabel(mode) {
+            if (mode === 'fast') return '速度优先';
+            if (mode === 'full') return '准确优先';
+            return '均衡推荐';
+        }
+
+        function createLoopMatchResult(start, end, confidence, startedAt, detail = {}) {
+            const safeConfidence = Math.max(0, Math.min(100, Number.isFinite(confidence) ? confidence : 0));
+            return {
+                start,
+                end,
+                confidence: safeConfidence,
+                diff: Math.max(0, Math.min(1, 1 - safeConfidence / 100)),
+                elapsedMs: performance.now() - startedAt,
+                detail
+            };
+        }
+
+        function runFastLoopAttempt(buffer, timeA, timeB) {
+            const chan0 = buffer.getChannelData(0);
             let data = chan0;
             if (buffer.numberOfChannels > 1) {
-                const chan1 = buffer.getChannelData(1);
-                data = new Float32Array(chan0.length);
-                for(let i=0; i<chan0.length; i++) data[i] = (chan0[i] + chan1[i]) / 2;
+                data = getMonoAnalysisData(buffer);
             }
 
             const sr = buffer.sampleRate;
-            
-            // 参数设定
-            const searchRadius = 3.0; // 搜索半径扩大到 3秒
-            const windowSize = Math.floor(0.15 * sr); // 匹配窗口 150ms (足够识别节奏)
-            
+            const searchRadius = 3.0;
+            const windowSize = Math.floor(0.15 * sr);
             const centerB = Math.floor(timeB * sr);
             const centerA = Math.floor(timeA * sr);
-
-            // 1. 定义 B 点的特征模板 (取 B 点之前的一段声音)
             const templateStart = centerB - windowSize;
-            
-            // 边界检查
+
             if (templateStart < 0 || centerB >= data.length) throw new Error("End point out of bounds");
-            
-            // A 点搜索范围
+
             const startIdx = Math.max(0, centerA - Math.floor(searchRadius * sr));
             const endIdx = Math.min(centerB - windowSize * 2, centerA + Math.floor(searchRadius * sr));
+            if (endIdx <= startIdx) throw new Error("Search range is too narrow");
 
-            // --- 阶段 1: 粗略 MSE 扫描 (跳步扫描以提升速度) ---
             let bestOffset = -1;
             let minDiff = Infinity;
-            const step = 4; // 精度步长
+            const step = 4;
 
             for (let i = startIdx; i < endIdx; i += step) {
                 let diff = 0;
-                // 优化：只对比部分采样点估算相似度，极大提升性能
-                for (let j = 0; j < windowSize; j += 10) { 
+                for (let j = 0; j < windowSize; j += 10) {
                     const delta = data[i + j] - data[templateStart + j];
                     diff += delta * delta;
-                    // 如果差异已经大于当前最小值，提前放弃 (剪枝优化)
                     if (diff > minDiff) break;
                 }
-                
                 if (diff < minDiff) {
                     minDiff = diff;
                     bestOffset = i;
                 }
             }
 
-            // --- 阶段 2: 局部精细优选 (逐点扫描) ---
+            if (bestOffset < 0) throw new Error("No candidate found in search range");
+
             let fineBest = bestOffset;
             let fineMinDiff = Infinity;
-            const fineRange = 200; // 在粗略点前后 200 采样内精细找
+            const fineRange = 200;
 
-            for (let i = bestOffset - fineRange; i <= bestOffset + fineRange; i++) {
+            for (let i = Math.max(0, bestOffset - fineRange); i <= Math.min(data.length - windowSize - 1, bestOffset + fineRange); i++) {
                 let diff = 0;
-                for (let j = 0; j < windowSize; j += 2) { // 提高采样密度
+                for (let j = 0; j < windowSize; j += 2) {
                     const delta = data[i + j] - data[templateStart + j];
                     diff += delta * delta;
                 }
@@ -2266,17 +2341,538 @@
                 }
             }
 
-            // 计算 A 点位置
-            let refinedA = fineBest + windowSize; 
-
-            // 计算归一化差异度
+            const refinedA = fineBest + windowSize;
             const normalizedDiff = fineMinDiff / (windowSize / 2);
-            
-            return { 
-                start: refinedA / sr, 
+            const confidence = Math.max(0, Math.min(100, (1 - normalizedDiff) * 100));
+            return {
+                start: refinedA / sr,
                 end: timeB,
-                diff: normalizedDiff 
+                confidence,
+                diff: normalizedDiff,
+                detail: {
+                    algorithm: 'fast',
+                    fineMinDiff,
+                    windowSize,
+                    adjustedEnd: timeB
+                }
             };
+        }
+
+        function findBestMatchFast(buffer, timeA, timeB) {
+            const startedAt = performance.now();
+            const attempts = [
+                { bOffset: 0, label: 'B' },
+                { bOffset: 0.1, label: 'B+0.1' },
+                { bOffset: -0.1, label: 'B-0.1' }
+            ];
+            let best = null;
+
+            for (const attempt of attempts) {
+                const adjustedB = timeB + attempt.bOffset;
+                if (adjustedB <= timeA) continue;
+                let result;
+                try {
+                    result = runFastLoopAttempt(buffer, timeA, adjustedB);
+                } catch (e) {
+                    continue;
+                }
+                if (!best || result.confidence > best.confidence) {
+                    best = {
+                        ...result,
+                        attempt: attempt.label,
+                        attemptsRun: (best?.attemptsRun || 0) + 1
+                    };
+                }
+                if (result.confidence >= 99) break;
+            }
+
+            if (!best) throw new Error("No candidate found in search range");
+            return createLoopMatchResult(best.start, best.end, best.confidence, startedAt, {
+                ...best.detail,
+                attempt: best.attempt
+            });
+        }
+
+        function scoreLoopPair(data, startIdx, endIdx, sr, roughStartIdx, roughEndIdx, options = {}) {
+            const len = data.length;
+            const start = clampSampleIndex(startIdx, len);
+            const end = clampSampleIndex(endIdx, len);
+            const minLoopLength = Math.floor(0.25 * sr);
+            const phaseWindow = options.phaseWindow ?? Math.max(1024, Math.floor(0.16 * sr));
+            const sampleStep = options.sampleStep ?? 24;
+            const maxMoveSamples = options.maxMoveSamples ?? Infinity;
+            if (
+                end <= start + minLoopLength ||
+                start < phaseWindow ||
+                end < phaseWindow ||
+                Math.abs(start - roughStartIdx) > maxMoveSamples ||
+                Math.abs(end - roughEndIdx) > maxMoveSamples
+            ) {
+                return { score: Infinity, confidence: 0, start, end };
+            }
+
+            const startPre = start - phaseWindow;
+            const endPre = end - phaseWindow;
+            const contextRms = Math.max(
+                getWindowRms(data, startPre, phaseWindow, sampleStep),
+                getWindowRms(data, endPre, phaseWindow, sampleStep),
+                0.002
+            );
+
+            let mse = 0;
+            let count = 0;
+            for (let j = 0; j < phaseWindow; j += sampleStep) {
+                const delta = (data[startPre + j] || 0) - (data[endPre + j] || 0);
+                mse += delta * delta;
+                count++;
+            }
+
+            const phaseError = Math.sqrt(mse / Math.max(1, count)) / contextRms;
+            const startPrev = data[start - 1] || 0;
+            const endPrev = data[end - 1] || 0;
+            const start0 = data[start] || 0;
+            const start1 = data[start + 1] || start0;
+            const seamPrevError = Math.abs(endPrev - startPrev) / contextRms;
+            const seamJumpError = Math.abs(start0 - endPrev) / contextRms;
+            const slopeError = Math.abs((start1 - start0) - (start0 - endPrev)) / contextRms;
+            const startDistanceSec = Math.abs(start - roughStartIdx) / sr;
+            const endDistanceSec = Math.abs(end - roughEndIdx) / sr;
+            const distanceSec = startDistanceSec + endDistanceSec;
+            const maxDistanceSec = Math.max(startDistanceSec, endDistanceSec);
+            const bothMovedSec = Math.min(startDistanceSec, endDistanceSec);
+            const distancePenalty = distanceSec * (options.distanceWeight ?? 0.035);
+            const roughLoopLengthSec = Math.max(0, (roughEndIdx - roughStartIdx) / sr);
+            const loopLengthSec = (end - start) / sr;
+            const lengthDeltaSec = Math.abs(loopLengthSec - roughLoopLengthSec);
+            const lengthPenalty = lengthDeltaSec * (options.lengthWeight ?? 0);
+
+            const qualityScore =
+                phaseError * 1.55 +
+                seamPrevError * 0.9 +
+                seamJumpError * 0.55 +
+                slopeError * 0.18;
+            const score = qualityScore + distancePenalty + lengthPenalty;
+            const confidence = Math.max(0, Math.min(100, 100 * Math.exp(-(qualityScore + distancePenalty * 0.25) * 1.12)));
+
+            return {
+                score,
+                confidence,
+                start,
+                end,
+                detail: {
+                    phaseError,
+                    seamPrevError,
+                    seamJumpError,
+                    slopeError,
+                    qualityScore,
+                    distancePenalty,
+                    lengthPenalty,
+                    distanceSec,
+                    maxDistanceSec,
+                    bothMovedSec,
+                    lengthDeltaSec,
+                    contextRms
+                }
+            };
+        }
+
+        function insertRankedPair(candidates, candidate, limit, minDistance) {
+            if (!Number.isFinite(candidate.score)) return;
+            const duplicate = candidates.find(item =>
+                Math.abs(item.start - candidate.start) < minDistance &&
+                Math.abs(item.end - candidate.end) < minDistance
+            );
+            if (duplicate && duplicate.score <= candidate.score) return;
+            if (duplicate) candidates.splice(candidates.indexOf(duplicate), 1);
+            candidates.push(candidate);
+            candidates.sort((a, b) => a.score - b.score);
+            if (candidates.length > limit) candidates.length = limit;
+        }
+
+        function refineLoopPair(data, seed, sr, roughStart, roughEnd, options = {}) {
+            let best = seed;
+            const maxMoveSamples = options.maxMoveSamples ?? Infinity;
+            const anchorStart = seed.start;
+            const anchorEnd = seed.end;
+            const passes = [
+                { radius: Math.floor(0.18 * sr), step: Math.max(16, Math.floor(0.012 * sr)), sampleStep: 32, phaseWindow: Math.floor(0.16 * sr) },
+                { radius: Math.floor(0.045 * sr), step: 16, sampleStep: 8, phaseWindow: Math.floor(0.14 * sr) },
+                { radius: Math.floor(0.008 * sr), step: 1, sampleStep: 3, phaseWindow: Math.floor(0.10 * sr) }
+            ];
+
+            for (const pass of passes) {
+                for (let repeat = 0; repeat < 2; repeat++) {
+                    if (!options.lockStart) {
+                        const startFrom = Math.max(anchorStart - pass.radius, roughStart - maxMoveSamples);
+                        const startTo = Math.min(anchorStart + pass.radius, roughStart + maxMoveSamples);
+                        for (let s = startFrom; s <= startTo; s += pass.step) {
+                            const candidate = scoreLoopPair(data, s, best.end, sr, roughStart, roughEnd, { ...pass, maxMoveSamples });
+                            if (candidate.score < best.score) best = candidate;
+                        }
+                    }
+
+                    if (!options.lockEnd) {
+                        const endFrom = Math.max(anchorEnd - pass.radius, roughEnd - maxMoveSamples);
+                        const endTo = Math.min(anchorEnd + pass.radius, roughEnd + maxMoveSamples);
+                        for (let e = endFrom; e <= endTo; e += pass.step) {
+                            const candidate = scoreLoopPair(data, best.start, e, sr, roughStart, roughEnd, { ...pass, maxMoveSamples });
+                            if (candidate.score < best.score) best = candidate;
+                        }
+                    }
+                }
+            }
+
+            return scoreLoopPair(data, best.start, best.end, sr, roughStart, roughEnd, {
+                sampleStep: 2,
+                phaseWindow: Math.floor(0.12 * sr),
+                maxMoveSamples
+            });
+        }
+
+        function chooseLoopCandidate(candidates) {
+            const viable = candidates.filter(item => Number.isFinite(item.score));
+            if (!viable.length) return null;
+
+            const rank = (item, allowWideMove) =>
+                item.detail.qualityScore +
+                item.detail.distanceSec * 0.04 +
+                item.detail.maxDistanceSec * 0.03 +
+                item.detail.bothMovedSec * (allowWideMove ? 0.18 : 0.65) +
+                item.detail.lengthDeltaSec * (allowWideMove ? 0.02 : 0.12);
+
+            const reliable = viable.filter(item => item.confidence >= 30);
+            const pool = reliable.length ? reliable : viable;
+            const allowWideMove = reliable.length > 0;
+
+            pool.sort((a, b) => {
+                const rankA = rank(a, allowWideMove);
+                const rankB = rank(b, allowWideMove);
+                if (Math.abs(rankA - rankB) > 0.000001) return rankA - rankB;
+                return b.confidence - a.confidence;
+            });
+
+            if (reliable.length) return pool[0];
+
+            viable.sort((a, b) => {
+                const rankA =
+                    a.detail.qualityScore +
+                    a.detail.distanceSec * 0.08 +
+                    a.detail.maxDistanceSec * 0.05 +
+                    a.detail.bothMovedSec * 0.65 +
+                    a.detail.lengthDeltaSec * (a.detail.qualityScore > 0.55 ? 0.22 : 0.08);
+                const rankB =
+                    b.detail.qualityScore +
+                    b.detail.distanceSec * 0.08 +
+                    b.detail.maxDistanceSec * 0.05 +
+                    b.detail.bothMovedSec * 0.65 +
+                    b.detail.lengthDeltaSec * (b.detail.qualityScore > 0.55 ? 0.22 : 0.08);
+                return rankA - rankB || b.confidence - a.confidence;
+            });
+
+            return viable[0];
+        }
+
+        function addScoredPair(candidates, data, start, end, sr, roughStart, roughEnd, flags, minDistance, limit = 160) {
+            const candidate = scoreLoopPair(data, start, end, sr, roughStart, roughEnd, {
+                sampleStep: 48,
+                phaseWindow: Math.floor(0.14 * sr),
+                distanceWeight: 0.04,
+                maxMoveSamples: flags.maxMoveSamples
+            });
+            insertRankedPair(candidates, { ...candidate, ...flags }, limit, minDistance);
+        }
+
+        function scoreNccWindow(data, startA, startB, windowSize, sampleStep = 1) {
+            if (startA < 0 || startB < 0 || startA + windowSize >= data.length || startB + windowSize >= data.length) {
+                return -Infinity;
+            }
+
+            let sumA = 0;
+            let sumB = 0;
+            let sumAA = 0;
+            let sumBB = 0;
+            let sumAB = 0;
+            let count = 0;
+
+            for (let i = 0; i < windowSize; i += sampleStep) {
+                const a = data[startA + i] || 0;
+                const b = data[startB + i] || 0;
+                sumA += a;
+                sumB += b;
+                sumAA += a * a;
+                sumBB += b * b;
+                sumAB += a * b;
+                count++;
+            }
+
+            if (!count) return -Infinity;
+            const numerator = sumAB - (sumA * sumB) / count;
+            const energyA = sumAA - (sumA * sumA) / count;
+            const energyB = sumBB - (sumB * sumB) / count;
+            const denominator = Math.sqrt(Math.max(energyA * energyB, 1e-12));
+            return denominator > 0 ? numerator / denominator : -Infinity;
+        }
+
+        function insertNccCandidate(candidates, candidate, limit, minDistance) {
+            if (!Number.isFinite(candidate.ncc)) return;
+            const duplicate = candidates.find(item =>
+                Math.abs(item.start - candidate.start) < minDistance &&
+                Math.abs(item.end - candidate.end) < minDistance
+            );
+            if (duplicate && duplicate.ncc >= candidate.ncc) return;
+            if (duplicate) candidates.splice(candidates.indexOf(duplicate), 1);
+            candidates.push(candidate);
+            candidates.sort((a, b) => b.ncc - a.ncc);
+            if (candidates.length > limit) candidates.length = limit;
+        }
+
+        function collectBalancedSeedsForRate(buffer, timeA, timeB, options = {}) {
+            const { data, rate } = getDownsampledAnalysisData(buffer, options.targetRate || 6000);
+            const sr = buffer.sampleRate;
+            const roughStart = clampSampleIndex(timeA * rate, data.length);
+            const roughEnd = clampSampleIndex(timeB * rate, data.length);
+            const searchRadiusSec = Math.min(2.35, Math.max(2.18, (timeB - timeA) * 0.0175));
+            const searchRadius = Math.floor(searchRadiusSec * rate);
+            const step = Math.max(8, Math.floor(0.02 * rate));
+            const fineStep = Math.max(2, Math.floor(0.006 * rate));
+            const windowSize = Math.max(512, Math.floor(0.18 * rate));
+            const minDistance = Math.max(4, Math.floor(0.025 * rate));
+            const topLimit = options.topLimit || 28;
+            const seeds = [];
+
+            const addCandidate = (start, end, source, sampleStep = 1) => {
+                const startPre = Math.round(start - windowSize);
+                const endPre = Math.round(end - windowSize);
+                const ncc = scoreNccWindow(data, startPre, endPre, windowSize, sampleStep);
+                const distanceSec = (Math.abs(start - roughStart) + Math.abs(end - roughEnd)) / rate;
+                const nccWithDistance = ncc - distanceSec * 0.025;
+                insertNccCandidate(seeds, {
+                    start: Math.round(start),
+                    end: Math.round(end),
+                    ncc: nccWithDistance,
+                    rawNcc: ncc,
+                    source
+                }, topLimit, minDistance);
+            };
+
+            for (let offset = -searchRadius; offset <= searchRadius; offset += step) {
+                addCandidate(roughStart + offset, roughEnd + offset, 'shift', 2);
+                addCandidate(roughStart + offset, roughEnd - offset, 'opposite', 2);
+                addCandidate(roughStart + offset, roughEnd, 'locked-end', 2);
+                addCandidate(roughStart, roughEnd + offset, 'locked-start', 2);
+            }
+            addCandidate(roughStart, roughEnd, 'exact', 1);
+
+            const coarseSeeds = [...seeds];
+            for (const seed of coarseSeeds.slice(0, Math.min(12, coarseSeeds.length))) {
+                for (let ds = -step; ds <= step; ds += fineStep) {
+                    addCandidate(seed.start + ds, seed.end, seed.source + ':fine-start', 1);
+                    addCandidate(seed.start, seed.end + ds, seed.source + ':fine-end', 1);
+                    addCandidate(seed.start + ds, seed.end + ds, seed.source + ':fine-shift', 1);
+                }
+            }
+
+            return seeds.map(seed => ({
+                start: Math.round(seed.start / rate * sr),
+                end: Math.round(seed.end / rate * sr),
+                ncc: seed.ncc,
+                rawNcc: seed.rawNcc,
+                source: seed.source
+            }));
+        }
+
+        function collectBalancedSeeds(buffer, timeA, timeB) {
+            return collectBalancedSeedsForRate(buffer, timeA, timeB);
+        }
+
+        function canStopBalancedRefine(best, refinedCount) {
+            if (!best || refinedCount < 8) return false;
+            const detail = best.detail || {};
+            if (best.confidence >= 94 && detail.maxDistanceSec <= 1.4) return true;
+            return refinedCount >= 12 &&
+                best.confidence >= 86 &&
+                detail.maxDistanceSec <= 1.6 &&
+                detail.lengthDeltaSec <= 0.9;
+        }
+
+        function findBestMatchBalanced(buffer, timeA, timeB) {
+            const startedAt = performance.now();
+            const data = getMonoAnalysisData(buffer);
+            const sr = buffer.sampleRate;
+            const roughStart = clampSampleIndex(timeA * sr, data.length);
+            const roughEnd = clampSampleIndex(timeB * sr, data.length);
+            const minLoopLength = Math.floor(0.25 * sr);
+            if (roughEnd <= roughStart + minLoopLength) throw new Error("Search range is too narrow");
+
+            const searchRadiusSec = Math.min(2.35, Math.max(2.18, (timeB - timeA) * 0.0175));
+            const maxMoveSamples = Math.floor(searchRadiusSec * sr);
+            const seeds = collectBalancedSeeds(buffer, timeA, timeB);
+            const coarseCandidates = [];
+
+            for (const seed of seeds) {
+                const scored = scoreLoopPair(data, seed.start, seed.end, sr, roughStart, roughEnd, {
+                    sampleStep: 24,
+                    phaseWindow: Math.floor(0.14 * sr),
+                    distanceWeight: 0.04,
+                    maxMoveSamples
+                });
+                if (!Number.isFinite(scored.score)) continue;
+                insertRankedPair(
+                    coarseCandidates,
+                    { ...scored, ncc: seed.ncc, rawNcc: seed.rawNcc, source: seed.source },
+                    52,
+                    Math.max(24, Math.floor(0.01 * sr))
+                );
+            }
+
+            const refineSeeds = coarseCandidates
+                .filter(item => Number.isFinite(item.score))
+                .sort((a, b) => a.score - b.score || b.confidence - a.confidence);
+            const refinedCandidates = [];
+
+            for (const scored of refineSeeds) {
+                const refined = refineLoopPair(data, scored, sr, roughStart, roughEnd, {
+                    maxMoveSamples
+                });
+                insertRankedPair(
+                    refinedCandidates,
+                    { ...refined, ncc: scored.ncc, rawNcc: scored.rawNcc, source: scored.source },
+                    36,
+                    Math.max(24, Math.floor(0.006 * sr))
+                );
+                const currentBest = chooseLoopCandidate(refinedCandidates);
+                if (canStopBalancedRefine(currentBest, refinedCandidates.length)) break;
+            }
+
+            const best = chooseLoopCandidate(refinedCandidates);
+            if (!best) throw new Error("No candidate found in search range");
+            return createLoopMatchResult(best.start / sr, best.end / sr, best.confidence, startedAt, {
+                ...best.detail,
+                algorithm: 'balanced',
+                seedCount: seeds.length,
+                refineCount: refineSeeds.length,
+                ncc: best.ncc,
+                rawNcc: best.rawNcc,
+                source: best.source,
+            });
+        }
+
+        /**
+         * 寻找最佳循环点：
+         * A/B 是用户给出的粗点，函数会在附近搜索同相位边界。
+         * 10 -> 130 和 9.712 -> 129.712 可能都是精确循环点，算法只按接缝质量和离粗点距离取最合适的那个。
+         */
+        function findBestMatchFull(buffer, timeA, timeB) {
+            const startedAt = performance.now();
+            const data = getMonoAnalysisData(buffer);
+            const sr = buffer.sampleRate;
+
+            const roughStart = clampSampleIndex(timeA * sr, data.length);
+            const roughEnd = clampSampleIndex(timeB * sr, data.length);
+            const minLoopLength = Math.floor(0.25 * sr);
+            if (roughEnd <= roughStart + minLoopLength) throw new Error("Search range is too narrow");
+
+            const searchRadiusSec = Math.min(2.35, Math.max(2.18, (timeB - timeA) * 0.0175));
+            const searchRadius = Math.floor(searchRadiusSec * sr);
+            const maxMoveSamples = searchRadius;
+            const coarseStep = Math.max(128, Math.floor(0.014 * sr));
+            const minCandidateDistance = Math.max(64, Math.floor(0.025 * sr));
+            const startCandidates = uniqueSampleCandidates(
+                collectGridCandidates(roughStart, searchRadius, data.length, coarseStep),
+                minCandidateDistance
+            );
+            const endCandidates = uniqueSampleCandidates(
+                collectGridCandidates(roughEnd, searchRadius, data.length, coarseStep),
+                minCandidateDistance
+            );
+            const crossStep = Math.max(192, Math.floor(0.045 * sr));
+            const crossMinDistance = Math.max(64, Math.floor(0.04 * sr));
+            const crossStartCandidates = uniqueSampleCandidates(
+                collectGridCandidates(roughStart, searchRadius, data.length, crossStep),
+                crossMinDistance
+            );
+            const crossEndCandidates = uniqueSampleCandidates(
+                collectGridCandidates(roughEnd, searchRadius, data.length, crossStep),
+                crossMinDistance
+            );
+
+            const coarseLockedEnd = [];
+            const coarseLockedStart = [];
+            const coarseShifted = [];
+            const coarseOpposite = [];
+            const coarseCross = [];
+            const coarseExact = [];
+            addScoredPair(coarseExact, data, roughStart, roughEnd, sr, roughStart, roughEnd, { maxMoveSamples }, minCandidateDistance, 8);
+
+            for (const start of startCandidates) {
+                addScoredPair(coarseLockedEnd, data, start, roughEnd, sr, roughStart, roughEnd, { lockEnd: true, maxMoveSamples }, minCandidateDistance);
+            }
+            for (const end of endCandidates) {
+                addScoredPair(coarseLockedStart, data, roughStart, end, sr, roughStart, roughEnd, { lockStart: true, maxMoveSamples }, minCandidateDistance);
+            }
+            for (let offset = -searchRadius; offset <= searchRadius; offset += coarseStep) {
+                addScoredPair(coarseShifted, data, roughStart + offset, roughEnd + offset, sr, roughStart, roughEnd, { shifted: true, maxMoveSamples }, minCandidateDistance, 48);
+                addScoredPair(coarseOpposite, data, roughStart + offset, roughEnd - offset, sr, roughStart, roughEnd, { opposite: true, maxMoveSamples }, minCandidateDistance, 80);
+            }
+            addScoredPair(coarseShifted, data, roughStart + searchRadius, roughEnd + searchRadius, sr, roughStart, roughEnd, { shifted: true, maxMoveSamples }, minCandidateDistance, 48);
+            addScoredPair(coarseOpposite, data, roughStart - searchRadius, roughEnd + searchRadius, sr, roughStart, roughEnd, { opposite: true, maxMoveSamples }, minCandidateDistance, 80);
+            addScoredPair(coarseOpposite, data, roughStart + searchRadius, roughEnd - searchRadius, sr, roughStart, roughEnd, { opposite: true, maxMoveSamples }, minCandidateDistance, 80);
+            addScoredPair(coarseExact, data, roughStart, roughEnd, sr, roughStart, roughEnd, { maxMoveSamples }, minCandidateDistance, 8);
+            for (const start of crossStartCandidates) {
+                for (const end of crossEndCandidates) {
+                    const candidate = scoreLoopPair(data, start, end, sr, roughStart, roughEnd, {
+                        sampleStep: 64,
+                        phaseWindow: Math.floor(0.12 * sr),
+                        distanceWeight: 0.055,
+                        maxMoveSamples
+                    });
+                    insertRankedPair(coarseCross, { ...candidate, cross: true, maxMoveSamples }, 160, crossMinDistance);
+                }
+            }
+
+            const coarseBest = [
+                ...coarseExact.slice(0, 4),
+                ...coarseLockedEnd.slice(0, 32),
+                ...coarseLockedStart.slice(0, 32),
+                ...coarseShifted.slice(0, 18),
+                ...coarseOpposite.slice(0, 80),
+                ...coarseCross.slice(0, 160)
+            ];
+            if (!coarseBest.length) throw new Error("No candidate found in search range");
+
+            const refinedCandidates = [];
+            for (const candidate of coarseBest) {
+                const refined = refineLoopPair(data, candidate, sr, roughStart, roughEnd, {
+                    lockStart: candidate.lockStart,
+                    lockEnd: candidate.lockEnd,
+                    maxMoveSamples
+                });
+                insertRankedPair(
+                    refinedCandidates,
+                    { ...refined, lockStart: candidate.lockStart, lockEnd: candidate.lockEnd, shifted: candidate.shifted },
+                    72,
+                    Math.max(24, Math.floor(0.006 * sr))
+                );
+            }
+            const best = chooseLoopCandidate(refinedCandidates);
+            if (!best) throw new Error("No candidate found in search range");
+
+            return createLoopMatchResult(best.start / sr, best.end / sr, best.confidence, startedAt, {
+                ...best.detail,
+                algorithm: 'full',
+                candidateCount: startCandidates.length * endCandidates.length,
+                refinedCount: refinedCandidates.length
+            });
+        }
+
+        function findBestMatchByMode(buffer, timeA, timeB, mode = 'balanced') {
+            if (mode === 'fast') return findBestMatchFast(buffer, timeA, timeB);
+            if (mode === 'full') return findBestMatchFull(buffer, timeA, timeB);
+            return findBestMatchBalanced(buffer, timeA, timeB);
+        }
+
+        function findBestMatch(buffer, timeA, timeB) {
+            return findBestMatchByMode(buffer, timeA, timeB, el.anaMode?.value || 'balanced');
         }
 
         // 辅助：捕获当前播放时间
@@ -2924,7 +3520,10 @@
         }
 
         function startAudio(offset) {
-            if(sourceNode) sourceNode.disconnect();
+            if(sourceNode) {
+                try { sourceNode.onended = null; sourceNode.stop(); } catch(e) {}
+                try { sourceNode.disconnect(); } catch(e) {}
+            }
             sourceNode = actx.createBufferSource();
             sourceNode.buffer = audioBuffer;
             sourceNode.connect(gainNode);
@@ -3165,10 +3764,12 @@
             return new Promise(resolve => {
                 const r = new FileReader();
                 r.onload = e => {
-                    const m = e.target.result.match(/From\s*=\s*(\d+)\s*;\s*To\s*=\s*(\d+)/i);
-                    if(m) {
+                    const text = e.target.result || "";
+                    const fromMatch = text.match(/\bFrom\s*=\s*(\d+)/i);
+                    const toMatch = text.match(/\bTo\s*=\s*(\d+)/i);
+                    if(fromMatch && toMatch) {
                         const rate = parseInt(el.baseRateInput.value) || 44100;
-                        applyLoop(parseInt(m[2])/rate, parseInt(m[1])/rate);
+                        applyLoop(parseInt(toMatch[1])/rate, parseInt(fromMatch[1])/rate);
                         el.loopMsg.textContent = `SLI Loaded`;
                     }
                     resolve();
