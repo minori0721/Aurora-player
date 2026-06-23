@@ -44,8 +44,9 @@
 
 ### 🔍 智能循环分析
 
-* **自动波形匹配**：内置 MSE（均方误差）与过零点检测算法。
-* **智能对齐**：只需粗略设定 A/B 点，算法会自动在 ±2秒 范围内寻找最佳无爆音接缝。
+* **三档匹配算法**：支持「速度优先 / 均衡推荐 / 准确优先」，可按歌曲复杂度和等待时间选择匹配策略。
+* **智能对齐**：只需粗略设定 A/B 点，算法会自动在附近寻找最佳无爆音接缝。
+* **后台分析**：默认使用 Web Worker 执行智能匹配，降低长时间分析时主界面卡住的概率。
 * **一键导出**：支持将分析结果导出为 `.sli` 文件。
 
 ### 🎨 沉浸式 UI
@@ -101,7 +102,7 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 ```html
 <script>
     // 全局 API 地址 (网易云音乐 API)
-    window.API_BASE_URL = 'https://minorimusicapi.zeabur.app';
+    window.API_BASE_URL = 'https://musicproxy.minori.eu.cc';
     
     // 下载代理 Worker 地址 (用于绕过 Referer 限制下载音频)
     window.DOWNLOAD_PROXY_URL = 'https://proxy.minori0721.dpdns.org';
@@ -112,8 +113,15 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 * **API_BASE_URL**: 依赖 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/) ，我的网页使用了经我小优化的 Fork 版本（ [api-enhanced](https://github.com/minori0721/api-enhanced)）。
 * **DOWNLOAD_PROXY_URL**: 需要一个简单的 Cloudflare Worker 或 Nginx 反代，用于处理跨域和 Referer 头，以便浏览器能触发文件下载。
 
+如果部署平台支持构建期环境变量，也可以不直接改业务代码，而是在平台里配置后由构建步骤注入到这两个变量：
+
+* `API_BASE_URL`: 网易云音乐 API 地址。
+* `DOWNLOAD_PROXY_URL`: 下载代理 Worker / 反代地址。
+
+注意：Aurora Player 是纯前端静态页面，浏览器运行时不能直接读取服务器环境变量；环境变量需要在部署平台的构建流程里替换进 `index.html`，或通过平台提供的静态变量注入能力生成最终页面。
+
 经我测试，国内可直连的部署服务包括：
-[zeabur](https://zeabur.com/) | [hugging face](https://huggingface.co/)
+~~[zeabur](https://zeabur.com/)~~（zeabur的serverless函数已经挂掉啦！） | [hugging face](https://huggingface.co/)
 
 ## 🔧 技术栈
 
@@ -138,17 +146,21 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 
 ### 循环点匹配 (Loop Matching)
 
-算法采用了 **双阶段搜索** 策略：
+智能循环匹配提供三档策略：
 
-1. **粗略扫描**：使用均方差 (MSE) 在目标区域进行步进扫描，找到波形相似度最高的区域。
-2. **精细对齐**：在粗选点附近寻找最近的 **过零点 (Zero Crossing)**，确保循环连接处电压为零，从而消除“啪”的爆音。
+1. **速度优先**：保留旧版快速 MSE 匹配逻辑，适合 A/B 点已经比较准的场景。
+2. **均衡推荐**：默认档，使用低采样率 NCC 粗筛，再回到原采样率进行接缝评分与精修。
+3. **准确优先**：全筛候选与精修流程，覆盖更强但耗时更长。
+
+评分会综合接缝前后波形相似度、跳变误差、循环长度偏差、粗点距离和风险项。默认档还会对低风险的临界候选做小幅置信度校准，提升可用结果的采纳率。
 
 ### 置信度 (Confidence)
 
 算法会返回一个置信度评分：
 
-* `> 99.0%`：完美匹配，自动应用。
-* `< 99.0%`：匹配度较低，建议手动微调 A/B 点范围。
+* `>= 80%`：高置信度，自动应用并显示“找到了”。
+* `>= 30%`：候选结果，自动应用但建议先试听确认。
+* `< 30%`：不可靠结果，不自动应用，建议重新靠近 A/B 粗点。
 
 ## 📄 许可证
 

@@ -129,7 +129,15 @@
         .main-container { width: 85vw; height: 80vh; display: grid; grid-template-columns: 450px 1fr; gap: 80px; position: relative; z-index: 10; }
         .left-panel { display: flex; flex-direction: column; justify-content: center; position: relative; }
         /* 针对横屏（桌面端）单独把封面往上偏移8px，移动端在下方媒体查询中会重置 */
-        .cover-wrapper { width: 100%; padding-bottom: 100%; position: relative; margin-bottom: 40px; transform: translateY(-8px); filter: drop-shadow(0 20px 30px rgba(0,0,0,0.1)); }
+        .cover-wrapper {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            position: relative;
+            flex: 0 0 auto;
+            margin-bottom: 40px;
+            transform: translateY(-8px);
+            filter: drop-shadow(0 20px 30px rgba(0,0,0,0.1));
+        }
         .default-disc {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 50%;
             background: conic-gradient(from 0deg, #e0e0e0, #ffffff, #e0e0e0, #d0d0d0, #ffffff, #e0e0e0);
@@ -556,9 +564,10 @@
             .left-panel { order: 1; }
             .right-panel { order: 2; }
             
-            .cover-wrapper { 
-                width: 55vw; max-width: 250px; padding-bottom: 55vw; 
-                margin: 0 auto 15px auto; 
+            .cover-wrapper {
+                width: min(55vw, 250px);
+                max-width: 100%;
+                margin: 0 auto 15px auto;
                 transform: none; /* 移动端/竖屏清除横屏的往上偏移 */
             }
             
@@ -655,7 +664,7 @@
         /* 超小屏幕 */
         @media screen and (max-width: 400px) {
             .main-container { padding: 60px 10px 90px 10px; }
-            .cover-wrapper { width: 60vw; padding-bottom: 60vw; max-width: 220px; }
+            .cover-wrapper { width: min(60vw, 220px); max-width: 100%; }
             .track-title { font-size: 1.3rem; }
             .glass-btn { padding: 4px 6px; font-size: 0.65rem; }
             .controls-row { gap: 10px; }
@@ -1306,6 +1315,13 @@
         let actx = new AudioContext();
         let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
         gainNode.connect(analyser); analyser.connect(actx.destination); analyser.fftSize = 512;
+        let loopAnalysisWorker = null;
+        let loopAnalysisWorkerUrl = null;
+        let loopAnalysisWorkerAudioId = null;
+        let loopAnalysisJobId = 0;
+        const loopAnalysisPendingJobs = new Map();
+        const loopAnalysisBufferIds = new WeakMap();
+        let loopAnalysisNextBufferId = 1;
 
         let playbackState = { startTime: 0, pauseTime: 0, isPlaying: false, duration: 0 };
         let playlist = [], curIdx = -1, playMode = 0;
@@ -2128,7 +2144,7 @@
         const canvasCtx = el.canvas.getContext('2d');
 
         // --- 核心：自动循环匹配算法 (相位窗口 + 接缝评分) ---
-        function runAnalysis() {
+        async function runAnalysis() {
             if (el.anaRun?.disabled) return;
             if (!audioBuffer) { el.anaMsg.textContent = "Please load audio first!"; return; }
 
@@ -2148,41 +2164,225 @@
                 el.anaRun.textContent = "⏳ 匹配中...";
             }
 
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    try {
-                        const result = findBestMatchByMode(audioBuffer, roughA, roughB, mode);
-                        const confidence = Number.isFinite(result.confidence)
-                            ? result.confidence
-                            : Math.max(0, (1 - result.diff) * 100);
-                        const tookText = result.elapsedMs ? ` / ${result.elapsedMs.toFixed(0)}ms` : "";
+            const sourceBuffer = audioBuffer;
+            const expectedAudioId = getLoopAnalysisAudioId(sourceBuffer);
 
-                        if (confidence >= 80) {
-                            applyLoop(result.start, result.end);
-                            el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})`;
-                            el.anaMsg.style.color = "#27ae60";
-                            log(`Auto-Loop [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'success');
-                        } else if (confidence >= 30) {
-                            applyLoop(result.start, result.end);
-                            el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})，建议先试听。`;
-                            el.anaMsg.style.color = "#f39c12";
-                            log(`Auto-Loop candidate [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'warn');
-                        } else {
-                            el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高: ${confidence.toFixed(1)}%${tookText})，请把 A/B 粗点靠近重复段。`;
-                            el.anaMsg.style.color = "#e74c3c";
-                            log(`Auto-Loop failed [${modeLabel}]. Best=${confidence.toFixed(1)}%${tookText}`, 'error');
-                        }
-                    } catch (e) {
-                        el.anaMsg.textContent = "Error: " + e.message;
-                        console.error(e);
-                    } finally {
-                        if (el.anaRun) {
-                            el.anaRun.disabled = false;
-                            el.anaRun.textContent = runButtonText || "✨ 开始精确匹配";
-                        }
+            try {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                const result = await findBestMatchByModeAsync(sourceBuffer, roughA, roughB, mode);
+                if (sourceBuffer !== audioBuffer || expectedAudioId !== getLoopAnalysisAudioId(audioBuffer)) return;
+
+                const confidence = Number.isFinite(result.confidence)
+                    ? result.confidence
+                    : Math.max(0, (1 - result.diff) * 100);
+                const tookText = result.elapsedMs ? ` / ${result.elapsedMs.toFixed(0)}ms` : "";
+
+                if (confidence >= 80) {
+                    applyLoop(result.start, result.end);
+                    el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})`;
+                    el.anaMsg.style.color = "#27ae60";
+                    log(`Auto-Loop [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'success');
+                } else if (confidence >= 30) {
+                    applyLoop(result.start, result.end);
+                    el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})，建议先试听。`;
+                    el.anaMsg.style.color = "#f39c12";
+                    log(`Auto-Loop candidate [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'warn');
+                } else {
+                    el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高: ${confidence.toFixed(1)}%${tookText})，请把 A/B 粗点靠近重复段。`;
+                    el.anaMsg.style.color = "#e74c3c";
+                    log(`Auto-Loop failed [${modeLabel}]. Best=${confidence.toFixed(1)}%${tookText}`, 'error');
+                }
+            } catch (e) {
+                if (e?.cancelled) return;
+                el.anaMsg.textContent = "Error: " + e.message;
+                console.error(e);
+            } finally {
+                if (el.anaRun) {
+                    el.anaRun.disabled = false;
+                    el.anaRun.textContent = runButtonText || "✨ 开始精确匹配";
+                }
+            }
+        }
+
+        function getLoopAnalysisAudioId(buffer) {
+            if (!buffer) return null;
+            let id = loopAnalysisBufferIds.get(buffer);
+            if (!id) {
+                id = loopAnalysisNextBufferId++;
+                loopAnalysisBufferIds.set(buffer, id);
+            }
+            return id;
+        }
+
+        function buildLoopAnalysisWorkerSource() {
+            const functions = [
+                getMonoAnalysisData,
+                getDownsampledAnalysisData,
+                clampSampleIndex,
+                getWindowRms,
+                scoreWindowPair,
+                getRobustLoopError,
+                uniqueSampleCandidates,
+                collectGridCandidates,
+                createLoopMatchResult,
+                runFastLoopAttempt,
+                findBestMatchFast,
+                scoreLoopPair,
+                getSafeCandidateBoost,
+                applySafeCandidateBoost,
+                insertRankedPair,
+                refineLoopPair,
+                chooseLoopCandidate,
+                addScoredPair,
+                scoreNccWindow,
+                insertNccCandidate,
+                collectBalancedSeedsForRate,
+                collectBalancedSeeds,
+                canStopBalancedRefine,
+                findBestMatchBalanced,
+                findBestMatchFull,
+                findBestMatchByMode
+            ];
+
+            return `
+                const monoAnalysisCache = new WeakMap();
+                const downsampleAnalysisCache = new WeakMap();
+                ${functions.map(fn => fn.toString()).join('\n\n')}
+
+                let currentAudioId = null;
+                let currentBuffer = null;
+
+                self.onmessage = (event) => {
+                    const message = event.data || {};
+                    if (message.type === 'release') {
+                        currentAudioId = null;
+                        currentBuffer = null;
+                        return;
                     }
-                }, 50);
+                    if (message.type !== 'analyze') return;
+
+                    try {
+                        if (message.audioId !== currentAudioId || message.dataBuffer) {
+                            if (!message.dataBuffer) throw new Error('Worker audio data missing');
+                            const data = new Float32Array(message.dataBuffer);
+                            currentAudioId = message.audioId;
+                            currentBuffer = {
+                                sampleRate: message.sampleRate,
+                                numberOfChannels: 1,
+                                getChannelData: () => data
+                            };
+                        }
+
+                        if (!currentBuffer) throw new Error('Worker audio data missing');
+                        const result = findBestMatchByMode(currentBuffer, message.timeA, message.timeB, message.mode);
+                        self.postMessage({ jobId: message.jobId, ok: true, audioId: currentAudioId, result });
+                    } catch (error) {
+                        self.postMessage({
+                            jobId: message.jobId,
+                            ok: false,
+                            audioId: currentAudioId || message.audioId,
+                            error: error && error.message ? error.message : String(error)
+                        });
+                    }
+                };
+            `;
+        }
+
+        function failLoopAnalysisWorker(error) {
+            const pending = [...loopAnalysisPendingJobs.values()];
+            loopAnalysisPendingJobs.clear();
+            pending.forEach(job => job.reject(error));
+
+            if (loopAnalysisWorker) {
+                try { loopAnalysisWorker.terminate(); } catch (e) {}
+                loopAnalysisWorker = null;
+            }
+            if (loopAnalysisWorkerUrl) {
+                try { URL.revokeObjectURL(loopAnalysisWorkerUrl); } catch (e) {}
+                loopAnalysisWorkerUrl = null;
+            }
+            loopAnalysisWorkerAudioId = null;
+        }
+
+        function resetLoopAnalysisWorkerAudio() {
+            const error = new Error('Analysis cancelled');
+            error.cancelled = true;
+            failLoopAnalysisWorker(error);
+        }
+
+        function getLoopAnalysisWorker() {
+            if (loopAnalysisWorker) return loopAnalysisWorker;
+            if (!window.Worker || !window.Blob || !window.URL) {
+                throw new Error('This browser does not support Web Worker analysis');
+            }
+
+            const blob = new Blob([buildLoopAnalysisWorkerSource()], { type: 'text/javascript' });
+            loopAnalysisWorkerUrl = URL.createObjectURL(blob);
+            loopAnalysisWorker = new Worker(loopAnalysisWorkerUrl);
+
+            loopAnalysisWorker.onmessage = (event) => {
+                const message = event.data || {};
+                const job = loopAnalysisPendingJobs.get(message.jobId);
+                if (!job) return;
+                loopAnalysisPendingJobs.delete(message.jobId);
+                if (message.audioId) loopAnalysisWorkerAudioId = message.audioId;
+
+                if (message.ok) {
+                    job.resolve(message.result);
+                } else {
+                    const error = new Error(message.error || 'Loop analysis failed');
+                    error.analysisError = true;
+                    job.reject(error);
+                }
+            };
+
+            loopAnalysisWorker.onerror = (event) => {
+                const message = event?.message || 'Loop analysis worker failed';
+                const error = new Error(message);
+                error.workerError = true;
+                failLoopAnalysisWorker(error);
+            };
+
+            return loopAnalysisWorker;
+        }
+
+        function runLoopAnalysisInWorker(buffer, timeA, timeB, mode = 'balanced') {
+            const worker = getLoopAnalysisWorker();
+            const audioId = getLoopAnalysisAudioId(buffer);
+            const jobId = ++loopAnalysisJobId;
+            const message = {
+                type: 'analyze',
+                jobId,
+                audioId,
+                sampleRate: buffer.sampleRate,
+                timeA,
+                timeB,
+                mode
+            };
+            const transfer = [];
+
+            if (loopAnalysisWorkerAudioId !== audioId) {
+                const mono = getMonoAnalysisData(buffer);
+                const data = new Float32Array(mono.length);
+                data.set(mono);
+                message.dataBuffer = data.buffer;
+                transfer.push(data.buffer);
+            }
+
+            const promise = new Promise((resolve, reject) => {
+                loopAnalysisPendingJobs.set(jobId, { resolve, reject });
             });
+
+            try {
+                worker.postMessage(message, transfer);
+                if (message.dataBuffer) loopAnalysisWorkerAudioId = audioId;
+            } catch (error) {
+                loopAnalysisPendingJobs.delete(jobId);
+                error.workerError = true;
+                throw error;
+            }
+
+            return promise;
         }
 
         const monoAnalysisCache = new WeakMap();
@@ -2245,6 +2445,45 @@
                 count++;
             }
             return count ? Math.sqrt(energy / count) : 0;
+        }
+
+        function scoreWindowPair(data, startA, startB, size, sampleStep, rmsFloor = 0.002) {
+            const len = data.length;
+            const fromA = Math.max(0, Math.min(len - 1, startA));
+            const fromB = Math.max(0, Math.min(len - 1, startB));
+            const usable = Math.max(0, Math.min(size, len - fromA, len - fromB));
+            if (usable <= 0) return { error: Infinity, rms: rmsFloor, count: 0 };
+
+            let mse = 0;
+            let energyA = 0;
+            let energyB = 0;
+            let count = 0;
+            for (let j = 0; j < usable; j += sampleStep) {
+                const a = data[fromA + j] || 0;
+                const b = data[fromB + j] || 0;
+                const delta = a - b;
+                mse += delta * delta;
+                energyA += a * a;
+                energyB += b * b;
+                count++;
+            }
+
+            const rms = Math.max(Math.sqrt(Math.max(energyA, energyB) / Math.max(1, count)), rmsFloor);
+            return {
+                error: Math.sqrt(mse / Math.max(1, count)) / rms,
+                rms,
+                count
+            };
+        }
+
+        function getRobustLoopError(values) {
+            const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+            if (!finite.length) return 0;
+            const mid = Math.floor(finite.length / 2);
+            const median = finite.length % 2 ? finite[mid] : (finite[mid - 1] + finite[mid]) * 0.5;
+            const trimmed = finite.slice(0, Math.max(1, Math.ceil(finite.length * 0.75)));
+            const trimmedMean = trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length;
+            return median * 0.7 + trimmedMean * 0.3;
         }
 
         function uniqueSampleCandidates(candidates, minDistance = 24) {
@@ -2401,6 +2640,10 @@
             const phaseWindow = options.phaseWindow ?? Math.max(1024, Math.floor(0.16 * sr));
             const sampleStep = options.sampleStep ?? 24;
             const maxMoveSamples = options.maxMoveSamples ?? Infinity;
+            const postPhaseWeight = options.postPhaseWeight ?? 0;
+            const postSampleStep = options.postSampleStep ?? Math.max(sampleStep, 24);
+            const postSegmentCount = options.postSegmentCount ?? 3;
+            const confidenceRiskWeight = options.confidenceRiskWeight ?? 0;
             if (
                 end <= start + minLoopLength ||
                 start < phaseWindow ||
@@ -2413,21 +2656,27 @@
 
             const startPre = start - phaseWindow;
             const endPre = end - phaseWindow;
-            const contextRms = Math.max(
-                getWindowRms(data, startPre, phaseWindow, sampleStep),
-                getWindowRms(data, endPre, phaseWindow, sampleStep),
-                0.002
-            );
-
-            let mse = 0;
-            let count = 0;
-            for (let j = 0; j < phaseWindow; j += sampleStep) {
-                const delta = (data[startPre + j] || 0) - (data[endPre + j] || 0);
-                mse += delta * delta;
-                count++;
+            const preScore = scoreWindowPair(data, startPre, endPre, phaseWindow, sampleStep);
+            const contextRms = preScore.rms;
+            const phaseError = preScore.error;
+            const postWindow = Math.min(phaseWindow, len - Math.max(start, end) - 2);
+            let postPhaseError = 0;
+            let postPhaseWorstError = 0;
+            if (postPhaseWeight > 0 && postWindow >= Math.max(256, postSampleStep * 4)) {
+                const segmentCount = Math.max(1, postSegmentCount);
+                const segmentSize = Math.max(256, Math.floor(postWindow / segmentCount));
+                const segmentStride = segmentCount > 1
+                    ? Math.max(1, Math.floor((postWindow - segmentSize) / (segmentCount - 1)))
+                    : 0;
+                const postErrors = [];
+                for (let i = 0; i < segmentCount; i++) {
+                    const offset = Math.min(postWindow - segmentSize, i * segmentStride);
+                    const segment = scoreWindowPair(data, start + offset, end + offset, segmentSize, postSampleStep);
+                    if (Number.isFinite(segment.error)) postErrors.push(segment.error);
+                }
+                postPhaseError = getRobustLoopError(postErrors);
+                postPhaseWorstError = postErrors.length ? Math.max(...postErrors) : postPhaseError;
             }
-
-            const phaseError = Math.sqrt(mse / Math.max(1, count)) / contextRms;
             const startPrev = data[start - 1] || 0;
             const endPrev = data[end - 1] || 0;
             const start0 = data[start] || 0;
@@ -2445,14 +2694,25 @@
             const loopLengthSec = (end - start) / sr;
             const lengthDeltaSec = Math.abs(loopLengthSec - roughLoopLengthSec);
             const lengthPenalty = lengthDeltaSec * (options.lengthWeight ?? 0);
+            const postRisk = Math.max(0, postPhaseWorstError - postPhaseError, postPhaseError - 0.72);
+            const lengthRisk = Math.max(0, lengthDeltaSec - 2.35);
+            const roughMoveRisk = Math.max(0, maxDistanceSec - 2.05);
+            const oneSidedLengthRisk = bothMovedSec < 0.12 ? Math.max(0, lengthDeltaSec - 1.1) : 0;
+            const riskPenalty =
+                postRisk * (options.postRiskWeight ?? 0.18) +
+                lengthRisk * (options.lengthRiskWeight ?? 0.18) +
+                roughMoveRisk * (options.moveRiskWeight ?? 0.12) +
+                oneSidedLengthRisk * (options.oneSidedLengthRiskWeight ?? 1.35);
 
             const qualityScore =
                 phaseError * 1.55 +
+                postPhaseError * postPhaseWeight +
                 seamPrevError * 0.9 +
                 seamJumpError * 0.55 +
                 slopeError * 0.18;
             const score = qualityScore + distancePenalty + lengthPenalty;
-            const confidence = Math.max(0, Math.min(100, 100 * Math.exp(-(qualityScore + distancePenalty * 0.25) * 1.12)));
+            const confidenceQuality = qualityScore + distancePenalty * 0.25 + riskPenalty * confidenceRiskWeight;
+            const confidence = Math.max(0, Math.min(100, 100 * Math.exp(-confidenceQuality * 1.12)));
 
             return {
                 score,
@@ -2461,12 +2721,16 @@
                 end,
                 detail: {
                     phaseError,
+                    postPhaseError,
+                    postPhaseWorstError,
                     seamPrevError,
                     seamJumpError,
                     slopeError,
                     qualityScore,
                     distancePenalty,
                     lengthPenalty,
+                    riskPenalty,
+                    oneSidedLengthRisk,
                     distanceSec,
                     maxDistanceSec,
                     bothMovedSec,
@@ -2506,7 +2770,12 @@
                         const startFrom = Math.max(anchorStart - pass.radius, roughStart - maxMoveSamples);
                         const startTo = Math.min(anchorStart + pass.radius, roughStart + maxMoveSamples);
                         for (let s = startFrom; s <= startTo; s += pass.step) {
-                            const candidate = scoreLoopPair(data, s, best.end, sr, roughStart, roughEnd, { ...pass, maxMoveSamples });
+                            const candidate = scoreLoopPair(data, s, best.end, sr, roughStart, roughEnd, {
+                                ...pass,
+                                maxMoveSamples,
+                                postPhaseWeight: options.refinePostPhaseWeight ?? 0,
+                                postSampleStep: options.refinePostSampleStep ?? Math.max(pass.sampleStep, 48)
+                            });
                             if (candidate.score < best.score) best = candidate;
                         }
                     }
@@ -2515,7 +2784,12 @@
                         const endFrom = Math.max(anchorEnd - pass.radius, roughEnd - maxMoveSamples);
                         const endTo = Math.min(anchorEnd + pass.radius, roughEnd + maxMoveSamples);
                         for (let e = endFrom; e <= endTo; e += pass.step) {
-                            const candidate = scoreLoopPair(data, best.start, e, sr, roughStart, roughEnd, { ...pass, maxMoveSamples });
+                            const candidate = scoreLoopPair(data, best.start, e, sr, roughStart, roughEnd, {
+                                ...pass,
+                                maxMoveSamples,
+                                postPhaseWeight: options.refinePostPhaseWeight ?? 0,
+                                postSampleStep: options.refinePostSampleStep ?? Math.max(pass.sampleStep, 48)
+                            });
                             if (candidate.score < best.score) best = candidate;
                         }
                     }
@@ -2525,20 +2799,64 @@
             return scoreLoopPair(data, best.start, best.end, sr, roughStart, roughEnd, {
                 sampleStep: 2,
                 phaseWindow: Math.floor(0.12 * sr),
+                postPhaseWeight: options.finalPostPhaseWeight ?? options.postPhaseWeight ?? 0,
+                postSampleStep: options.finalPostSampleStep ?? 12,
+                postSegmentCount: options.postSegmentCount,
+                confidenceRiskWeight: options.confidenceRiskWeight ?? 0,
                 maxMoveSamples
             });
         }
 
+        function getSafeCandidateBoost(item) {
+            const detail = item?.detail;
+            if (!detail || !Number.isFinite(item.confidence)) return 0;
+            if (item.confidence >= 80 || item.confidence < 23.5) return 0;
+            if (detail.lengthDeltaSec > 0.75) return 0;
+            if (detail.maxDistanceSec > 0.85 || detail.distanceSec > 1.25) return 0;
+            if (detail.riskPenalty > 0.08 || detail.oneSidedLengthRisk > 0.02) return 0;
+            if (detail.postPhaseError > 0.4 || detail.postPhaseWorstError > 1.05) return 0;
+            if (detail.phaseError > 0.55 || detail.qualityScore > 1.32) return 0;
+
+            let boost = 3.2;
+            boost += Math.max(0, 0.75 - detail.lengthDeltaSec) * 2.2;
+            boost += Math.max(0, 0.85 - detail.maxDistanceSec) * 2.0;
+            boost += Math.max(0, 0.4 - detail.postPhaseError) * 4.0;
+            boost += Math.max(0, 0.55 - detail.phaseError) * 3.0;
+            return Math.min(10, boost);
+        }
+
+        function applySafeCandidateBoost(item) {
+            const boost = getSafeCandidateBoost(item);
+            if (boost <= 0) return item;
+            return {
+                ...item,
+                confidence: Math.min(100, item.confidence + boost),
+                detail: {
+                    ...item.detail,
+                    rawConfidence: item.confidence,
+                    safeCandidateBoost: boost
+                }
+            };
+        }
+
         function chooseLoopCandidate(candidates) {
-            const viable = candidates.filter(item => Number.isFinite(item.score));
+            const viable = candidates
+                .filter(item => Number.isFinite(item.score))
+                .map(applySafeCandidateBoost);
             if (!viable.length) return null;
 
+            const riskRank = (item) => {
+                const detail = item.detail || {};
+                return (detail.riskPenalty || 0) * 0.18 +
+                    Math.max(0, (detail.postPhaseWorstError || 0) - 1.0) * 0.05;
+            };
             const rank = (item, allowWideMove) =>
                 item.detail.qualityScore +
                 item.detail.distanceSec * 0.04 +
                 item.detail.maxDistanceSec * 0.03 +
                 item.detail.bothMovedSec * (allowWideMove ? 0.18 : 0.65) +
-                item.detail.lengthDeltaSec * (allowWideMove ? 0.02 : 0.12);
+                item.detail.lengthDeltaSec * (allowWideMove ? 0.02 : 0.12) +
+                riskRank(item);
 
             const reliable = viable.filter(item => item.confidence >= 30);
             const pool = reliable.length ? reliable : viable;
@@ -2559,13 +2877,15 @@
                     a.detail.distanceSec * 0.08 +
                     a.detail.maxDistanceSec * 0.05 +
                     a.detail.bothMovedSec * 0.65 +
-                    a.detail.lengthDeltaSec * (a.detail.qualityScore > 0.55 ? 0.22 : 0.08);
+                    a.detail.lengthDeltaSec * (a.detail.qualityScore > 0.55 ? 0.22 : 0.08) +
+                    riskRank(a);
                 const rankB =
                     b.detail.qualityScore +
                     b.detail.distanceSec * 0.08 +
                     b.detail.maxDistanceSec * 0.05 +
                     b.detail.bothMovedSec * 0.65 +
-                    b.detail.lengthDeltaSec * (b.detail.qualityScore > 0.55 ? 0.22 : 0.08);
+                    b.detail.lengthDeltaSec * (b.detail.qualityScore > 0.55 ? 0.22 : 0.08) +
+                    riskRank(b);
                 return rankA - rankB || b.confidence - a.confidence;
             });
 
@@ -2714,6 +3034,9 @@
                     sampleStep: 24,
                     phaseWindow: Math.floor(0.14 * sr),
                     distanceWeight: 0.04,
+                    postPhaseWeight: 0.75,
+                    postSampleStep: 48,
+                    postSegmentCount: 3,
                     maxMoveSamples
                 });
                 if (!Number.isFinite(scored.score)) continue;
@@ -2732,7 +3055,13 @@
 
             for (const scored of refineSeeds) {
                 const refined = refineLoopPair(data, scored, sr, roughStart, roughEnd, {
-                    maxMoveSamples
+                    maxMoveSamples,
+                    refinePostPhaseWeight: 0.75,
+                    refinePostSampleStep: 48,
+                    finalPostPhaseWeight: 0.75,
+                    finalPostSampleStep: 16,
+                    postSegmentCount: 4,
+                    confidenceRiskWeight: 0.48
                 });
                 insertRankedPair(
                     refinedCandidates,
@@ -2869,6 +3198,17 @@
             if (mode === 'fast') return findBestMatchFast(buffer, timeA, timeB);
             if (mode === 'full') return findBestMatchFull(buffer, timeA, timeB);
             return findBestMatchBalanced(buffer, timeA, timeB);
+        }
+
+        async function findBestMatchByModeAsync(buffer, timeA, timeB, mode = 'balanced') {
+            try {
+                return await runLoopAnalysisInWorker(buffer, timeA, timeB, mode);
+            } catch (error) {
+                if (error?.cancelled) throw error;
+                if (error?.analysisError) throw error;
+                log(`Loop analysis worker unavailable, using main thread fallback: ${error.message}`, 'warn');
+                return findBestMatchByMode(buffer, timeA, timeB, mode);
+            }
         }
 
         function findBestMatch(buffer, timeA, timeB) {
@@ -3108,6 +3448,7 @@
             }catch(e){}
             const track = playlist[i];
             stopAudio();
+            resetLoopAnalysisWorkerAudio();
             audioBuffer = null; // 显式释放内存
             currentAudioQuality = ''; // 先清除，后面会根据文件信息设置
 
@@ -4617,6 +4958,7 @@
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取音频...</div>';
             // 立即中断上一个播放操作并停止声音
             stopAudio();
+            resetLoopAnalysisWorkerAudio();
             resetLoopUI();
             lyrics = [];
             
