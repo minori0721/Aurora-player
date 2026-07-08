@@ -81,7 +81,7 @@
             border-left: 1px solid var(--glass-highlight);
             box-shadow: inset 1px 1px 2px var(--glass-highlight), inset -1px -1px 2px var(--glass-shadow), 0 5px 15px rgba(0,0,0,0.05);
             padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; color: var(--text-main);
-            display: flex; align-items: center; gap: 5px; transition: all 0.3s ease; outline: none; white-space: nowrap;
+            display: flex; align-items: center; gap: 5px; transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease; outline: none; white-space: nowrap;
         }
         .glass-btn:hover { 
             background: rgba(255, 255, 255, 0.4); 
@@ -154,7 +154,7 @@
         .time-display { font-size: 0.9rem; color: var(--text-sub); margin-bottom: 12px; font-weight: 500; display: flex; justify-content: space-between;}
         .progress-bar-bg { width: 100%; height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; cursor: pointer; transition: height 0.2s; overflow: visible;}
         .progress-bar-bg:hover { height: 12px; }
-        .progress-line { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: var(--text-main); border-radius: 4px; }
+        .progress-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--text-main); border-radius: 4px; transform: scaleX(0); transform-origin: left center; will-change: transform; }
         .buffer-line { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: rgba(255,255,255,0.6); border-radius: 4px; transition: width 0.2s; }
         
         .loop-marker { 
@@ -174,9 +174,9 @@
             -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
             mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); 
         }
-        .lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; }
-        .lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 14px 0; cursor: pointer; opacity: 0.6; transition: 0.2s; line-height: 1.4; }
-        .lyric-line.active { color: var(--text-main); font-size: 1.4rem; font-weight: 800; opacity: 1; transform-origin: left center; }
+        .lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; will-change: transform; }
+        .lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 16px 0; cursor: pointer; opacity: 0.6; transition: color 0.2s ease, opacity 0.2s ease, transform 0.24s ease; line-height: 1.55; transform: translateZ(0) scale(1); transform-origin: left center; }
+        .lyric-line.active { color: var(--text-main); font-weight: 800; opacity: 1; transform: translateZ(0) scale(1.16); }
 
         /* 翻译行样式（显示在原歌词下方，字体较小且颜色偏淡） */
         .lyric-translation { font-size: 0.9rem; color: var(--text-sub); margin-top: 4px; line-height: 1.2; }
@@ -220,7 +220,7 @@
             border-left: 1px solid var(--glass-highlight);
             box-shadow: inset 2px 2px 5px var(--glass-highlight), inset -2px -2px 5px var(--glass-shadow), 5px 5px 15px rgba(0,0,0,0.08);
             color: var(--text-main); cursor: pointer; width: 50px; height: 50px; border-radius: 50%; 
-            display: flex; align-items: center; justify-content: center; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative; 
+            display: flex; align-items: center; justify-content: center; transition: background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative;
         }
         .btn:hover { 
             background: rgba(255, 255, 255, 0.5); 
@@ -259,7 +259,7 @@
                 0 6px 18px rgba(0,0,0,0.08);
             display: flex; align-items: center; justify-content: center; 
             color: var(--text-main); cursor: pointer; 
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+            transition: background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
         .playlist-fab:hover { 
             background: #fff; transform: translateY(-3px); 
@@ -301,15 +301,15 @@
 
         .vol-container { position: relative; display: flex; align-items: center; justify-content: center; }
         .vol-popup {
-            position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%) translateY(8px);
             width: 40px; height: 120px;
             background: var(--glass-strong); backdrop-filter: blur(10px);
             border-radius: 20px; border: 1px solid var(--border);
             display: flex; justify-content: center; align-items: center;
-            opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+            opacity: 0; pointer-events: none; transition: opacity 0.3s cubic-bezier(0.19, 1, 0.22, 1), transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
             box-shadow: 0 5px 20px rgba(0,0,0,0.1);
         }
-        .vol-popup.show { opacity: 1; pointer-events: all; bottom: 70px; }
+        .vol-popup.show { opacity: 1; pointer-events: all; transform: translateX(-50%) translateY(0); }
         input[type=range].vol-range {
             writing-mode: vertical-lr; direction: rtl;
             width: 8px; height: 90px; background: rgba(0,0,0,0.1);
@@ -527,7 +527,7 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.15);
             min-width: 140px; padding: 8px 0;
             opacity: 0; pointer-events: none; transform: translateY(-10px);
-            transition: all 0.2s ease;
+            transition: opacity 0.2s ease, transform 0.2s ease;
             z-index: 9999;
         }
         .advanced-menu.show { opacity: 1; pointer-events: all; transform: translateY(0); }
@@ -582,8 +582,7 @@
                 mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
                 -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
             }
-            .lyric-line { font-size: 0.9rem; margin: 8px 0; text-align: center; }
-            .lyric-line.active { font-size: 1.1rem; }
+            .lyric-line { font-size: 0.9rem; margin: 8px 0; text-align: center; transform-origin: center center; }
             .lyrics-scroll { text-align: center; }
             
             .controls-row { justify-content: center; gap: 12px; padding: 10px 0; }
@@ -1315,6 +1314,45 @@
         let actx = new AudioContext();
         let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
         gainNode.connect(analyser); analyser.connect(actx.destination); analyser.fftSize = 512;
+        let lastAudioUnlockWarnAt = 0;
+
+        function logAudioUnlockWarning(message) {
+            const now = Date.now();
+            if (now - lastAudioUnlockWarnAt < 2500) return;
+            lastAudioUnlockWarnAt = now;
+            log(message, 'warn');
+        }
+
+        function playSilentUnlockBuffer() {
+            if (!actx || typeof actx.createBufferSource !== 'function') return;
+            const buffer = actx.createBuffer(1, 1, actx.sampleRate || 44100);
+            const source = actx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(actx.destination);
+            source.start(0);
+            source.onended = () => {
+                try { source.disconnect(); } catch (_) {}
+            };
+        }
+
+        async function unlockAudioContext(reason = 'play') {
+            if (!actx || actx.state === 'closed') return false;
+            try { playSilentUnlockBuffer(); } catch (_) {}
+            if (actx.state === 'running') return true;
+
+            try {
+                if (typeof actx.resume === 'function') await actx.resume();
+                try { playSilentUnlockBuffer(); } catch (_) {}
+                if (actx.state !== 'running') {
+                    logAudioUnlockWarning(`AudioContext 未启动(${reason})，iOS Safari 可能需要再点一次播放`);
+                }
+                return actx.state === 'running';
+            } catch (e) {
+                logAudioUnlockWarning(`AudioContext 解锁失败(${reason}): ${e && e.message ? e.message : e}`);
+                return false;
+            }
+        }
+
         let loopAnalysisWorker = null;
         let loopAnalysisWorkerUrl = null;
         let loopAnalysisWorkerAudioId = null;
@@ -3491,7 +3529,7 @@
 
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
             el.img.style.opacity = 0; el.img.src = ''; el.loadTip.style.display = 'block';
-            el.progLine.style.width = '0%'; el.bufferLine.style.width = '0%';
+            setPlaybackProgress(0); el.bufferLine.style.width = '0%';
             lyrics = []; isSyncedLyrics = true;
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
             resetLoopUI();
@@ -3910,20 +3948,35 @@
             const isLooping = loopState.active && loopState.end <= audioBuffer.duration && loopState.start < loopState.end;
             
             if(isLooping) {
-                sourceNode.loop = true; 
-                sourceNode.loopStart = loopState.start; 
+                sourceNode.loop = true;
+                sourceNode.loopStart = loopState.start;
                 sourceNode.loopEnd = loopState.end;
                 document.getElementById('loop-status').style.display = 'inline';
             } else {
-                sourceNode.loop = false; 
+                sourceNode.loop = false;
                 document.getElementById('loop-status').style.display = 'none';
             }
             sourceNode.start(0, offset);
+            const startedSource = sourceNode;
             playbackState.startTime = actx.currentTime - offset;
             playbackState.pauseTime = offset;
             playbackState.isPlaying = true;
             if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
-            
+
+            if (actx.state !== 'running') {
+                unlockAudioContext('start-audio').then(unlocked => {
+                    if (unlocked || sourceNode !== startedSource || !playbackState.isPlaying) return;
+                    try { startedSource.onended = null; startedSource.stop(); } catch (_) {}
+                    try { startedSource.disconnect(); } catch (_) {}
+                    sourceNode = null;
+                    playbackState.isPlaying = false;
+                    if('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+                    el.coverWrap.classList.remove('playing');
+                    updatePlayIcon();
+                    logAudioUnlockWarning('音频被浏览器拦截了，请再点一次播放按钮');
+                });
+            }
+
             // 使用闭包保存循环状态，避免后续状态变化影响判断
             const wasLooping = isLooping;
             sourceNode.onended = () => {
@@ -3985,17 +4038,25 @@
             if (yrcLine) {
                 const lineStartMs = parseFloat(activeLine.dataset.time) * 1000;
                 const elapsedMs = now * 1000 - lineStartMs; // 已经过了多少毫秒
+                const yrcAnimations = [];
                 yrcLine.querySelectorAll('.yrc-char').forEach(sp => {
                     const wStart = parseFloat(sp.dataset.start);  // 字相对行起始的ms
                     const wDur   = parseFloat(sp.dataset.dur);    // 字持续ms
                     const delay  = (wStart - elapsedMs) / 1000;   // 剩余等待时间(秒)
                     const dur    = Math.max(wDur, 80) / 1000;     // 最小80ms防止闪烁
-                    // 重置动画（强制浏览器重新计算）
                     sp.style.animation = 'none';
-                    sp.offsetWidth; // 触发回流以重置动画
-                    sp.style.animation = '';
-                    sp.style.animationDuration = `${dur}s`;
-                    sp.style.animationDelay    = `${delay}s`;
+                    sp.style.animationDuration = '';
+                    sp.style.animationDelay = '';
+                    yrcAnimations.push({ sp, dur, delay });
+                });
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        yrcAnimations.forEach(({ sp, dur, delay }) => {
+                            sp.style.animation = '';
+                            sp.style.animationDuration = `${dur}s`;
+                            sp.style.animationDelay = `${delay}s`;
+                        });
+                    });
                 });
             }
 
@@ -4005,6 +4066,11 @@
         }
 
         let _lastTimeStr = "";
+        function setPlaybackProgress(pct) {
+            const safePct = Math.max(0, Math.min(1, Number.isFinite(pct) ? pct : 0));
+            el.progLine.style.transform = `scaleX(${safePct})`;
+        }
+
         function renderLoop() {
             requestAnimationFrame(renderLoop);
             const now = getCurrentTime();
@@ -4015,8 +4081,7 @@
                 _lastTimeStr = timeStr;
             }
             if(playbackState.duration) {
-                const pct = (now / playbackState.duration) * 100;
-                el.progLine.style.width = pct + '%';
+                setPlaybackProgress(now / playbackState.duration);
                 // 当剩余播放时间 <= 10 秒时，非阻塞地预取下一首原始数据（比按百分比更稳定）
                 if (playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
                     prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
@@ -4029,14 +4094,14 @@
         }
         renderLoop();
 
-        el.playBtn.onclick = () => {
-            if(actx.state === 'suspended') actx.resume();
+        el.playBtn.onclick = async () => {
             if(playbackState.isPlaying) {
                 playbackState.pauseTime = getCurrentTime();
                 stopAudio();
                 el.coverWrap.classList.remove('playing');
                 updatePlayIcon();
             } else {
+                await unlockAudioContext('play-button');
                 if (audioBuffer) {
                     startAudio(playbackState.pauseTime);
                     el.coverWrap.classList.add('playing');
@@ -4062,7 +4127,7 @@
             const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
             const pct = Math.max(0, Math.min(1, x / rect.width));
             const target = pct * playbackState.duration;
-            el.progLine.style.width = pct * 100 + '%';
+            setPlaybackProgress(pct);
             el.currTime.textContent = fmtTime(target);
             return target;
         }
@@ -4124,7 +4189,7 @@
             else if (e.code === 'ArrowUp') { e.preventDefault(); el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); } 
             else if (e.code === 'ArrowDown') { e.preventDefault(); el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => el.volPopup.classList.remove('show'), 2000); }
         });
-        function updateUI(t) { el.currTime.textContent = fmtTime(t); el.progLine.style.width = (t / playbackState.duration) * 100 + '%'; }
+        function updateUI(t) { el.currTime.textContent = fmtTime(t); setPlaybackProgress(t / playbackState.duration); }
 
         function handleNext() {
             if(playMode === 1) playTrack(Math.floor(Math.random()*playlist.length));
@@ -4945,6 +5010,8 @@
         
         // 播放网易云歌曲
         async function playNeteaseSong(song) {
+            const audioUnlockPromise = unlockAudioContext('netease-song');
+
             // play token 防止旧的播放请求完成后覆盖新的播放
             if (!window._playActionTokenSeed) window._playActionTokenSeed = 1;
             prefetchAttempted = false; // 确保新歌开始时，允许触发预加载
@@ -4966,10 +5033,12 @@
             let songName = song.name;
             let artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
             let cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
-            
+
             log(`Playing: ${songName} - ${artists}`);
             neteasePanel.classList.remove('show');
-            
+
+            await audioUnlockPromise;
+
             // 如果没有封面，先尝试从缓存或队列获取歌曲详情
             if (!cover) {
                 try {
@@ -5481,9 +5550,10 @@
             const track = playlist[i];
             curIdx = i;
             ensurePlaylistRenderedAndActive();
-            
-            
+
             if (track.netease) {
+                await unlockAudioContext('netease-playlist');
+
                 // 网易云歌曲
                 if (track.songData) {
                     await playNeteaseSong(track.songData);
