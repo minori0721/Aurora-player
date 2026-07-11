@@ -3936,6 +3936,31 @@
             log(`Lyrics parsed. Original: ${originalLyricsArr.length}, Trans: ${translatedLyricsArr.length}, Roma: ${romanLyricsArr.length}${lyricMetadataArr.length ? `, Meta: ${lyricMetadataArr.length}` : ''}`, 'success');
         }
 
+        function getActiveCustomLoop() {
+            const duration = Number(audioBuffer?.duration || 0);
+            const start = Number(loopState.start);
+            const end = Number(loopState.end);
+            if(!loopState.active || !duration || !Number.isFinite(start) || !Number.isFinite(end)) return null;
+            if(start < 0 || end <= start || end > duration) return null;
+            return { start, end };
+        }
+
+        function normalizeAudioOffset(offset, customLoop, isSingleTrackLooping) {
+            const duration = Number(audioBuffer?.duration || 0);
+            let normalized = Number(offset);
+            if(!Number.isFinite(normalized)) normalized = 0;
+            normalized = Math.max(0, normalized);
+
+            if(customLoop && normalized >= customLoop.end) {
+                const loopDuration = customLoop.end - customLoop.start;
+                normalized = customLoop.start + ((normalized - customLoop.start) % loopDuration + loopDuration) % loopDuration;
+            } else if(isSingleTrackLooping && duration > 0) {
+                normalized %= duration;
+            }
+
+            return Math.min(normalized, duration);
+        }
+
         function startAudio(offset) {
             if(sourceNode) {
                 try { sourceNode.onended = null; sourceNode.stop(); } catch(e) {}
@@ -3945,21 +3970,25 @@
             sourceNode.buffer = audioBuffer;
             sourceNode.connect(gainNode);
             
-            const isLooping = loopState.active && loopState.end <= audioBuffer.duration && loopState.start < loopState.end;
-            
+            const customLoop = getActiveCustomLoop();
+            const isCustomLooping = !!customLoop;
+            const isSingleTrackLooping = !isCustomLooping && playMode === 2 && audioBuffer.duration > 0;
+            const isLooping = isCustomLooping || isSingleTrackLooping;
+            const startOffset = normalizeAudioOffset(offset, customLoop, isSingleTrackLooping);
+
             if(isLooping) {
                 sourceNode.loop = true;
-                sourceNode.loopStart = loopState.start;
-                sourceNode.loopEnd = loopState.end;
-                document.getElementById('loop-status').style.display = 'inline';
+                sourceNode.loopStart = isCustomLooping ? customLoop.start : 0;
+                sourceNode.loopEnd = isCustomLooping ? customLoop.end : audioBuffer.duration;
+                document.getElementById('loop-status').style.display = isCustomLooping ? 'inline' : 'none';
             } else {
                 sourceNode.loop = false;
                 document.getElementById('loop-status').style.display = 'none';
             }
-            sourceNode.start(0, offset);
+            sourceNode.start(0, startOffset);
             const startedSource = sourceNode;
-            playbackState.startTime = actx.currentTime - offset;
-            playbackState.pauseTime = offset;
+            playbackState.startTime = actx.currentTime - startOffset;
+            playbackState.pauseTime = startOffset;
             playbackState.isPlaying = true;
             if('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
 
@@ -3978,17 +4007,23 @@
             }
 
             // 使用闭包保存循环状态，避免后续状态变化影响判断
-            const wasLooping = isLooping;
+            const wasCustomLooping = isCustomLooping;
+            const wasSingleTrackLooping = isSingleTrackLooping;
             sourceNode.onended = () => {
                 // 如果是循环模式，onended 不应该触发切歌
                 // 但某些浏览器可能在精度问题下意外触发，这里重新启动循环
-                if(wasLooping && loopState.active && playbackState.isPlaying) {
+                if(wasCustomLooping && loopState.active && playbackState.isPlaying) {
                     log("Loop interrupted, restarting...", 'warn');
                     startAudio(loopState.start);
                     return;
                 }
+                if(wasSingleTrackLooping && playMode === 2 && playbackState.isPlaying) {
+                    log("Single loop interrupted, restarting...", 'warn');
+                    startAudio(0);
+                    return;
+                }
                 // 非循环模式下，检查是否真的播放完了
-                if(!wasLooping && playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.5)) {
+                if(playbackState.isPlaying && (getCurrentTime() >= playbackState.duration - 0.5)) {
                     handleNext();
                 }
             };
@@ -4006,7 +4041,9 @@
         function getCurrentTime() {
             if(!playbackState.isPlaying) return playbackState.pauseTime;
             let t = actx.currentTime - playbackState.startTime;
-            if(loopState.active && sourceNode.loop && t > loopState.end) { const dur = loopState.end - loopState.start; t = loopState.start + (t - loopState.end) % dur; } 
+            const customLoop = getActiveCustomLoop();
+            if(customLoop && sourceNode?.loop && t >= customLoop.end) { const dur = customLoop.end - customLoop.start; t = customLoop.start + (t - customLoop.end) % dur; }
+            else if(!customLoop && playMode === 2 && sourceNode?.loop && playbackState.duration > 0 && t >= playbackState.duration) t %= playbackState.duration;
             else if (t > playbackState.duration) t = playbackState.duration;
             return t;
         }
@@ -4083,7 +4120,7 @@
             if(playbackState.duration) {
                 setPlaybackProgress(now / playbackState.duration);
                 // 当剩余播放时间 <= 10 秒时，非阻塞地预取下一首原始数据（比按百分比更稳定）
-                if (playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
+                if (playMode !== 2 && playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
                     prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
                     try { prefetchNextSong(); } catch(e) {}
                 }
@@ -4199,9 +4236,21 @@
         document.getElementById('prev-btn').onclick = () => playTrack(curIdx - 1 < 0 ? playlist.length-1 : curIdx - 1);
         document.getElementById('next-btn').onclick = handleNext;
         el.modeBtn.onclick = () => {
+            const currentTime = getCurrentTime();
+            const previousMode = playMode;
+            const hasCustomLoop = !!getActiveCustomLoop();
             playMode = (playMode + 1) % 3;
             ['icon-list-loop', 'icon-random', 'icon-single'].forEach(id => document.getElementById(id).style.display = 'none');
             document.getElementById(['icon-list-loop', 'icon-random', 'icon-single'][playMode]).style.display = 'block';
+            prefetchAttempted = false;
+            if(playMode === 2) {
+                try { cancelNextPreload(); } catch(_) {}
+            }
+            const singleLoopModeChanged = (previousMode === 2) !== (playMode === 2);
+            if(audioBuffer && playbackState.isPlaying && !hasCustomLoop && singleLoopModeChanged) {
+                startAudio(currentTime);
+                el.coverWrap.classList.add('playing');
+            }
         };
 
         async function parseSLI(track) {
@@ -4213,8 +4262,9 @@
                     const toMatch = text.match(/\bTo\s*=\s*(\d+)/i);
                     if(fromMatch && toMatch) {
                         const rate = parseInt(el.baseRateInput.value) || 44100;
-                        applyLoop(parseInt(toMatch[1])/rate, parseInt(fromMatch[1])/rate);
-                        el.loopMsg.textContent = `SLI Loaded`;
+                        if(applyLoop(parseInt(toMatch[1])/rate, parseInt(fromMatch[1])/rate)) {
+                            el.loopMsg.textContent = `SLI Loaded`;
+                        }
                     }
                     resolve();
                 };
@@ -4222,9 +4272,24 @@
             });
         }
         function applyLoop(s, e) {
+            const currentTime = getCurrentTime();
+            const previousLoop = getActiveCustomLoop();
+            const duration = Number(audioBuffer?.duration || playbackState.duration || 0);
+            const isValid = Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e > s && (!duration || e <= duration);
+            if(!isValid) {
+                loopState = { active: false, start: Number(s) || 0, end: Number(e) || 0 };
+                el.loopEnable.checked = false;
+                el.loopMsg.textContent = '循环区间无效';
+                updateLoopMarkers();
+                if(previousLoop && playbackState.isPlaying) startAudio(currentTime);
+                return false;
+            }
             el.loopStart.value = s.toFixed(3); el.loopEnd.value = e.toFixed(3);
             el.loopEnable.checked = true; loopState = { active: true, start: s, end: e };
+            el.loopMsg.textContent = '';
             updateLoopMarkers();
+            if(playbackState.isPlaying) startAudio(currentTime);
+            return true;
         }
         window.setLoopPoint = function(t) {
             const now = getCurrentTime();
@@ -4234,9 +4299,14 @@
         el.loopEnable.addEventListener('change', e => {
             if(e.target.checked) {
                 const s = parseFloat(el.loopStart.value), e_val = parseFloat(el.loopEnd.value);
-                if(e_val > s) { loopState = { active: true, start: s, end: e_val }; if(playbackState.isPlaying) startAudio(getCurrentTime()); }
-            } else { loopState.active = false; if(playbackState.isPlaying) startAudio(getCurrentTime()); }
-            updateLoopMarkers();
+                applyLoop(s, e_val);
+            } else {
+                const currentTime = getCurrentTime();
+                const wasActive = !!getActiveCustomLoop();
+                loopState.active = false;
+                if(wasActive && playbackState.isPlaying) startAudio(currentTime);
+                updateLoopMarkers();
+            }
         });
         function resetLoopUI() { loopState.active=false; el.loopEnable.checked=false; updateLoopMarkers(); }
         function updateLoopMarkers() {
