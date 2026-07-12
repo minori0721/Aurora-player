@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aurora Player</title>
+    <link rel="icon" href="data:,">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.min.js"></script>
@@ -283,9 +284,24 @@
             flex: 1; min-width: 0; white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;
         }
+        .pl-item-companion {
+            width: 18px; height: 18px; flex: 0 0 18px; display: inline-flex;
+            align-items: center; justify-content: center; font-size: 0.78rem;
+            color: #1f8a55; border: 1px solid rgba(31,138,85,0.28); border-radius: 50%;
+        }
+        .pl-item-companion.warn { color: #b96a10; border-color: rgba(185,106,16,0.35); }
 
         .drag-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: 0.3s; }
-        body.drag-on .drag-mask { opacity: 1; pointer-events: all; }
+        body.drag-on .drag-mask, body.import-scanning .drag-mask { opacity: 1; pointer-events: all; }
+        .import-summary {
+            position: fixed; top: 74px; left: 50%; z-index: 1001; max-width: calc(100vw - 32px);
+            padding: 9px 14px; border-radius: 6px; transform: translate(-50%, -8px);
+            background: rgba(255,255,255,0.96); color: var(--text-main); border: 1px solid rgba(31,138,85,0.28);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12); font-size: 0.8rem; line-height: 1.4;
+            text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+        }
+        .import-summary.show { opacity: 1; transform: translate(-50%, 0); }
+        .import-summary.warn { border-color: rgba(185,106,16,0.42); }
         .loading-tip { position: absolute; bottom: 20px; font-size: 0.8rem; color: #2980b9; display: none; font-weight: bold; }
         .tag-source { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); margin-left: 10px; vertical-align: middle;}
         .tag-quality { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; background: linear-gradient(135deg, #3498db, #2980b9); color: white; margin-left: 8px; vertical-align: middle; font-weight: 600; letter-spacing: 0.5px; }
@@ -677,7 +693,8 @@
     
     <div id="debug-console"><div>> Debugger Ready.</div></div>
     <canvas id="visual-canvas"></canvas>
-    <div class="drag-mask"><h1>投喂音乐</h1><p>MP3 / FLAC / OGG / SLI</p></div>
+    <div class="drag-mask"><h1 id="drag-mask-title">投喂音乐</h1><p id="drag-mask-detail">MP3 / FLAC / OGG / SLI</p></div>
+    <div id="import-summary" class="import-summary" role="status" aria-live="polite"></div>
 
     <!-- 下载模态窗口（隐藏，点击下载按钮弹出） -->
     <div id="download-modal" class="download-modal" style="display:none;">
@@ -1365,9 +1382,36 @@
         let playlist = [], curIdx = -1, playMode = 0;
         let lyrics = [], isSyncedLyrics = true;
         let neteaseSearchEnabled = false; // 网易云歌词搜索开关，默认关闭
-        let loopState = { active: false, start: 0, end: 0 };
+        let loopState = { active: false, start: 0, end: 0, source: null };
         let particles = [];
         let currentAbortController = null; // 用于取消之前的网络请求
+        const AUDIO_FILE_EXTENSIONS = new Set(['mp3', 'flac', 'wav', 'm4a', 'ogg']);
+        const COMPANION_FILE_EXTENSIONS = new Set(['sli', 'lrc']);
+        let companionRegistry = { sli: new Map(), lrc: new Map() };
+        let pendingCompanionRegistry = { sli: new Map(), lrc: new Map() };
+        let importQueue = Promise.resolve();
+        let importAssetSequence = 1;
+
+        function beginPlaybackAction() {
+            window._playActionTokenSeed = (window._playActionTokenSeed || 0) + 1;
+            window._currentPlayActionToken = window._playActionTokenSeed;
+            return window._currentPlayActionToken;
+        }
+
+        function invalidatePlaybackAction() {
+            return beginPlaybackAction();
+        }
+
+        function isPlaybackActionCurrent(token, track = null) {
+            return window._currentPlayActionToken === token && (!track || playlist[curIdx] === track);
+        }
+
+        function assertPlaybackActionCurrent(token, track = null) {
+            if (isPlaybackActionCurrent(token, track)) return;
+            const error = new Error('stale');
+            error.stale = true;
+            throw error;
+        }
         // ---- 下一首预加载相关 ----
         let nextSongRawData = null; // 存放预加载的 ArrayBuffer（下一首）
         let nextSongAbortController = null; // AbortController（用于取消预加载请求）
@@ -3466,47 +3510,360 @@
         document.body.addEventListener('dragleave', (e) => { if(e.clientX===0 && e.clientY===0) document.body.classList.remove('drag-on'); });
         document.body.addEventListener('drop', handleDrop);
 
-        // 文件导入按钮事件
         const fileInput = document.getElementById('file-input');
+        const dragMaskTitle = document.getElementById('drag-mask-title');
+        const dragMaskDetail = document.getElementById('drag-mask-detail');
+        const importSummary = document.getElementById('import-summary');
+        let importSummaryTimer = null;
         document.getElementById('btn-import').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFiles(Array.from(e.target.files));
-                e.target.value = ''; // 重置，允许重复选择同一文件
-            }
+            if (e.target.files.length > 0) handleFiles(Array.from(e.target.files));
+            e.target.value = '';
         });
 
-        function handleFiles(files) {
-            const audios = files.filter(f => f.type.startsWith('audio/') || /\.(mp3|flac|wav|m4a|ogg)$/i.test(f.name));
-            const lrcs = {}, slis = {};
-            files.forEach(f => {
-                if(f.name.endsWith('.lrc')) lrcs[f.name.replace('.lrc','')] = f;
-                if(f.name.endsWith('.sli') || f.name.includes('.ogg.sli')) {
-                    let base = f.name.replace('.sli','').replace('.ogg','');
-                    slis[base] = f;
+        function normalizeImportPath(path) {
+            return String(path || '').replace(/\\/g, '/').split('/')
+                .filter(part => part && part !== '.' && part !== '..').join('/').normalize('NFC');
+        }
+
+        function normalizeImportKey(value) {
+            return normalizeImportPath(value).toLowerCase();
+        }
+
+        function splitImportPath(path) {
+            const normalized = normalizeImportPath(path);
+            const slash = normalized.lastIndexOf('/');
+            return { path: normalized, dir: slash >= 0 ? normalized.slice(0, slash) : '', name: slash >= 0 ? normalized.slice(slash + 1) : normalized };
+        }
+
+        function createImportAsset(file, relativePath) {
+            const parts = splitImportPath(relativePath || file.webkitRelativePath || file.name);
+            const name = parts.name || file.name;
+            const normalizedName = name.normalize('NFC').toLowerCase();
+            const dot = normalizedName.lastIndexOf('.');
+            const ext = dot >= 0 ? normalizedName.slice(dot + 1) : '';
+            const stem = dot >= 0 ? normalizedName.slice(0, dot) : normalizedName;
+            const asset = {
+                id: `asset-${importAssetSequence++}`, file,
+                relativePath: parts.path || file.name,
+                pathKey: normalizeImportKey(parts.path || file.name),
+                dirKey: normalizeImportKey(parts.dir),
+                name, nameKey: normalizedName, ext, stemKey: stem,
+                kind: AUDIO_FILE_EXTENSIONS.has(ext) || file.type?.startsWith('audio/') ? 'audio' : (COMPANION_FILE_EXTENSIONS.has(ext) ? ext : 'other')
+            };
+            if (asset.kind === 'sli' || asset.kind === 'lrc') {
+                const companionDot = stem.lastIndexOf('.');
+                const possibleAudioExt = companionDot >= 0 ? stem.slice(companionDot + 1) : '';
+                asset.explicitAudioNameKey = AUDIO_FILE_EXTENSIONS.has(possibleAudioExt) ? stem : null;
+                asset.companionBaseKey = asset.explicitAudioNameKey ? stem.slice(0, companionDot) : stem;
+            }
+            return asset;
+        }
+
+        function dedupeImportAssets(records) {
+            const byPath = new Map();
+            records.forEach(record => {
+                if (!record?.file) return;
+                const asset = createImportAsset(record.file, record.relativePath);
+                const previous = byPath.get(asset.pathKey);
+                if (!previous || previous.file.size !== asset.file.size || previous.file.lastModified !== asset.file.lastModified) byPath.set(asset.pathKey, asset);
+            });
+            return Array.from(byPath.values());
+        }
+
+        async function walkFileSystemHandle(handle, parentPath, output, errors) {
+            const relativePath = normalizeImportPath(parentPath ? `${parentPath}/${handle.name}` : handle.name);
+            if (handle.kind === 'file') {
+                try { output.push({ file: await handle.getFile(), relativePath }); }
+                catch (error) { errors.push({ path: relativePath, error }); }
+                return;
+            }
+            if (handle.kind !== 'directory') return;
+            try {
+                for await (const child of handle.values()) await walkFileSystemHandle(child, relativePath, output, errors);
+            } catch (error) { errors.push({ path: relativePath, error }); }
+        }
+
+        function readEntryFile(entry) {
+            return new Promise((resolve, reject) => entry.file(resolve, reject));
+        }
+
+        function readEntryBatch(reader) {
+            return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        }
+
+        async function walkWebkitEntry(entry, parentPath, output, errors) {
+            const relativePath = normalizeImportPath(parentPath ? `${parentPath}/${entry.name}` : entry.name);
+            if (entry.isFile) {
+                try { output.push({ file: await readEntryFile(entry), relativePath }); }
+                catch (error) { errors.push({ path: relativePath, error }); }
+                return;
+            }
+            if (!entry.isDirectory) return;
+            try {
+                const reader = entry.createReader();
+                while (true) {
+                    const batch = await readEntryBatch(reader);
+                    if (!batch.length) break;
+                    for (const child of batch) await walkWebkitEntry(child, relativePath, output, errors);
+                }
+            } catch (error) { errors.push({ path: relativePath, error }); }
+        }
+
+        function captureDropSnapshot(dataTransfer) {
+            const fallbackFiles = Array.from(dataTransfer?.files || []);
+            const items = Array.from(dataTransfer?.items || []).filter(item => item.kind === 'file').map(item => {
+                let handlePromise = null, entry = null, file = null;
+                try {
+                    if (typeof item.getAsFileSystemHandle === 'function') handlePromise = Promise.resolve(item.getAsFileSystemHandle()).catch(() => null);
+                } catch (_) {}
+                try { if (typeof item.webkitGetAsEntry === 'function') entry = item.webkitGetAsEntry(); } catch (_) {}
+                try { file = item.getAsFile(); } catch (_) {}
+                return { handlePromise, entry, file };
+            });
+            return { items, fallbackFiles };
+        }
+
+        async function collectDropSnapshot(snapshot) {
+            const records = [], errors = [];
+            let unsupportedDirectory = false;
+            if (snapshot.items.length) {
+                for (const item of snapshot.items) {
+                    const handle = item.handlePromise ? await item.handlePromise : null;
+                    if (handle) {
+                        const before = records.length;
+                        const handleErrors = [];
+                        await walkFileSystemHandle(handle, '', records, handleErrors);
+                        if (records.length === before && item.entry) {
+                            const fallbackErrors = [];
+                            await walkWebkitEntry(item.entry, '', records, fallbackErrors);
+                            if (records.length === before) errors.push(...handleErrors, ...fallbackErrors);
+                        } else {
+                            errors.push(...handleErrors);
+                        }
+                    } else if (item.entry) await walkWebkitEntry(item.entry, '', records, errors);
+                    else if (item.file) records.push({ file: item.file, relativePath: item.file.webkitRelativePath || item.file.name });
+                    else unsupportedDirectory = true;
+                }
+            } else {
+                snapshot.fallbackFiles.forEach(file => records.push({ file, relativePath: file.webkitRelativePath || file.name }));
+            }
+            if (!records.length && snapshot.fallbackFiles.length) snapshot.fallbackFiles.forEach(file => records.push({ file, relativePath: file.webkitRelativePath || file.name }));
+            return { records, errors, unsupportedDirectory };
+        }
+
+        function mergeAssetRegistry(target, assets) {
+            assets.forEach(asset => target[asset.kind].set(asset.pathKey, asset));
+        }
+
+        function mergeSupplementalAssetRegistry(target, assets) {
+            assets.forEach(asset => {
+                if (!asset.dirKey) {
+                    const sameName = Array.from(target[asset.kind].values()).filter(existing => existing.nameKey === asset.nameKey);
+                    if (sameName.length === 1) target[asset.kind].delete(sameName[0].pathKey);
+                }
+                target[asset.kind].set(asset.pathKey, asset);
+            });
+        }
+
+        function clearTrackCompanion(track, type) {
+            track[`${type}File`] = null;
+            track[`${type}Asset`] = null;
+            track[`${type}Status`] = 'none';
+            track[`${type}Message`] = '';
+            if (type === 'sli') {
+                track.sliData = null;
+                track.sliRuntimeError = '';
+            }
+        }
+
+        function findCompanionBindings(tracks, type, registry) {
+            const assets = Array.from(registry.values());
+            const audioBaseCounts = new Map();
+            tracks.forEach(track => audioBaseCounts.set(track.asset.stemKey, (audioBaseCounts.get(track.asset.stemKey) || 0) + 1));
+            const provisional = [], ambiguousAssets = new Set();
+
+            tracks.forEach(track => {
+                clearTrackCompanion(track, type);
+                const audio = track.asset;
+                const sameDirExact = assets.filter(asset => asset.dirKey === audio.dirKey && asset.explicitAudioNameKey === audio.nameKey);
+                const sameDirGeneric = assets.filter(asset => asset.dirKey === audio.dirKey && !asset.explicitAudioNameKey && asset.companionBaseKey === audio.stemKey);
+                const globalCandidates = assets.filter(asset => asset.companionBaseKey === audio.stemKey && (!asset.explicitAudioNameKey || asset.explicitAudioNameKey === audio.nameKey));
+                let candidates = sameDirExact.length ? sameDirExact : sameDirGeneric;
+                if (!candidates.length && audioBaseCounts.get(audio.stemKey) === 1) candidates = globalCandidates;
+                if (candidates.length === 1) provisional.push({ track, asset: candidates[0] });
+                else if (candidates.length > 1 || (!candidates.length && globalCandidates.length && audioBaseCounts.get(audio.stemKey) > 1)) {
+                    track[`${type}Status`] = 'ambiguous';
+                    track[`${type}Message`] = '存在多个同名候选';
+                    (candidates.length ? candidates : globalCandidates).forEach(asset => ambiguousAssets.add(asset.pathKey));
                 }
             });
-            if(audios.length) {
-                playlist = audios.map(f => {
-                    const base = f.name.replace(/\.[^.]+$/, "");
-                    return { file: f, name: base, lrcFile: lrcs[base] || null, sliFile: slis[base] || null };
-                });
-                playlist.sort((a,b) => a.name.localeCompare(b.name));
-                renderPlaylist();
-                playTrack(0);
-            } else if (Object.keys(slis).length > 0 && curIdx !== -1) {
-                const cur = playlist[curIdx];
-                if(slis[cur.name]) { cur.sliFile = slis[cur.name]; parseSLI(cur); }
+
+            const claims = new Map();
+            provisional.forEach(match => {
+                if (!claims.has(match.asset.pathKey)) claims.set(match.asset.pathKey, []);
+                claims.get(match.asset.pathKey).push(match);
+            });
+
+            provisional.forEach(match => {
+                const competing = claims.get(match.asset.pathKey);
+                if (competing.length > 1) {
+                    competing.forEach(item => {
+                        item.track[`${type}Status`] = 'ambiguous';
+                        item.track[`${type}Message`] = '同一个伴随文件对应多首歌曲';
+                    });
+                    ambiguousAssets.add(match.asset.pathKey);
+                    return;
+                }
+                match.track[`${type}File`] = match.asset.file;
+                match.track[`${type}Asset`] = match.asset;
+                match.track[`${type}Status`] = 'matched';
+            });
+            return { assets, ambiguousAssets };
+        }
+
+        async function rebuildCompanionBindings() {
+            const localTracks = playlist.filter(track => !track.netease && track.asset);
+            const sliResult = findCompanionBindings(localTracks, 'sli', companionRegistry.sli);
+            const lrcResult = findCompanionBindings(localTracks, 'lrc', companionRegistry.lrc);
+            const invalidAssets = new Set();
+            await Promise.all(localTracks.filter(track => track.sliStatus === 'matched').map(async track => {
+                const parsed = track.sliAsset.parsedSli || await parseSliFile(track.sliFile);
+                track.sliAsset.parsedSli = parsed;
+                track.sliData = parsed;
+                if (parsed.status === 'valid') track.sliStatus = 'valid';
+                else {
+                    track.sliStatus = 'invalid';
+                    track.sliMessage = parsed.error;
+                    invalidAssets.add(track.sliAsset.pathKey);
+                }
+            }));
+            localTracks.forEach(track => { if (track.lrcStatus === 'matched') track.lrcStatus = 'valid'; });
+
+            const validAssets = new Set(localTracks.filter(track => track.sliStatus === 'valid').map(track => track.sliAsset.pathKey));
+            const unmatchedAssets = new Set(sliResult.assets.map(asset => asset.pathKey).filter(path => !validAssets.has(path) && !invalidAssets.has(path) && !sliResult.ambiguousAssets.has(path)));
+            const lrcMatchedAssets = new Set(localTracks.filter(track => track.lrcStatus === 'valid').map(track => track.lrcAsset.pathKey));
+            const lrcUnmatchedAssets = new Set(lrcResult.assets.map(asset => asset.pathKey).filter(path => !lrcMatchedAssets.has(path) && !lrcResult.ambiguousAssets.has(path)));
+            return {
+                sli: { total: sliResult.assets.length, matched: validAssets.size, unmatched: unmatchedAssets.size, ambiguous: sliResult.ambiguousAssets.size, invalid: invalidAssets.size, unmatchedAssets, ambiguousAssets: sliResult.ambiguousAssets, invalidAssets },
+                lrc: { total: lrcResult.assets.length, matched: lrcMatchedAssets.size, unmatched: lrcUnmatchedAssets.size, ambiguous: lrcResult.ambiguousAssets.size, unmatchedAssets: lrcUnmatchedAssets, ambiguousAssets: lrcResult.ambiguousAssets }
+            };
+        }
+
+        function logCompanionDiagnostics(stats, errors, unsupportedDirectory) {
+            const audioCount = playlist.filter(track => !track.netease).length;
+            const summary = `导入完成: ${audioCount} 音频 / ${stats.sli.total} SLI / 匹配 ${stats.sli.matched} / 未匹配 ${stats.sli.unmatched} / 歧义 ${stats.sli.ambiguous} / 无效 ${stats.sli.invalid}`;
+            const hasWarning = !!(stats.sli.unmatched || stats.sli.ambiguous || stats.sli.invalid || errors.length || unsupportedDirectory);
+            log(summary, hasWarning ? 'warn' : 'success');
+            showImportSummary(summary, hasWarning);
+            const logPaths = (label, paths, registry, type = 'warn') => paths.forEach(path => log(`${label}: ${registry.get(path)?.relativePath || path}`, type));
+            logPaths('SLI 未匹配', stats.sli.unmatchedAssets, companionRegistry.sli);
+            logPaths('SLI 歧义', stats.sli.ambiguousAssets, companionRegistry.sli);
+            playlist.filter(track => track.sliStatus === 'invalid').forEach(track => log(`SLI 格式无效: ${track.sliAsset?.relativePath || track.name} (${track.sliMessage || '未知原因'})`, 'error'));
+            logPaths('LRC 未匹配', stats.lrc.unmatchedAssets, companionRegistry.lrc);
+            logPaths('LRC 歧义', stats.lrc.ambiguousAssets, companionRegistry.lrc);
+            errors.forEach(item => log(`文件读取失败: ${item.path} (${item.error?.message || item.error || 'unknown'})`, 'error'));
+            if (unsupportedDirectory) log('当前浏览器无法展开拖入的目录，请改用 Chromium/Safari 或直接选择目录内的全部文件。', 'error');
+        }
+
+        function setImportScanning(active) {
+            document.body.classList.toggle('import-scanning', active);
+            dragMaskTitle.textContent = active ? '正在读取文件夹' : '投喂音乐';
+            dragMaskDetail.textContent = active ? '完成扫描后会一次性导入' : 'MP3 / FLAC / OGG / SLI';
+        }
+
+        function showImportSummary(message, warning = false) {
+            clearTimeout(importSummaryTimer);
+            importSummary.textContent = message;
+            importSummary.classList.toggle('warn', warning);
+            importSummary.classList.add('show');
+            importSummaryTimer = setTimeout(() => importSummary.classList.remove('show'), 6000);
+        }
+
+        async function processImportCollection(collection) {
+            const assets = dedupeImportAssets(collection.records || []);
+            const audioAssets = assets.filter(asset => asset.kind === 'audio');
+            const companionAssets = assets.filter(asset => asset.kind === 'sli' || asset.kind === 'lrc');
+            if (!audioAssets.length && !companionAssets.length) {
+                (collection.errors || []).forEach(item => log(`文件读取失败: ${item.path}`, 'error'));
+                log('没有发现支持的音频、SLI 或 LRC 文件', 'warn');
+                showImportSummary('没有发现支持的音频、SLI 或 LRC 文件', true);
+                return;
             }
+
+            if (audioAssets.length) {
+                invalidatePlaybackAction();
+                try { cancelNextPreload(); } catch (_) {}
+                stopAudio();
+                resetLoopAnalysisWorkerAudio();
+                resetLoopUI();
+                companionRegistry = { sli: new Map(pendingCompanionRegistry.sli), lrc: new Map(pendingCompanionRegistry.lrc) };
+                pendingCompanionRegistry = { sli: new Map(), lrc: new Map() };
+                mergeAssetRegistry(companionRegistry, companionAssets);
+                playlist = audioAssets.map(asset => ({
+                    file: asset.file, asset, sourceKey: asset.pathKey,
+                    name: asset.name.replace(/\.[^.]+$/, ''),
+                    lrcFile: null, sliFile: null, lrcStatus: 'none', sliStatus: 'none', sliData: null
+                }));
+                playlist.sort((a, b) => a.asset.relativePath.localeCompare(b.asset.relativePath, undefined, { numeric: true, sensitivity: 'base' }));
+                curIdx = -1;
+                const stats = await rebuildCompanionBindings();
+                renderPlaylist();
+                logCompanionDiagnostics(stats, collection.errors || [], collection.unsupportedDirectory);
+                if (playlist.length) playTrack(0);
+                return;
+            }
+
+            const localTracks = playlist.filter(track => !track.netease && track.asset);
+            if (!localTracks.length) {
+                mergeAssetRegistry(pendingCompanionRegistry, companionAssets);
+                const pendingMessage = `已暂存 ${companionAssets.length} 个伴随文件，将在下一批本地音频导入时配对。`;
+                log(pendingMessage, 'success');
+                showImportSummary(pendingMessage);
+                return;
+            }
+            const currentTrack = playlist[curIdx];
+            const previousSliIdentity = currentTrack?.sliAsset ? `${currentTrack.sliAsset.pathKey}|${currentTrack.sliAsset.file.size}|${currentTrack.sliAsset.file.lastModified}` : '';
+            const previousLrcIdentity = currentTrack?.lrcAsset ? `${currentTrack.lrcAsset.pathKey}|${currentTrack.lrcAsset.file.size}|${currentTrack.lrcAsset.file.lastModified}` : '';
+            mergeSupplementalAssetRegistry(companionRegistry, companionAssets);
+            const stats = await rebuildCompanionBindings();
+            renderPlaylist();
+            logCompanionDiagnostics(stats, collection.errors || [], collection.unsupportedDirectory);
+            const nextSliIdentity = currentTrack?.sliAsset ? `${currentTrack.sliAsset.pathKey}|${currentTrack.sliAsset.file.size}|${currentTrack.sliAsset.file.lastModified}` : '';
+            const nextLrcIdentity = currentTrack?.lrcAsset ? `${currentTrack.lrcAsset.pathKey}|${currentTrack.lrcAsset.file.size}|${currentTrack.lrcAsset.file.lastModified}` : '';
+            if (currentTrack && !currentTrack.netease) syncCurrentTrackCompanions(currentTrack, {
+                sliChanged: previousSliIdentity !== nextSliIdentity,
+                lrcChanged: previousLrcIdentity !== nextLrcIdentity
+            });
+        }
+
+        function enqueueImport(collectionTask) {
+            importQueue = importQueue.then(async () => {
+                setImportScanning(true);
+                await processImportCollection(await collectionTask());
+            }).catch(error => {
+                const message = `导入失败: ${error?.message || error}`;
+                log(message, 'error');
+                showImportSummary(message, true);
+            }).finally(() => setImportScanning(false));
+            return importQueue;
+        }
+
+        function handleFiles(files) {
+            const records = files.map(file => ({ file, relativePath: file.webkitRelativePath || file.name }));
+            return enqueueImport(() => Promise.resolve({ records, errors: [], unsupportedDirectory: false }));
         }
 
         function handleDrop(e) {
             document.body.classList.remove('drag-on');
-            handleFiles(Array.from(e.dataTransfer.files));
+            const snapshot = captureDropSnapshot(e.dataTransfer);
+            enqueueImport(() => collectDropSnapshot(snapshot));
         }
 
         async function playTrack(i) {
             if(i < 0 || i >= playlist.length) return;
+            const track = playlist[i];
+            const myPlayToken = beginPlaybackAction();
             prefetchAttempted = false; // 新增：无论怎么切歌，先重置预加载状态
             curIdx = i; ensurePlaylistRenderedAndActive();
             // 标记当前播放曲目信息，供下载按钮使用（可能来源于播放列表或本地文件）
@@ -3521,7 +3878,6 @@
                     file: trackInfo.file || null
                 };
             }catch(e){}
-            const track = playlist[i];
             stopAudio();
             resetLoopAnalysisWorkerAudio();
             audioBuffer = null; // 显式释放内存
@@ -3544,6 +3900,7 @@
                             // 直接使用
                         } else if (prefetchInProgress) {
                             const ok = await waitForPrefetchCompletion(800);
+                            assertPlaybackActionCurrent(myPlayToken, track);
                             if (!ok || !hasPreloaded || !nextSongRawData) {
                                 try { cancelNextPreload(); } catch(e) {}
                             }
@@ -3557,20 +3914,26 @@
                             log('Using preloaded raw data for local track', 'success');
                         } else {
                             ab = await track.file.arrayBuffer();
+                            assertPlaybackActionCurrent(myPlayToken, track);
                         }
                     } catch (e) {
+                        if (e.stale || e.message === 'stale') throw e;
                         log('Error while attempting to use preloaded local data, fallback: ' + (e && e.message), 'warn');
                         try { cancelNextPreload(); } catch(_) {}
                         ab = await track.file.arrayBuffer();
+                        assertPlaybackActionCurrent(myPlayToken, track);
                     }
                 } else {
                     ab = await track.file.arrayBuffer();
+                    assertPlaybackActionCurrent(myPlayToken, track);
                 }
+                assertPlaybackActionCurrent(myPlayToken, track);
                 el.bufferLine.style.width = '30%';
                 let meta = null;
                 if(track.file.name.toLowerCase().endsWith('.flac')) {
                     log("Detect FLAC. Using Native Parser...");
                     meta = await parseFlacTagsNative(track.file);
+                    assertPlaybackActionCurrent(myPlayToken, track);
                     // 计算FLAC比特率（文件大小 / 时长）
                     if (meta) {
                         meta.fileSize = track.file.size;
@@ -3583,6 +3946,7 @@
 
                     jsmediatags.read(track.file, {
                         onSuccess: (tag) => {
+                            if (!isPlaybackActionCurrent(myPlayToken, track)) return;
                             const c = {
                                 title: tag.tags.title,
                                 artist: tag.tags.artist,
@@ -3591,9 +3955,10 @@
                                 fileSize: fileSize,
                                 fileExt: ext
                             };
-                            applyMetadata(c, "ID3");
+                            applyMetadata(c, "ID3", () => isPlaybackActionCurrent(myPlayToken, track));
                         },
                         onError: () => {
+                            if (!isPlaybackActionCurrent(myPlayToken, track)) return;
                             updateTheme(null);
                             // 没有ID3标签，尝试网易云搜索或显示 Pure Music
                             if(!track.lrcFile) {
@@ -3601,13 +3966,15 @@
                                     const songName = el.title.textContent;
                                     // 立即并行尝试获取歌词（即使 duration 还未准备好）
                                     // 如果之后 duration 可用，再以准确时长重试一次以提高匹配准确度
-                                    searchNeteaselyrics(songName, '', playbackState.duration || 0);
+                                    const guard = () => isPlaybackActionCurrent(myPlayToken, track);
+                                    searchNeteaselyrics(songName, '', playbackState.duration || 0, guard);
                                     if (!playbackState.duration) {
                                         let attempts = 0;
                                         const reTry = () => {
+                                            if (!guard()) return;
                                             attempts++;
                                             if (playbackState.duration > 0) {
-                                                searchNeteaselyrics(songName, '', playbackState.duration);
+                                                searchNeteaselyrics(songName, '', playbackState.duration, guard);
                                             } else if (attempts < 30) {
                                                 setTimeout(reTry, 100);
                                             }
@@ -3621,11 +3988,13 @@
                         }
                     });
                 }
-                if(meta) applyMetadata(meta, "Native");
+                if(meta) applyMetadata(meta, "Native", () => isPlaybackActionCurrent(myPlayToken, track));
 
                 el.bufferLine.style.width = '60%';
                 const localQualityProbe = createAudioQualityProbe(ab, track.file.name, { type: track.file.name.split('.').pop().toLowerCase(), size: track.file.size });
-                audioBuffer = await actx.decodeAudioData(ab);
+                const decodedBuffer = await actx.decodeAudioData(ab);
+                assertPlaybackActionCurrent(myPlayToken, track);
+                audioBuffer = decodedBuffer;
                 el.bufferLine.style.width = '100%';
                 playbackState.duration = audioBuffer.duration;
                 el.totalTime.textContent = fmtTime(playbackState.duration);
@@ -3646,13 +4015,17 @@
                 }
                 
                 if(el.artist.textContent === "Loading...") el.artist.textContent = "Ready";
-                if(track.sliFile) await parseSLI(track);
+                applySliLoopForTrack(track, myPlayToken);
                 startAudio(0);
                 el.coverWrap.classList.add('playing');
                 updatePlayIcon();
                 updateMediaSession();
-                if(track.lrcFile) readLrcFile(track.lrcFile);
-            } catch(e) { log("Err: " + e, 'error'); alert("播放失败，请查看Debug窗口"); }
+                if(track.lrcFile) readLrcFile(track.lrcFile, () => isPlaybackActionCurrent(myPlayToken, track));
+            } catch(e) {
+                if (e.stale || e.message === 'stale') return;
+                log("Err: " + e, 'error');
+                alert("播放失败，请查看Debug窗口");
+            }
         }
 
         function updateMediaSession() {
@@ -3669,7 +4042,8 @@
             }
         }
 
-        function applyMetadata(common, source) {
+        function applyMetadata(common, source, isCurrent = () => true) {
+            if (!isCurrent()) return;
             if(common.title) el.title.textContent = common.title;
             if(common.artist) el.artist.textContent = common.artist;
             
@@ -3689,7 +4063,10 @@
                     let base64 = "";
                     for(let j=0; j<data.length; j++) base64 += String.fromCharCode(data[j]);
                     el.img.src = `data:${format};base64,${window.btoa(base64)}`;
-                    el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); updateMediaSession(); }
+                    el.img.onload = () => {
+                        if (!isCurrent()) return;
+                        el.img.style.opacity = 1; updateTheme(el.img); updateMediaSession();
+                    }
                 }
             } else { updateTheme(null); }
 
@@ -3704,14 +4081,15 @@
                     // 开启了网易云搜索，立即并行尝试搜索（不再阻塞等待 duration）
                     const songName = el.title.textContent;
                     const artistName = common.artist || '';
-                    searchNeteaselyrics(songName, artistName, playbackState.duration || 0);
+                    searchNeteaselyrics(songName, artistName, playbackState.duration || 0, isCurrent);
                     // 若当前时长尚未准备好，稍后重试一次以提高匹配准确度
                     if (!playbackState.duration) {
                         let attempts = 0;
                         const reTry = () => {
+                            if (!isCurrent()) return;
                             attempts++;
                             if (playbackState.duration > 0) {
-                                searchNeteaselyrics(songName, artistName, playbackState.duration);
+                                searchNeteaselyrics(songName, artistName, playbackState.duration, isCurrent);
                             } else if (attempts < 30) {
                                 setTimeout(reTry, 100);
                             }
@@ -3724,10 +4102,13 @@
             }
         }
 
-        function readLrcFile(file) {
-            const r = new FileReader();
-            r.onload = e => parseAndRenderLyrics(e.target.result, "LRC File");
-            r.readAsText(file);
+        async function readLrcFile(file, isCurrent = () => true) {
+            try {
+                const text = await file.text();
+                if (isCurrent()) parseAndRenderLyrics(text, "LRC File");
+            } catch (error) {
+                if (isCurrent()) log(`LRC 读取失败: ${error?.message || error}`, 'error');
+            }
         }
 
         // 网易云音乐API服务（使用全局可修改的 API 地址）
@@ -3739,8 +4120,9 @@
             return path.includes('randomCNIP=') ? `${NETEASE_API_HOST}${path}` : `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
         }
 
-        async function searchNeteaselyrics(songName, artist, duration) {
+        async function searchNeteaselyrics(songName, artist, duration, isCurrent = () => true) {
             try {
+                if (!isCurrent()) return false;
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 正在搜索歌词...</div>';
                 
                 // 智能提取歌名和歌手 - 处理 "歌手 - 歌名" 格式
@@ -3760,9 +4142,11 @@
                 
                 // 搜索歌曲
                 const searchResp = await fetch(buildApiUrl(`/cloudsearch?keywords=${encodeURIComponent(searchSong)}&limit=20`));
+                if (!isCurrent()) return false;
                 if (!searchResp.ok) throw new Error('搜索请求失败');
-                
+
                 const searchData = await searchResp.json();
+                if (!isCurrent()) return false;
                 if (searchData.code !== 200 || !searchData.result?.songs?.length) {
                     log('No songs found on Netease', 'error');
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
@@ -3842,9 +4226,11 @@
                 
                 // 获取歌词
                 const lyricResp = await fetch(buildApiUrl(`/lyric/new?id=${songId}`));
+                if (!isCurrent()) return false;
                 if (!lyricResp.ok) throw new Error('获取歌词失败');
-                
+
                 const lyricData = await lyricResp.json();
+                if (!isCurrent()) return false;
                 
                 if (lyricData?.lrc?.lyric) {
                     log('Netease lyrics loaded!', 'success');
@@ -3864,6 +4250,7 @@
                     throw new Error('No lyrics in response');
                 }
             } catch (e) {
+                if (!isCurrent()) return false;
                 log('Netease search error: ' + e.message, 'error');
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词搜索失败</div>';
                 setArtistTag('网易云', currentAudioQuality); // 失败也要显示标签
@@ -3874,18 +4261,22 @@
         // 直接通过歌曲ID获取歌词（用于已知ID的网易云歌曲）
         async function fetchLyricById(songId) {
             // 支持外部传入AbortController
+            const options = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+            const isCurrent = typeof options.isCurrent === 'function' ? options.isCurrent : () => true;
             let lyricSignal;
-            if (arguments.length > 1 && arguments[1] && arguments[1].signal) {
-                lyricSignal = arguments[1].signal;
+            if (options.signal) {
+                lyricSignal = options.signal;
             } else {
                 if (window.neteaseLyricAbortController) window.neteaseLyricAbortController.abort();
                 window.neteaseLyricAbortController = new AbortController();
                 lyricSignal = window.neteaseLyricAbortController.signal;
             }
             try {
+                if (!isCurrent()) return false;
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 获取歌词...</div>';
                 // 使用缓存队列获取歌词（ttl 1 hour）
                 const data = await cachedFetchJson(buildApiUrl(`/lyric/new?id=${songId}`), { signal: lyricSignal, useQueue: true }, 3600_000);
+                if (!isCurrent()) return false;
                 if (data) {
                     if (data?.lrc?.lyric) {
                         log('Lyrics loaded!', 'success');
@@ -3906,7 +4297,7 @@
                 setArtistTag('网易云', currentAudioQuality); // 暂无歌词也显示标签
                 return false;
             } catch (e) {
-                if (e.name === 'AbortError') {
+                if (!isCurrent() || e.name === 'AbortError') {
                     // 切歌时中断，UI 将被重置，无需设置标签
                     return false;
                 }
@@ -4253,31 +4644,82 @@
             }
         };
 
-        async function parseSLI(track) {
-            return new Promise(resolve => {
-                const r = new FileReader();
-                r.onload = e => {
-                    const text = e.target.result || "";
-                    const fromMatch = text.match(/\bFrom\s*=\s*(\d+)/i);
-                    const toMatch = text.match(/\bTo\s*=\s*(\d+)/i);
-                    if(fromMatch && toMatch) {
-                        const rate = parseInt(el.baseRateInput.value) || 44100;
-                        if(applyLoop(parseInt(toMatch[1])/rate, parseInt(fromMatch[1])/rate)) {
-                            el.loopMsg.textContent = `SLI Loaded`;
-                        }
-                    }
-                    resolve();
-                };
-                r.readAsText(track.sliFile);
-            });
+        async function parseSliFile(file) {
+            try {
+                const text = await file.text();
+                const fromMatch = text.match(/\bFrom\s*=\s*(\d+)/i);
+                const toMatch = text.match(/\bTo\s*=\s*(\d+)/i);
+                if (!fromMatch || !toMatch) return { status: 'invalid', error: '缺少 From 或 To' };
+                const fromSamples = Number(fromMatch[1]);
+                const toSamples = Number(toMatch[1]);
+                if (!Number.isSafeInteger(fromSamples) || !Number.isSafeInteger(toSamples)) return { status: 'invalid', error: '采样点超出安全整数范围' };
+                if (toSamples < 0 || fromSamples <= toSamples) return { status: 'invalid', error: '需要满足 From > To >= 0' };
+                return { status: 'valid', fromSamples, toSamples };
+            } catch (error) {
+                return { status: 'invalid', error: `读取失败: ${error?.message || error}` };
+            }
         }
-        function applyLoop(s, e) {
+
+        function resolveTrackSliLoop(track) {
+            if (!track?.sliData || track.sliData.status !== 'valid') return { status: 'invalid', error: track?.sliMessage || 'SLI 未正确解析' };
+            const rate = Number.parseInt(el.baseRateInput.value, 10) || 44100;
+            if (!Number.isFinite(rate) || rate <= 0) return { status: 'invalid', error: 'Base Rate 必须大于 0' };
+            const start = track.sliData.toSamples / rate;
+            let end = track.sliData.fromSamples / rate;
+            const duration = Number(audioBuffer?.duration || playbackState.duration || 0);
+            if (!(start >= 0 && end > start)) return { status: 'invalid', error: '循环区间无效' };
+            if (duration > 0 && end > duration) {
+                const tolerance = (1 / rate) + 1e-9;
+                if (end - duration <= tolerance) end = duration;
+                else return { status: 'invalid', error: `循环终点 ${end.toFixed(3)}s 超过音频时长 ${duration.toFixed(3)}s` };
+            }
+            return { status: 'valid', start, end, rate };
+        }
+
+        function applySliLoopForTrack(track, playToken = null) {
+            if (playToken !== null && !isPlaybackActionCurrent(playToken, track)) return false;
+            if (!track || playlist[curIdx] !== track || track.sliStatus !== 'valid') {
+                if (track?.sliStatus === 'invalid') el.loopMsg.textContent = track.sliMessage || 'SLI 无效';
+                return false;
+            }
+            const resolved = resolveTrackSliLoop(track);
+            if (resolved.status !== 'valid') {
+                track.sliRuntimeError = resolved.error;
+                el.loopMsg.textContent = resolved.error;
+                log(`SLI 无效: ${track.sliAsset?.relativePath || track.name} (${resolved.error})`, 'error');
+                refreshPlaylistItem(curIdx);
+                return false;
+            }
+            track.sliRuntimeError = '';
+            if (applyLoop(resolved.start, resolved.end, 'sli')) {
+                el.loopMsg.textContent = 'SLI Loaded';
+                return true;
+            }
+            return false;
+        }
+
+        function syncCurrentTrackCompanions(track, changes = { sliChanged: true, lrcChanged: true }) {
+            if (!track || playlist[curIdx] !== track || !audioBuffer) return;
+            if (changes.sliChanged) {
+                if (track.sliStatus === 'valid') {
+                    applySliLoopForTrack(track);
+                } else if (loopState.active && loopState.source === 'sli') {
+                    const currentTime = getCurrentTime();
+                    const wasPlaying = playbackState.isPlaying;
+                    resetLoopUI();
+                    if (wasPlaying) startAudio(currentTime);
+                }
+            }
+            if (changes.lrcChanged && track.lrcFile) readLrcFile(track.lrcFile, () => playlist[curIdx] === track);
+        }
+
+        function applyLoop(s, e, source = 'manual') {
             const currentTime = getCurrentTime();
             const previousLoop = getActiveCustomLoop();
             const duration = Number(audioBuffer?.duration || playbackState.duration || 0);
             const isValid = Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e > s && (!duration || e <= duration);
             if(!isValid) {
-                loopState = { active: false, start: Number(s) || 0, end: Number(e) || 0 };
+                loopState = { active: false, start: Number(s) || 0, end: Number(e) || 0, source: null };
                 el.loopEnable.checked = false;
                 el.loopMsg.textContent = '循环区间无效';
                 updateLoopMarkers();
@@ -4285,7 +4727,7 @@
                 return false;
             }
             el.loopStart.value = s.toFixed(3); el.loopEnd.value = e.toFixed(3);
-            el.loopEnable.checked = true; loopState = { active: true, start: s, end: e };
+            el.loopEnable.checked = true; loopState = { active: true, start: s, end: e, source };
             el.loopMsg.textContent = '';
             updateLoopMarkers();
             if(playbackState.isPlaying) startAudio(currentTime);
@@ -4304,11 +4746,12 @@
                 const currentTime = getCurrentTime();
                 const wasActive = !!getActiveCustomLoop();
                 loopState.active = false;
+                loopState.source = null;
                 if(wasActive && playbackState.isPlaying) startAudio(currentTime);
                 updateLoopMarkers();
             }
         });
-        function resetLoopUI() { loopState.active=false; el.loopEnable.checked=false; updateLoopMarkers(); }
+        function resetLoopUI() { loopState.active=false; loopState.source=null; el.loopEnable.checked=false; el.loopMsg.textContent=''; updateLoopMarkers(); }
         function updateLoopMarkers() {
             if(!loopState.active) { el.markerA.style.display='none'; el.markerB.style.display='none'; document.getElementById('loop-status').style.display='none'; return; }
             const d = playbackState.duration || 1;
@@ -4484,6 +4927,18 @@
             });
         }
 
+        function updatePlaylistCompanionMarker(row, track) {
+            row.querySelector('.pl-item-companion')?.remove();
+            if (!track || track.netease || !['valid', 'invalid', 'ambiguous'].includes(track.sliStatus)) return;
+            const hasWarning = track.sliStatus !== 'valid' || !!track.sliRuntimeError;
+            const marker = document.createElement('span');
+            marker.className = `pl-item-companion${hasWarning ? ' warn' : ''}`;
+            marker.textContent = hasWarning ? '!' : '∞';
+            marker.title = hasWarning ? `SLI ${track.sliStatus === 'ambiguous' ? '匹配歧义' : '无效'}: ${track.sliRuntimeError || track.sliMessage || '未知原因'}` : '已匹配 SLI 循环';
+            marker.setAttribute('aria-label', marker.title);
+            row.appendChild(marker);
+        }
+
         function refreshPlaylistItem(index) {
             const row = el.plContainer.children[index];
             const track = playlist[index];
@@ -4494,6 +4949,7 @@
                 const icon = track.netease ? '☁️ ' : '';
                 titleEl.textContent = `${icon}${track.name}`;
             }
+            updatePlaylistCompanionMarker(row, track);
 
             const coverEl = row.querySelector('.pl-item-cover');
             if (!coverEl) return;
@@ -4556,6 +5012,7 @@
                 d.appendChild(indexEl);
                 d.appendChild(coverEl);
                 d.appendChild(titleEl);
+                updatePlaylistCompanionMarker(d, t);
                 d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(i); };
                 frag.appendChild(d);
             });
@@ -5079,14 +5536,12 @@
         }
         
         // 播放网易云歌曲
-        async function playNeteaseSong(song) {
+        async function playNeteaseSong(song, existingPlayToken = null) {
             const audioUnlockPromise = unlockAudioContext('netease-song');
 
             // play token 防止旧的播放请求完成后覆盖新的播放
-            if (!window._playActionTokenSeed) window._playActionTokenSeed = 1;
             prefetchAttempted = false; // 确保新歌开始时，允许触发预加载
-            const myPlayToken = ++window._playActionTokenSeed;
-            window._currentPlayActionToken = myPlayToken;
+            const myPlayToken = existingPlayToken !== null && isPlaybackActionCurrent(existingPlayToken) ? existingPlayToken : beginPlaybackAction();
 
             // 标记当前播放为在线网易云歌曲（用于下载检测）
             try {
@@ -5108,11 +5563,13 @@
             neteasePanel.classList.remove('show');
 
             await audioUnlockPromise;
+            if (!isPlaybackActionCurrent(myPlayToken)) return;
 
             // 如果没有封面，先尝试从缓存或队列获取歌曲详情
             if (!cover) {
                 try {
                     const detailJson = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}`), { useQueue: true }, 60_000);
+                    if (!isPlaybackActionCurrent(myPlayToken)) return;
                     if (detailJson?.songs?.[0]) {
                         const detail = detailJson.songs[0];
                         cover = toHttps(detail.al?.picUrl || '');
@@ -5126,7 +5583,10 @@
             el.artist.textContent = artists;
             if (cover) {
                 el.img.src = cover;
-                el.img.onload = () => { el.img.style.opacity = 1; updateTheme(el.img); };
+                el.img.onload = () => {
+                    if (!isPlaybackActionCurrent(myPlayToken)) return;
+                    el.img.style.opacity = 1; updateTheme(el.img);
+                };
             } else {
                 el.img.style.opacity = 0;
                 updateTheme(null);
@@ -5149,6 +5609,7 @@
                         res = { ab: nextSongRawData, ...(nextSongPreloadMeta || {}) };
                     } else if (nextSongFetchPromise) {
                         const wrapped = await waitForPromiseWithTimeout(nextSongFetchPromise, 6000);
+                        if (!isPlaybackActionCurrent(myPlayToken)) return;
                         res = wrapped.ok ? wrapped.value : null;
                     }
 
@@ -5166,8 +5627,10 @@
 
                         el.bufferLine.style.width = '60%';
                         const preloadedProbe = createAudioQualityProbe(ab, res.audioUrl || '', res.audioInfo || {});
-                        audioBuffer = await actx.decodeAudioData(ab);
-                        const preloadedQuality = describeAudioQualityFromBuffer(ab, res.audioUrl || '', audioBuffer, { ...(res.audioInfo || {}), _qualityProbe: preloadedProbe });
+                        const decodedBuffer = await actx.decodeAudioData(ab);
+                        assertPlaybackActionCurrent(myPlayToken);
+                        audioBuffer = decodedBuffer;
+                        const preloadedQuality = describeAudioQualityFromBuffer(ab, res.audioUrl || '', decodedBuffer, { ...(res.audioInfo || {}), _qualityProbe: preloadedProbe });
                         currentAudioQuality = preloadedQuality.label;
                         setArtistTag('网易云', currentAudioQuality);
                         log(`Audio: ${currentAudioQuality}`, 'success');
@@ -5193,7 +5656,7 @@
                         updatePlayIcon();
                         updateMediaSession();
 
-                        try { fetchLyricById(songId); } catch(_) {}
+                        try { fetchLyricById(songId, { isCurrent: () => isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
                         // 预取下一首的元数据（并发1）
                         try {
@@ -5215,14 +5678,15 @@
                     }
                 }
             } catch (e) {
+                if (e.stale || e.message === 'stale') return;
                 log('Prefetch reuse error, fallback: ' + (e && e.message), 'warn');
                 try { cancelNextPreload(); } catch(e) {}
             }
 
             // 创建新的 AbortController（与play token配合）
-            if (window.currentAbortController) window.currentAbortController.abort();
-            window.currentAbortController = new AbortController();
-            const controller = window.currentAbortController;
+            if (currentAbortController) currentAbortController.abort();
+            currentAbortController = new AbortController();
+            const controller = currentAbortController;
             const signal = controller.signal;
 
             try {
@@ -5274,9 +5738,10 @@
 
                 el.bufferLine.style.width = '80%';
                 const actualProbe = createAudioQualityProbe(ab, audioUrl, audioInfo || {});
-                audioBuffer = await actx.decodeAudioData(ab);
+                const decodedBuffer = await actx.decodeAudioData(ab);
                 if (window._currentPlayActionToken !== myPlayToken) { controller.abort(); throw new Error('stale'); }
-                const actualQuality = describeAudioQualityFromBuffer(ab, audioUrl, audioBuffer, { ...(audioInfo || {}), _qualityProbe: actualProbe });
+                audioBuffer = decodedBuffer;
+                const actualQuality = describeAudioQualityFromBuffer(ab, audioUrl, decodedBuffer, { ...(audioInfo || {}), _qualityProbe: actualProbe });
                 currentAudioQuality = actualQuality.label;
                 setArtistTag('网易云', currentAudioQuality);
                 log(`Audio: ${currentAudioQuality}`, 'success');
@@ -5303,7 +5768,7 @@
                 updateMediaSession();
                 
                 // 直接用歌曲ID获取歌词（已知ID无需搜索）
-                try { fetchLyricById(songId); } catch(_) {}
+                try { fetchLyricById(songId, { signal: controller.signal, isCurrent: () => isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
                     // 预取下一首的元数据（并发1），带 cookie 以避免权限/匹配问题
                     try {
@@ -5338,9 +5803,11 @@
                         const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
                         // 清除原始缓存（若有）
                         try { await idbDelete('json|' + buildApiUrl(`/song/url/v1?id=${songId}&level=${neteaseQuality}&os=pc${cookieParam}`)); } catch(_) {}
+                        if (!isPlaybackActionCurrent(myPlayToken)) return;
                         // 强制以 standard 请求并带时间戳绕过缓存，触发服务器重新生成链接
                         const retryUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=standard&noCache=${Date.now()}&os=pc${cookieParam}`);
                         try { await cachedFetchJson(retryUrl, { useQueue: true }, 30_000); } catch (_) {}
+                        if (!isPlaybackActionCurrent(myPlayToken)) return;
                     } catch (_) {}
                     // 重新发起播放请求（新的请求会重新走获取逻辑）
                     return playNeteaseSong(song);
@@ -5349,7 +5816,7 @@
                 el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${e.message}</div>`;
                 el.loadTip.style.display = 'none';
             } finally {
-                if (window.currentAbortController && window.currentAbortController.signal.aborted) window.currentAbortController = null;
+                if (currentAbortController === controller) currentAbortController = null;
             }
         }
         
@@ -5622,19 +6089,22 @@
             ensurePlaylistRenderedAndActive();
 
             if (track.netease) {
+                const selectionToken = beginPlaybackAction();
                 await unlockAudioContext('netease-playlist');
+                if (!isPlaybackActionCurrent(selectionToken, track)) return;
 
                 // 网易云歌曲
                 if (track.songData) {
-                    await playNeteaseSong(track.songData);
+                    await playNeteaseSong(track.songData, selectionToken);
                 } else {
                     // 需要重新获取歌曲信息
                     el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取歌曲信息...</div>';
                     try {
                         const json = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${track.songId}`), { useQueue: true }, 60_000);
+                        if (!isPlaybackActionCurrent(selectionToken, track)) return;
                         if (json?.songs?.[0]) {
                             track.songData = json.songs[0];
-                            await playNeteaseSong(track.songData);
+                            await playNeteaseSong(track.songData, selectionToken);
                             return;
                         }
                     } catch (e) {
