@@ -155,7 +155,7 @@
         .time-display { font-size: 0.9rem; color: var(--text-sub); margin-bottom: 12px; font-weight: 500; display: flex; justify-content: space-between;}
         .progress-bar-bg { width: 100%; height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; cursor: pointer; transition: height 0.2s; overflow: visible;}
         .progress-bar-bg:hover { height: 12px; }
-        .progress-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--text-main); border-radius: 4px; transform: scaleX(0); transform-origin: left center; will-change: transform; }
+        .progress-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--text-main); border-radius: 4px; clip-path: inset(0 100% 0 0 round 4px); will-change: clip-path; }
         .buffer-line { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: rgba(255,255,255,0.6); border-radius: 4px; transition: width 0.2s; }
         
         .loop-marker { 
@@ -521,6 +521,205 @@
             margin-bottom: 8px; padding-left: 5px;
         }
 
+        /* 网易云内容浏览器 */
+        .netease-content {
+            width: min(1040px, calc(100vw - 32px));
+            height: min(88dvh, 820px);
+            max-width: none; max-height: none; padding: 0;
+            border: 1px solid var(--border); border-radius: 16px;
+            overflow: hidden; position: relative;
+        }
+        .netease-header {
+            min-height: 58px; margin: 0; padding: 0 16px;
+            flex: 0 0 auto; gap: 12px; background: rgba(255,255,255,0.72);
+        }
+        .netease-header-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .netease-nav-controls { display: flex; align-items: center; gap: 4px; }
+        .netease-nav-btn, .netease-close {
+            width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: transparent; color: var(--text-main); cursor: pointer;
+            font-size: 1.2rem; line-height: 1; transition: background-color 0.18s ease, transform 0.18s ease;
+        }
+        .netease-nav-btn:hover, .netease-close:hover { background: rgba(0,0,0,0.07); }
+        .netease-nav-btn:active, .netease-close:active { transform: scale(0.94); }
+        .netease-page-title {
+            margin: 0; font-size: 1rem; line-height: 1.2; font-weight: 700;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .netease-browser-scroll {
+            flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+            padding: 14px 22px 96px; scroll-behavior: smooth;
+            overscroll-behavior: contain;
+        }
+        .netease-account-row {
+            display: flex; align-items: stretch; gap: 10px; margin-bottom: 12px;
+        }
+        .netease-account-row .netease-user-bar,
+        .netease-account-row .netease-quality-bar,
+        .netease-account-row .netease-login-btn { margin: 0; }
+        .netease-account-row .netease-user-bar { flex: 1 1 auto; min-width: 0; }
+        .netease-account-row .netease-quality-bar { flex: 0 1 260px; }
+        .netease-account-row .netease-login-btn { width: auto; min-width: 180px; }
+        .netease-tabs {
+            position: sticky; top: -14px; z-index: 4; padding: 10px 0;
+            margin: 0 0 10px; background: color-mix(in srgb, var(--glass-strong) 92%, transparent);
+            backdrop-filter: blur(18px);
+        }
+        .netease-tab { min-height: 42px; border-radius: 7px; }
+        .netease-tab-content { overflow: visible; }
+        .netease-search-box { margin-bottom: 10px; }
+        .netease-search-kinds {
+            display: flex; gap: 4px; width: fit-content; max-width: 100%;
+            margin-bottom: 12px; padding: 3px; border-radius: 7px;
+            background: rgba(0,0,0,0.055); overflow-x: auto;
+        }
+        .netease-kind-btn {
+            min-width: 70px; min-height: 38px; padding: 7px 14px; border: 0;
+            border-radius: 5px; background: transparent; color: var(--text-sub);
+            font-weight: 600; cursor: pointer; white-space: nowrap;
+        }
+        .netease-kind-btn.active { background: #fff; color: var(--text-main); box-shadow: 0 1px 5px rgba(0,0,0,0.1); }
+        .netease-results {
+            max-height: none; overflow: visible; border: 0; border-radius: 0;
+            background: transparent;
+        }
+        .netease-item { min-height: 58px; padding: 9px 8px; border-radius: 6px; }
+        .netease-item-cover-link {
+            width: 48px; height: 48px; padding: 0; border: 0; border-radius: 5px;
+            overflow: hidden; flex: 0 0 48px; background: #e8edf3; cursor: pointer;
+        }
+        .netease-item-cover { width: 100%; height: 100%; border-radius: 5px; display: block; }
+        .netease-item > .netease-item-cover { width: 48px; height: 48px; flex: 0 0 48px; }
+        .netease-item-name-btn, .music-link {
+            max-width: 100%; padding: 0; border: 0; background: none; color: inherit;
+            font: inherit; text-align: left; cursor: pointer;
+        }
+        .netease-item-name-btn { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .music-link { color: #17608d; }
+        .music-link:hover, .netease-item-name-btn:hover { text-decoration: underline; }
+        .netease-item-secondary {
+            display: flex; align-items: center; gap: 4px; min-width: 0; margin-top: 4px;
+            color: var(--text-sub); font-size: 0.78rem; white-space: nowrap; overflow: hidden;
+        }
+        .netease-item-secondary .music-link { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        .netease-item-secondary .music-separator { flex: 0 0 auto; color: rgba(44,62,80,0.35); }
+        .netease-item-play { opacity: 1; min-width: 36px; min-height: 36px; }
+        .music-section { padding: 8px 0 18px; border-top: 1px solid rgba(0,0,0,0.08); }
+        .music-section:first-child { border-top: 0; }
+        .music-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 2px 10px; }
+        .music-section-title { margin: 0; font-size: 1rem; line-height: 1.3; }
+        .music-section-more, .music-retry-btn {
+            min-height: 36px; padding: 6px 10px; border: 0; border-radius: 5px;
+            background: rgba(0,0,0,0.06); color: var(--text-main); cursor: pointer;
+        }
+        .music-card-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+            gap: 14px;
+        }
+        .music-card { min-width: 0; }
+        .music-card-button { display: block; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+        .music-card-image { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; border-radius: 6px; background: #e8edf3; }
+        .music-card.artist .music-card-image { border-radius: 50%; }
+        .music-card.mv .music-card-image { aspect-ratio: 16 / 9; }
+        .music-card-title { margin-top: 7px; font-size: 0.86rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .music-card-subtitle { margin-top: 3px; color: var(--text-sub); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .music-entity-hero {
+            display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 24px;
+            align-items: start; padding: 12px 0 22px;
+        }
+        .music-entity-cover { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 8px; background: #e8edf3; grid-row: 1 / span 3; }
+        .music-entity-info { grid-column: 2; align-self: end; }
+        .music-entity-cover.artist { border-radius: 50%; }
+        .music-entity-kind { color: var(--text-sub); font-size: 0.78rem; font-weight: 650; }
+        .music-entity-name { margin: 5px 0 8px; font-size: clamp(1.45rem, 3.4vw, 2.5rem); line-height: 1.08; overflow-wrap: anywhere; }
+        .music-entity-meta { color: var(--text-sub); font-size: 0.86rem; line-height: 1.5; }
+        .music-entity-description {
+            margin: 10px 0 0; color: var(--text-sub); font-size: 0.84rem; line-height: 1.55;
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+            grid-column: 2;
+        }
+        .music-entity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; grid-column: 2; }
+        .music-action-btn {
+            min-height: 42px; padding: 8px 16px; border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 7px; background: rgba(255,255,255,0.78); color: var(--text-main);
+            font-weight: 650; cursor: pointer;
+        }
+        .music-action-btn.primary { border-color: transparent; background: var(--accent); color: #fff; }
+        .music-action-btn:disabled { opacity: 0.55; cursor: wait; }
+        .music-subnav { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; overflow-x: auto; background: rgba(0,0,0,0.05); border-radius: 7px; }
+        .music-subnav-btn { min-height: 38px; padding: 7px 13px; border: 0; border-radius: 5px; background: transparent; color: var(--text-sub); cursor: pointer; white-space: nowrap; }
+        .music-subnav-btn.active { background: #fff; color: var(--text-main); box-shadow: 0 1px 5px rgba(0,0,0,0.09); }
+        .music-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px 0 4px; }
+        .music-pagination button { min-height: 40px; padding: 7px 14px; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; background: #fff; cursor: pointer; }
+        .music-pagination button:disabled { opacity: 0.45; cursor: default; }
+        .music-pagination span { color: var(--text-sub); font-size: 0.8rem; }
+        .music-browser-state { padding: 52px 18px; text-align: center; color: var(--text-sub); }
+        .music-browser-state strong { display: block; margin-bottom: 6px; color: var(--text-main); }
+        .music-mini-player {
+            position: absolute; left: 0; right: 0; bottom: 0; z-index: 8;
+            min-height: 72px; padding: 8px 14px; box-sizing: border-box;
+            display: none; align-items: center; gap: 10px;
+            background: rgba(250,252,255,0.92); border-top: 1px solid rgba(0,0,0,0.08);
+            backdrop-filter: blur(22px);
+        }
+        .music-mini-player.show { display: flex; }
+        .music-mini-main {
+            flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
+            padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
+        }
+        .music-mini-cover { width: 52px; height: 52px; border-radius: 5px; object-fit: cover; flex: 0 0 52px; background: #e8edf3; }
+        .music-mini-info { min-width: 0; }
+        .music-mini-title { font-size: 0.88rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .music-mini-artists { margin-top: 3px; font-size: 0.75rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .music-mini-controls { display: flex; align-items: center; gap: 2px; }
+        .music-mini-btn { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--text-main); cursor: pointer; font-size: 1.05rem; }
+        .music-mini-btn:hover { background: rgba(0,0,0,0.06); }
+        .track-artist .music-link { color: inherit; font-size: inherit; font-weight: inherit; }
+        .cover-wrapper.music-album-link { cursor: pointer; }
+        .cover-wrapper.music-album-link:focus-visible { outline: 3px solid rgba(41,128,185,0.55); outline-offset: 4px; }
+        .netease-nav-btn:focus-visible, .netease-close:focus-visible, .netease-tab:focus-visible,
+        .netease-kind-btn:focus-visible, .music-link:focus-visible, .music-action-btn:focus-visible,
+        .music-mini-btn:focus-visible, .music-mini-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        @media screen and (max-width: 700px) {
+            .netease-panel { align-items: stretch; }
+            .netease-content { width: 100dvw; height: 100dvh; border: 0; border-radius: 0; }
+            .netease-header { padding: env(safe-area-inset-top) 8px 0; min-height: calc(56px + env(safe-area-inset-top)); }
+            .netease-page-title { font-size: 0.92rem; }
+            .netease-browser-scroll { padding: 10px 12px calc(90px + env(safe-area-inset-bottom)); }
+            .netease-tabs { top: -10px; padding: 8px 0; gap: 4px; }
+            .netease-tab { padding: 8px 4px; font-size: 0.8rem; }
+            .netease-account-row { flex-direction: column; }
+            .netease-account-row .netease-quality-bar { flex-basis: auto; }
+            .netease-account-row .netease-login-btn { width: 100%; }
+            .netease-search-box { gap: 6px; }
+            .netease-search-btn { min-width: 64px; padding: 10px 12px; }
+            .netease-item { padding: 8px 2px; gap: 9px; }
+            .netease-item-duration { display: none; }
+            .netease-item-play { width: 38px; height: 38px; }
+            .music-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+            .music-entity-hero { grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: center; padding-top: 6px; }
+            .music-entity-cover { grid-row: auto; }
+            .music-entity-info { grid-column: 2; }
+            .music-entity-name { font-size: 1.45rem; }
+            .music-entity-description { grid-column: 1 / -1; margin-top: 0; -webkit-line-clamp: 4; }
+            .music-entity-actions { grid-column: 1 / -1; margin-top: 2px; }
+            .music-action-btn { flex: 1 1 auto; min-width: 92px; }
+            .music-mini-player { min-height: calc(72px + env(safe-area-inset-bottom)); padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+            .music-mini-cover { width: 48px; height: 48px; flex-basis: 48px; }
+            .music-mini-controls .music-mini-btn:first-child { display: none; }
+        }
+
+        @media screen and (max-width: 350px) {
+            .netease-header-main { gap: 2px; }
+            .netease-nav-btn, .netease-close { width: 40px; height: 40px; }
+            .netease-browser-scroll { padding-left: 9px; padding-right: 9px; }
+            .netease-kind-btn { min-width: 62px; padding-left: 10px; padding-right: 10px; }
+            .music-entity-hero { grid-template-columns: 96px minmax(0, 1fr); }
+            .music-mini-player { padding-left: 8px; padding-right: 8px; gap: 5px; }
+        }
+
         /* 下载模态样式 */
         .download-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 10000; }
         .download-modal.show { display: flex; }
@@ -709,75 +908,109 @@
         </div>
     </div>
 
-    <!-- 网易云搜索面板 -->
+    <!-- 网易云内容浏览器 -->
     <div class="netease-panel" id="netease-panel">
-        <div class="netease-content">
+        <div class="netease-content" role="dialog" aria-modal="true" aria-labelledby="netease-page-title">
             <div class="netease-header">
-                <h3>🎵 网易云音乐</h3>
-                <button class="netease-close" aria-label="关闭网易云面板" onclick="document.getElementById('netease-panel').classList.remove('show')">&times;</button>
-            </div>
-            <!-- 用户状态栏 -->
-            <div id="netease-user-bar" class="netease-user-bar" style="display:none">
-                <img class="netease-avatar" id="netease-avatar" src="" alt="用户头像">
-                <div class="netease-user-info">
-                    <div class="netease-nickname" id="netease-nickname">用户名</div>
-                    <small class="netease-user-id" id="netease-user-id">ID: </small>
-                    <span class="netease-user-type normal" id="netease-user-type">普通用户</span>
+                <div class="netease-header-main">
+                    <div class="netease-nav-controls" aria-label="浏览历史">
+                        <button class="netease-nav-btn" id="netease-nav-back" title="返回" aria-label="返回">&#8592;</button>
+                        <button class="netease-nav-btn" id="netease-nav-forward" title="前进" aria-label="前进">&#8594;</button>
+                    </div>
+                    <h3 class="netease-page-title" id="netease-page-title">网易云音乐</h3>
                 </div>
-                <button class="netease-logout-btn" onclick="neteaseLogout()">退出</button>
+                <button class="netease-close" id="netease-close" title="关闭" aria-label="关闭网易云面板">&times;</button>
             </div>
-            <!-- 音质选择 -->
-            <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
-                <label for="netease-quality-select">🎧 音质:</label>
-                <select id="netease-quality-select" class="netease-quality-select">
-                    <option value="standard">标准 (128kbps)</option>
-                    <option value="higher">较高 (192kbps)</option>
-                    <option value="exhigh">极高 (320kbps)</option>
-                    <option value="lossless">无损 (FLAC)</option>
-                    <option value="hires">Hi-Res</option>
-                </select>
-            </div>
-            <button id="netease-login-btn" class="netease-login-btn" onclick="showQRLogin()">🔐 扫码登录网易云账号</button>
-            
-            <div class="netease-tabs">
-                <button class="netease-tab active" data-tab="search">🔍 搜索歌曲</button>
-                <button class="netease-tab" data-tab="playlist">📋 导入歌单</button>
-                <button class="netease-tab" data-tab="mylist">❤️ 我的歌单</button>
-            </div>
-            <!-- 搜索歌曲 -->
-            <div class="netease-tab-content" id="tab-search">
-                <div class="netease-search-box">
-                    <input type="text" class="netease-input" id="netease-search-input" placeholder="输入歌名、歌手..." aria-label="搜索关键词">
-                    <button class="netease-search-btn" id="netease-search-btn">搜索</button>
+
+            <div class="netease-browser-scroll" id="netease-browser-scroll">
+                <div class="netease-account-row">
+                    <div id="netease-user-bar" class="netease-user-bar" style="display:none">
+                        <img class="netease-avatar" id="netease-avatar" src="" alt="用户头像">
+                        <div class="netease-user-info">
+                            <div class="netease-nickname" id="netease-nickname">用户名</div>
+                            <small class="netease-user-id" id="netease-user-id">ID: </small>
+                            <span class="netease-user-type normal" id="netease-user-type">普通用户</span>
+                        </div>
+                        <button class="netease-logout-btn" onclick="neteaseLogout()">退出</button>
+                    </div>
+                    <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
+                        <label for="netease-quality-select">音质</label>
+                        <select id="netease-quality-select" class="netease-quality-select">
+                            <option value="standard">标准 (128kbps)</option>
+                            <option value="higher">较高 (192kbps)</option>
+                            <option value="exhigh">极高 (320kbps)</option>
+                            <option value="lossless">无损 (FLAC)</option>
+                            <option value="hires">Hi-Res</option>
+                        </select>
+                    </div>
+                    <button id="netease-login-btn" class="netease-login-btn" onclick="showQRLogin()">扫码登录网易云账号</button>
                 </div>
-                <div class="netease-results" id="netease-search-results">
-                    <div class="netease-empty">输入关键词搜索歌曲</div>
+
+                <div class="netease-tabs" role="tablist" aria-label="云音乐功能">
+                    <button class="netease-tab active" data-tab="search" data-route="search" role="tab">搜索</button>
+                    <button class="netease-tab" data-tab="playlist" data-route="playlists/import" role="tab">导入歌单</button>
+                    <button class="netease-tab" data-tab="mylist" data-route="playlists/mine" role="tab">我的歌单</button>
+                </div>
+
+                <div class="netease-tab-content" id="tab-search">
+                    <div class="netease-search-box">
+                        <input type="search" class="netease-input" id="netease-search-input" placeholder="搜索歌曲、专辑或歌手" aria-label="搜索关键词" autocomplete="off">
+                        <button class="netease-search-btn" id="netease-search-btn">搜索</button>
+                    </div>
+                    <div class="netease-search-kinds" id="netease-search-kinds" role="tablist" aria-label="搜索分类">
+                        <button class="netease-kind-btn active" data-kind="all" role="tab">综合</button>
+                        <button class="netease-kind-btn" data-kind="song" role="tab">歌曲</button>
+                        <button class="netease-kind-btn" data-kind="album" role="tab">专辑</button>
+                        <button class="netease-kind-btn" data-kind="artist" role="tab">歌手</button>
+                    </div>
+                    <div class="netease-results" id="netease-search-results" aria-live="polite">
+                        <div class="netease-empty">输入关键词开始搜索</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-playlist" style="display:none">
+                    <div class="netease-search-box">
+                        <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或 ID" aria-label="歌单链接或ID">
+                        <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
+                    </div>
+                    <div id="netease-playlist-preview"></div>
+                    <div class="netease-results" id="netease-playlist-results">
+                        <div class="netease-empty">支持网易云歌单链接或数字 ID</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-mylist" style="display:none">
+                    <div id="mylist-content" class="netease-results">
+                        <div class="netease-empty">请先登录网易云账号</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-entity" style="display:none">
+                    <div id="netease-browser-view" aria-live="polite"></div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-qrlogin" style="display:none">
+                    <div class="qrcode-container">
+                        <div id="qrcode-img-wrap"><div class="netease-loading">生成二维码中...</div></div>
+                        <div class="qrcode-tip">请使用网易云音乐 APP 扫描二维码登录</div>
+                        <div class="qrcode-status waiting" id="qrcode-status">等待扫描...</div>
+                        <button class="glass-btn" style="margin-top:15px" onclick="refreshQRCode()">刷新二维码</button>
+                    </div>
                 </div>
             </div>
-            <!-- 导入歌单 -->
-            <div class="netease-tab-content" id="tab-playlist" style="display:none">
-                <div class="netease-search-box">
-                    <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或ID..." aria-label="歌单链接或ID">
-                    <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
-                </div>
-                <div id="netease-playlist-preview"></div>
-                <div class="netease-results" id="netease-playlist-results">
-                    <div class="netease-empty">支持格式：<br>https://music.163.com/playlist?id=xxx<br>或直接输入歌单ID</div>
-                </div>
-            </div>
-            <!-- 我的歌单 -->
-            <div class="netease-tab-content" id="tab-mylist" style="display:none">
-                <div id="mylist-content" class="netease-results" style="border:none;background:none">
-                    <div class="netease-empty">请先登录网易云账号</div>
-                </div>
-            </div>
-            <!-- 二维码登录 -->
-            <div class="netease-tab-content" id="tab-qrlogin" style="display:none">
-                <div class="qrcode-container">
-                    <div id="qrcode-img-wrap"><div class="netease-loading">生成二维码中...</div></div>
-                    <div class="qrcode-tip">请使用网易云音乐APP扫描二维码登录</div>
-                    <div class="qrcode-status waiting" id="qrcode-status">等待扫描...</div>
-                    <button class="glass-btn" style="margin-top:15px" onclick="refreshQRCode()">🔄 刷新二维码</button>
+
+            <div class="music-mini-player" id="music-mini-player">
+                <button class="music-mini-main" id="music-mini-main" aria-label="返回正在播放">
+                    <img class="music-mini-cover" id="music-mini-cover" src="" alt="当前歌曲封面">
+                    <span class="music-mini-info">
+                        <span class="music-mini-title" id="music-mini-title">未在播放</span>
+                        <span class="music-mini-artists" id="music-mini-artists"></span>
+                    </span>
+                </button>
+                <div class="music-mini-controls">
+                    <button class="music-mini-btn" id="music-mini-artist" title="打开歌手" aria-label="打开歌手" style="display:none">&#9678;</button>
+                    <button class="music-mini-btn" id="music-mini-play" title="播放或暂停" aria-label="播放或暂停">&#9654;</button>
+                    <button class="music-mini-btn" id="music-mini-next" title="下一首" aria-label="下一首">&#9197;</button>
                 </div>
             </div>
         </div>
@@ -3883,6 +4116,7 @@
             audioBuffer = null; // 显式释放内存
             currentAudioQuality = ''; // 先清除，后面会根据文件信息设置
 
+            setMainMusicEntityLinks(null);
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
             el.img.style.opacity = 0; el.img.src = ''; el.loadTip.style.display = 'block';
             setPlaybackProgress(0); el.bufferLine.style.width = '0%';
@@ -4496,7 +4730,8 @@
         let _lastTimeStr = "";
         function setPlaybackProgress(pct) {
             const safePct = Math.max(0, Math.min(1, Number.isFinite(pct) ? pct : 0));
-            el.progLine.style.transform = `scaleX(${safePct})`;
+            const hiddenPercent = Math.max(0, Math.min(100, (1 - safePct) * 100));
+            el.progLine.style.clipPath = `inset(0 ${hiddenPercent}% 0 0 round 4px)`;
         }
 
         function renderLoop() {
@@ -4759,7 +4994,10 @@
             el.markerA.style.display='block'; el.markerB.style.display='block'; document.getElementById('loop-status').style.display='inline';
         }
 
-        function updatePlayIcon() { el.playBtn.innerHTML = playbackState.isPlaying ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>'; }
+        function updatePlayIcon() {
+            el.playBtn.innerHTML = playbackState.isPlaying ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+            if (typeof updateMusicMiniPlayer === 'function') updateMusicMiniPlayer();
+        }
         function fmtTime(s) { const m = Math.floor(s/60); const sc = Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`; }
 
         let playlistCoverObserver = null;
@@ -5124,29 +5362,259 @@
         const playlistPreview = document.getElementById('netease-playlist-preview');
         const playlistResults = document.getElementById('netease-playlist-results');
         
-        // 打开网易云面板
-        document.getElementById('toggle-netease-panel').onclick = () => {
+        const neteaseBrowserScroll = document.getElementById('netease-browser-scroll');
+        const neteaseBrowserView = document.getElementById('netease-browser-view');
+        const neteasePageTitle = document.getElementById('netease-page-title');
+        const MUSIC_ROUTE_PREFIX = '#music/';
+        const MUSIC_SEARCH_TYPES = new Set(['all', 'song', 'album', 'artist']);
+        const MUSIC_ARTIST_VIEWS = new Set(['overview', 'songs', 'albums', 'mvs']);
+        const musicBrowserState = {
+            route: null,
+            renderedHash: '',
+            navToken: 0,
+            controller: null,
+            contexts: new Map(),
+            contextSeed: 0,
+            dynamicCache: new Map(),
+            authReturnHash: '',
+            lastNonMusicHash: '',
+            lastSearchRoute: null,
+            restoringHistory: false
+        };
+
+        function positiveMusicInteger(value, fallback = null) {
+            const number = Number(value);
+            return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+        }
+
+        function parseMusicRoute(hash = window.location.hash) {
+            if (!hash || !hash.startsWith(MUSIC_ROUTE_PREFIX)) return null;
+            const source = hash.slice(MUSIC_ROUTE_PREFIX.length);
+            const splitAt = source.indexOf('?');
+            const path = (splitAt >= 0 ? source.slice(0, splitAt) : source).replace(/^\/+|\/+$/g, '');
+            const params = new URLSearchParams(splitAt >= 0 ? source.slice(splitAt + 1) : '');
+            const parts = path.split('/').filter(Boolean);
+
+            if (parts[0] === 'search' && parts.length === 1) {
+                const type = MUSIC_SEARCH_TYPES.has(params.get('type')) ? params.get('type') : 'all';
+                return {
+                    kind: 'search',
+                    q: (params.get('q') || '').slice(0, 200),
+                    type,
+                    page: positiveMusicInteger(params.get('page'), 1)
+                };
+            }
+            if (parts[0] === 'album' && parts.length === 2) {
+                const id = positiveMusicInteger(parts[1]);
+                return id ? { kind: 'album', id } : { kind: 'invalid', reason: '专辑 ID 无效' };
+            }
+            if (parts[0] === 'artist' && parts.length === 2) {
+                const id = positiveMusicInteger(parts[1]);
+                if (!id) return { kind: 'invalid', reason: '歌手 ID 无效' };
+                const view = MUSIC_ARTIST_VIEWS.has(params.get('view')) ? params.get('view') : 'overview';
+                return { kind: 'artist', id, view, page: positiveMusicInteger(params.get('page'), 1) };
+            }
+            if (path === 'playlists/import') return { kind: 'playlist-import' };
+            if (path === 'playlists/mine') return { kind: 'playlist-mine' };
+            return { kind: 'invalid', reason: '这个音乐页面不存在' };
+        }
+
+        function buildMusicHash(route) {
+            if (!route || route.kind === 'search') {
+                const params = new URLSearchParams();
+                const query = String(route?.q || '').slice(0, 200);
+                const type = MUSIC_SEARCH_TYPES.has(route?.type) ? route.type : 'all';
+                const page = positiveMusicInteger(route?.page, 1);
+                if (query) params.set('q', query);
+                params.set('type', type);
+                params.set('page', String(page));
+                return `${MUSIC_ROUTE_PREFIX}search?${params.toString()}`;
+            }
+            if (route.kind === 'album') return `${MUSIC_ROUTE_PREFIX}album/${positiveMusicInteger(route.id, 0)}`;
+            if (route.kind === 'artist') {
+                const params = new URLSearchParams();
+                params.set('view', MUSIC_ARTIST_VIEWS.has(route.view) ? route.view : 'overview');
+                params.set('page', String(positiveMusicInteger(route.page, 1)));
+                return `${MUSIC_ROUTE_PREFIX}artist/${positiveMusicInteger(route.id, 0)}?${params.toString()}`;
+            }
+            if (route.kind === 'playlist-import') return `${MUSIC_ROUTE_PREFIX}playlists/import`;
+            if (route.kind === 'playlist-mine') return `${MUSIC_ROUTE_PREFIX}playlists/mine`;
+            return `${MUSIC_ROUTE_PREFIX}search?type=all&page=1`;
+        }
+
+        function getMusicRouteTitle(route) {
+            if (!route) return '网易云音乐';
+            if (route.kind === 'search') return route.q ? `搜索：${route.q}` : '网易云音乐';
+            if (route.kind === 'album') return '专辑';
+            if (route.kind === 'artist') return '歌手';
+            if (route.kind === 'playlist-import') return '导入歌单';
+            if (route.kind === 'playlist-mine') return '我的歌单';
+            return '页面不可用';
+        }
+
+        function saveMusicScrollState() {
+            if (!window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) return;
+            try {
+                const state = { ...(history.state || {}), auroraMusic: { scrollTop: neteaseBrowserScroll.scrollTop } };
+                history.replaceState(state, '', window.location.href);
+            } catch (_) {}
+        }
+
+        function setMusicBrowserTab(tabName) {
+            document.querySelectorAll('.netease-tab-content').forEach(content => { content.style.display = 'none'; });
+            neteaseTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabName));
+            const content = document.getElementById(`tab-${tabName}`);
+            if (content) content.style.display = 'flex';
+        }
+
+        function currentMusicNavigationIs(token, hash) {
+            return token === musicBrowserState.navToken && hash === window.location.hash;
+        }
+
+        async function renderMusicRoute(route, restoreScroll = 0) {
+            if (!route) {
+                neteasePanel.classList.remove('show');
+                return;
+            }
+            if (window.neteaseQrAbortController) {
+                window.neteaseQrAbortController.abort();
+                window.neteaseQrAbortController = null;
+            }
+            if (qrCheckTimer) {
+                clearInterval(qrCheckTimer);
+                qrCheckTimer = null;
+            }
+            if (musicBrowserState.controller) musicBrowserState.controller.abort();
+            const controller = new AbortController();
+            const token = ++musicBrowserState.navToken;
+            const hash = window.location.hash;
+            musicBrowserState.controller = controller;
+            musicBrowserState.route = route;
+            musicBrowserState.renderedHash = hash;
+            musicBrowserState.contexts.clear();
             neteasePanel.classList.add('show');
-        };
-        
-        // 点击背景关闭
-        neteasePanel.onclick = (e) => {
-            if (e.target === neteasePanel) neteasePanel.classList.remove('show');
-        };
-        
-        // Tab 切换
+            neteasePageTitle.textContent = getMusicRouteTitle(route);
+
+            try {
+                if (route.kind === 'search') {
+                    musicBrowserState.lastSearchRoute = { ...route };
+                    try { sessionStorage.setItem('aurora_music_last_search', buildMusicHash(route)); } catch (_) {}
+                    setMusicBrowserTab('search');
+                    searchInput.value = route.q;
+                    document.querySelectorAll('.netease-kind-btn').forEach(button => {
+                        const active = button.dataset.kind === route.type;
+                        button.classList.toggle('active', active);
+                        button.setAttribute('aria-selected', active ? 'true' : 'false');
+                    });
+                    if (route.q) {
+                        await searchNeteaseSongs(route.q, route.type, route.page, token, controller.signal);
+                    } else {
+                        searchResults.innerHTML = '<div class="netease-empty">输入关键词开始搜索</div>';
+                    }
+                } else if (route.kind === 'playlist-import') {
+                    setMusicBrowserTab('playlist');
+                } else if (route.kind === 'playlist-mine') {
+                    setMusicBrowserTab('mylist');
+                    if (neteaseUser && !myPlaylistsCache) await loadMyPlaylists();
+                    else if (!neteaseUser) document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+                } else if (route.kind === 'album') {
+                    setMusicBrowserTab('entity');
+                    await renderMusicAlbumPage(route, token, controller.signal);
+                } else if (route.kind === 'artist') {
+                    setMusicBrowserTab('entity');
+                    await renderMusicArtistPage(route, token, controller.signal);
+                } else {
+                    setMusicBrowserTab('entity');
+                    neteaseBrowserView.innerHTML = `<div class="music-browser-state"><strong>${escapeHtml(route.reason || '页面不可用')}</strong><button class="music-retry-btn" data-music-home>返回搜索</button></div>`;
+                }
+            } catch (error) {
+                if (error?.name !== 'AbortError' && currentMusicNavigationIs(token, hash)) {
+                    const target = route.kind === 'search' ? searchResults : neteaseBrowserView;
+                    target.innerHTML = `<div class="music-browser-state"><strong>加载失败</strong>${escapeHtml(error?.message || '未知错误')}<br><button class="music-retry-btn" data-music-reload>重试</button></div>`;
+                }
+            }
+
+            if (!currentMusicNavigationIs(token, hash)) return;
+            requestAnimationFrame(() => {
+                if (currentMusicNavigationIs(token, hash)) neteaseBrowserScroll.scrollTop = Math.max(0, Number(restoreScroll) || 0);
+            });
+            updateMusicMiniPlayer();
+        }
+
+        function navigateMusic(route, options = {}) {
+            saveMusicScrollState();
+            const hash = buildMusicHash(route);
+            const url = window.location.href.split('#')[0] + hash;
+            const state = { ...(history.state || {}), auroraMusic: { scrollTop: 0 } };
+            if (options.replace) history.replaceState(state, '', url);
+            else history.pushState(state, '', url);
+            renderMusicRoute(parseMusicRoute(hash), 0);
+        }
+
+        function openMusicBrowser() {
+            if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
+                renderMusicRoute(parseMusicRoute(), history.state?.auroraMusic?.scrollTop || 0);
+                return;
+            }
+            musicBrowserState.lastNonMusicHash = window.location.hash;
+            let saved = '';
+            try { saved = sessionStorage.getItem('aurora_music_last_route') || ''; } catch (_) {}
+            const savedRoute = parseMusicRoute(saved);
+            navigateMusic(savedRoute && savedRoute.kind !== 'invalid' ? savedRoute : { kind: 'search', q: '', type: 'all', page: 1 });
+        }
+
+        function closeMusicBrowser() {
+            saveMusicScrollState();
+            try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
+            if (musicBrowserState.controller) musicBrowserState.controller.abort();
+            if (window.neteaseQrAbortController) window.neteaseQrAbortController.abort();
+            if (qrCheckTimer) clearInterval(qrCheckTimer);
+            neteasePanel.classList.remove('show');
+            if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
+                const base = window.location.href.split('#')[0];
+                const fallbackHash = musicBrowserState.lastNonMusicHash && !musicBrowserState.lastNonMusicHash.startsWith(MUSIC_ROUTE_PREFIX)
+                    ? musicBrowserState.lastNonMusicHash : '';
+                history.replaceState({ ...(history.state || {}), auroraMusic: undefined }, '', base + fallbackHash);
+                musicBrowserState.renderedHash = window.location.hash;
+            }
+        }
+
+        function syncMusicRouteFromLocation() {
+            const route = parseMusicRoute();
+            if (!route) {
+                neteasePanel.classList.remove('show');
+                musicBrowserState.renderedHash = window.location.hash;
+                return;
+            }
+            if (musicBrowserState.renderedHash === window.location.hash && neteasePanel.classList.contains('show')) return;
+            renderMusicRoute(route, history.state?.auroraMusic?.scrollTop || 0);
+        }
+
+        document.getElementById('toggle-netease-panel').onclick = openMusicBrowser;
+        document.getElementById('netease-close').onclick = closeMusicBrowser;
+        document.getElementById('netease-nav-back').onclick = () => history.back();
+        document.getElementById('netease-nav-forward').onclick = () => history.forward();
+        neteasePanel.addEventListener('click', event => {
+            if (event.target === neteasePanel) closeMusicBrowser();
+        });
         neteaseTabs.forEach(tab => {
             tab.onclick = () => {
-                neteaseTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                document.querySelectorAll('.netease-tab-content').forEach(c => c.style.display = 'none');
-                document.getElementById('tab-' + tab.dataset.tab).style.display = 'flex';
-                // 切换到我的歌单时，只有未加载过才刷新
-                if (tab.dataset.tab === 'mylist' && neteaseUser && !myPlaylistsCache) {
-                    loadMyPlaylists();
+                if (tab.dataset.route === 'search') {
+                    let lastSearch = musicBrowserState.lastSearchRoute;
+                    if (!lastSearch) {
+                        try { lastSearch = parseMusicRoute(sessionStorage.getItem('aurora_music_last_search') || ''); } catch (_) {}
+                    }
+                    navigateMusic(lastSearch?.kind === 'search' ? lastSearch : { kind: 'search', q: searchInput.value.trim(), type: 'all', page: 1 });
                 }
+                else if (tab.dataset.route === 'playlists/import') navigateMusic({ kind: 'playlist-import' });
+                else if (tab.dataset.route === 'playlists/mine') navigateMusic({ kind: 'playlist-mine' });
             };
         });
+        document.querySelectorAll('.netease-kind-btn').forEach(button => {
+            button.onclick = () => navigateMusic({ kind: 'search', q: searchInput.value.trim(), type: button.dataset.kind, page: 1 });
+        });
+        window.addEventListener('popstate', syncMusicRouteFromLocation);
+        window.addEventListener('hashchange', syncMusicRouteFromLocation);
         
         // ========== 网易云登录系统 ==========
         let neteaseUser = null;
@@ -5170,7 +5638,11 @@
         
         // 检查登录状态
         async function checkLoginStatus() {
-            if (!neteaseCookie) return false;
+            if (!neteaseCookie) {
+                neteaseUser = null;
+                updateUserUI();
+                return false;
+            }
             
             try {
                 const resp = await fetch(buildApiUrl(`/login/status?cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`));
@@ -5184,6 +5656,8 @@
                         log(`Logged in as: ${neteaseUser.nickname}`, 'success');
                         return true;
                     }
+                    neteaseUser = null;
+                    updateUserUI();
                 }
             } catch (e) {
                 log('Login check failed: ' + e.message, 'error');
@@ -5255,10 +5729,14 @@
         
         // 显示二维码登录
         async function showQRLogin() {
+            if (!musicBrowserState.authReturnHash && window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
+                musicBrowserState.authReturnHash = window.location.hash;
+            }
             // 切换到登录Tab
             document.querySelectorAll('.netease-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.netease-tab-content').forEach(c => c.style.display = 'none');
             document.getElementById('tab-qrlogin').style.display = 'block';
+            neteasePageTitle.textContent = '扫码登录';
             
             await generateQRCode();
         }
@@ -5321,9 +5799,12 @@
                             localStorage.setItem('netease_cookie', neteaseCookie);
                             // 获取用户信息
                             await checkLoginStatus();
-                            // 切换到搜索Tab
+                            musicBrowserState.dynamicCache.clear();
                             setTimeout(() => {
-                                document.querySelectorAll('.netease-tab')[0].click();
+                                const returnRoute = parseMusicRoute(musicBrowserState.authReturnHash || window.location.hash)
+                                    || { kind: 'search', q: '', type: 'all', page: 1 };
+                                musicBrowserState.authReturnHash = '';
+                                renderMusicRoute(returnRoute, 0);
                             }, 1000);
                         }
                     } catch (e) {}
@@ -5343,9 +5824,13 @@
             clearNeteaseResolvedAudioCache();
             neteaseUser = null;
             myPlaylistsCache = null; // 清除歌单缓存
+            musicBrowserState.dynamicCache.clear();
             localStorage.removeItem('netease_cookie');
             updateUserUI();
             document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+            if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX) && neteasePanel.classList.contains('show')) {
+                renderMusicRoute(parseMusicRoute(), neteaseBrowserScroll.scrollTop);
+            }
             log('Logged out');
         };
         
@@ -5424,8 +5909,7 @@
         
         // 点击歌单加载
         window.loadPlaylistById = async function(id) {
-            // 切换到歌单Tab
-            document.querySelectorAll('.netease-tab')[1].click();
+            navigateMusic({ kind: 'playlist-import' });
             document.getElementById('netease-playlist-input').value = id;
             await fetchPlaylist(id);
         };
@@ -5436,105 +5920,686 @@
         // 当前加载的歌单数据
         let currentPlaylistData = null;
         
-        // 搜索歌曲
-        async function searchNeteaseSongs(keyword) {
-            if (!keyword.trim()) return;
-            searchResults.innerHTML = '<div class="netease-loading">🔍 搜索中...</div>';
+        const MUSIC_FALLBACK_COVER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="12" fill="#e8edf3"/><circle cx="80" cy="80" r="42" fill="#c7d2de"/><circle cx="80" cy="80" r="12" fill="#f8fbff"/></svg>');
+        const MUSIC_FALLBACK_ARTIST = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="80" fill="#e8edf3"/><circle cx="80" cy="62" r="28" fill="#c7d2de"/><path d="M31 145c5-31 24-48 49-48s44 17 49 48" fill="#c7d2de"/></svg>');
+
+        function normalizeMusicArtist(artist = {}) {
+            return {
+                id: positiveMusicInteger(artist.id, 0),
+                name: String(artist.name || artist.artistName || '未知歌手'),
+                picUrl: toHttps(artist.picUrl || artist.img1v1Url || artist.cover || artist.avatarUrl || ''),
+                albumSize: Number(artist.albumSize || 0),
+                musicSize: Number(artist.musicSize || 0),
+                mvSize: Number(artist.mvSize || 0),
+                briefDesc: String(artist.briefDesc || '')
+            };
+        }
+
+        function normalizeMusicAlbum(album = {}) {
+            const rawArtists = Array.isArray(album.artists) && album.artists.length
+                ? album.artists : (album.artist ? [album.artist] : []);
+            return {
+                id: positiveMusicInteger(album.id, 0),
+                name: String(album.name || '未知专辑'),
+                picUrl: toHttps(album.picUrl || album.blurPicUrl || ''),
+                artists: rawArtists.map(normalizeMusicArtist).filter(artist => artist.id || artist.name),
+                publishTime: Number(album.publishTime || 0),
+                size: Number(album.size || album.trackCount || 0),
+                description: String(album.description || album.briefDesc || ''),
+                company: String(album.company || ''),
+                subType: String(album.subType || album.type || '')
+            };
+        }
+
+        function normalizeMusicSong(song = {}) {
+            const rawArtists = song.ar || song.artists || [];
+            const artists = rawArtists.map(normalizeMusicArtist).filter(artist => artist.id || artist.name);
+            const rawAlbum = song.al || song.album || {};
+            const album = normalizeMusicAlbum(rawAlbum);
+            const durationMs = Math.max(0, Number(song.dt || song.duration || 0));
+            const songData = {
+                ...song,
+                id: positiveMusicInteger(song.id, 0),
+                name: String(song.name || '未知歌曲'),
+                dt: durationMs,
+                duration: durationMs,
+                ar: artists,
+                artists,
+                al: { ...rawAlbum, id: album.id, name: album.name, picUrl: album.picUrl },
+                album: { ...rawAlbum, id: album.id, name: album.name, picUrl: album.picUrl }
+            };
+            return {
+                id: songData.id,
+                name: songData.name,
+                durationMs,
+                artists,
+                album,
+                picUrl: album.picUrl,
+                songData
+            };
+        }
+
+        function musicArtistLinksHtml(artists) {
+            const list = (artists || []).filter(artist => artist?.name);
+            if (!list.length) return '<span>未知歌手</span>';
+            return list.map((artist, index) => {
+                const separator = index ? '<span class="music-separator">,</span>' : '';
+                if (!artist.id) return `${separator}<span>${escapeHtml(artist.name)}</span>`;
+                return `${separator}<button class="music-link" data-music-artist="${artist.id}">${escapeHtml(artist.name)}</button>`;
+            }).join('');
+        }
+
+        function musicAlbumLinkHtml(album) {
+            if (!album?.name) return '';
+            if (!album.id) return `<span>${escapeHtml(album.name)}</span>`;
+            return `<button class="music-link" data-music-album="${album.id}">${escapeHtml(album.name)}</button>`;
+        }
+
+        function registerMusicContext(songs, meta = {}) {
+            const normalized = (songs || []).map(normalizeMusicSong).filter(song => song.id);
+            const id = `music-context-${++musicBrowserState.contextSeed}`;
+            musicBrowserState.contexts.set(id, { songs: normalized, meta });
+            return id;
+        }
+
+        function renderMusicSongRows(songs, container, meta = {}, queueSongs = songs) {
+            const normalizedRows = (songs || []).map(normalizeMusicSong).filter(song => song.id);
+            const contextId = registerMusicContext(queueSongs, meta);
+            const queue = musicBrowserState.contexts.get(contextId)?.songs || [];
+            const queueIndexById = new Map();
+            queue.forEach((song, index) => { if (!queueIndexById.has(song.id)) queueIndexById.set(song.id, index); });
+            const fragment = document.createDocumentFragment();
+
+            normalizedRows.forEach(song => {
+                const queueIndex = queueIndexById.get(song.id) ?? 0;
+                const item = document.createElement('div');
+                item.className = 'netease-item';
+                item.dataset.musicContext = contextId;
+                item.dataset.musicIndex = String(queueIndex);
+                const cover = song.picUrl ? `${song.picUrl}?param=120y120` : MUSIC_FALLBACK_COVER;
+                const coverHtml = song.album.id
+                    ? `<button class="netease-item-cover-link" data-music-album="${song.album.id}" aria-label="打开专辑 ${escapeHtml(song.album.name)}"><img class="netease-item-cover" src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></button>`
+                    : `<span class="netease-item-cover-link"><img class="netease-item-cover" src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>`;
+                item.innerHTML = `
+                    ${coverHtml}
+                    <div class="netease-item-info">
+                        <button class="netease-item-name-btn" data-music-play aria-label="播放 ${escapeHtml(song.name)}">${escapeHtml(song.name)}</button>
+                        <div class="netease-item-secondary">
+                            ${musicArtistLinksHtml(song.artists)}
+                            ${song.album.name ? `<span class="music-separator">&middot;</span>${musicAlbumLinkHtml(song.album)}` : ''}
+                        </div>
+                    </div>
+                    <span class="netease-item-duration">${fmtTime(song.durationMs / 1000)}</span>
+                    <button class="netease-item-play" data-music-play aria-label="播放 ${escapeHtml(song.name)}">&#9654;</button>`;
+                item.querySelectorAll('img').forEach(image => {
+                    image.addEventListener('error', () => { image.src = MUSIC_FALLBACK_COVER; }, { once: true });
+                });
+                fragment.appendChild(item);
+            });
+            container.appendChild(fragment);
+            return contextId;
+        }
+
+        function renderMusicPagination(container, page, hasNext, onPage, total = 0) {
+            if (page <= 1 && !hasNext) return;
+            const pagination = document.createElement('div');
+            pagination.className = 'music-pagination';
+            const previous = document.createElement('button');
+            previous.textContent = '上一页';
+            previous.disabled = page <= 1;
+            previous.onclick = () => onPage(page - 1);
+            const label = document.createElement('span');
+            label.textContent = total ? `第 ${page} 页，共 ${total} 项` : `第 ${page} 页`;
+            const next = document.createElement('button');
+            next.textContent = '下一页';
+            next.disabled = !hasNext;
+            next.onclick = () => onPage(page + 1);
+            pagination.append(previous, label, next);
+            container.appendChild(pagination);
+        }
+
+        async function activateOnlineMusicContext(contextId, selectedIndex = 0, shuffle = false) {
+            const context = musicBrowserState.contexts.get(contextId);
+            if (!context?.songs?.length) return;
+            let songs = context.songs.slice();
+            let index = Math.max(0, Math.min(songs.length - 1, Number(selectedIndex) || 0));
+            if (shuffle) {
+                for (let i = songs.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [songs[i], songs[j]] = [songs[j], songs[i]];
+                }
+                index = 0;
+            }
+            try { cancelNextPreload(); } catch (_) {}
+            beginPlaybackAction();
+            playlist = songs.map(song => ({
+                name: `${song.name} - ${song.artists.map(artist => artist.name).join(', ')}`,
+                netease: true,
+                songId: song.id,
+                songData: song.songData,
+                context: { ...context.meta }
+            }));
+            curIdx = -1;
+            renderPlaylist();
+            await playTrackFromPlaylist(index);
+            updateMusicMiniPlayer();
+        }
+
+        async function fetchMusicSearch(type, keyword, limit, offset, signal) {
+            const endpointTypes = { song: 1, album: 10, artist: 100 };
+            const apiType = endpointTypes[type];
+            if (!apiType) throw new Error('不支持的搜索类型');
+            const path = `/cloudsearch?keywords=${encodeURIComponent(keyword)}&type=${apiType}&limit=${limit}&offset=${offset}`;
+            const json = await cachedFetchJson(buildApiUrl(path), { signal, useQueue: true }, 300_000);
+            if (json?.code !== 200 || !json.result) throw new Error('搜索接口返回异常');
+            if (type === 'song') return { items: json.result.songs || [], total: Number(json.result.songCount || 0) };
+            if (type === 'album') return { items: json.result.albums || [], total: Number(json.result.albumCount || 0) };
+            return { items: json.result.artists || [], total: Number(json.result.artistCount || 0) };
+        }
+
+        function renderMusicAlbumCards(albums, container) {
+            const grid = document.createElement('div');
+            grid.className = 'music-card-grid';
+            (albums || []).map(normalizeMusicAlbum).filter(album => album.id).forEach(album => {
+                const card = document.createElement('div');
+                card.className = 'music-card';
+                const cover = album.picUrl ? `${album.picUrl}?param=320y320` : MUSIC_FALLBACK_COVER;
+                card.innerHTML = `
+                    <button class="music-card-button" data-music-album="${album.id}" aria-label="打开专辑 ${escapeHtml(album.name)}">
+                        <img class="music-card-image" src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                        <div class="music-card-title">${escapeHtml(album.name)}</div>
+                    </button>
+                    <div class="music-card-subtitle">${musicArtistLinksHtml(album.artists)}</div>`;
+                card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
+
+        function renderMusicArtistCards(artists, container) {
+            const grid = document.createElement('div');
+            grid.className = 'music-card-grid';
+            (artists || []).map(normalizeMusicArtist).filter(artist => artist.id).forEach(artist => {
+                const card = document.createElement('div');
+                card.className = 'music-card artist';
+                const cover = artist.picUrl ? `${artist.picUrl}?param=320y320` : MUSIC_FALLBACK_ARTIST;
+                card.innerHTML = `
+                    <button class="music-card-button" data-music-artist="${artist.id}" aria-label="打开歌手 ${escapeHtml(artist.name)}">
+                        <img class="music-card-image" src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                        <div class="music-card-title">${escapeHtml(artist.name)}</div>
+                        <div class="music-card-subtitle">${artist.albumSize ? `${artist.albumSize} 张专辑` : '歌手'}</div>
+                    </button>`;
+                card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_ARTIST; }, { once: true });
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
+
+        function createMusicSection(title, more = null) {
+            const section = document.createElement('section');
+            section.className = 'music-section';
+            const header = document.createElement('div');
+            header.className = 'music-section-header';
+            header.innerHTML = `<h4 class="music-section-title">${escapeHtml(title)}</h4>`;
+            if (more) {
+                const button = document.createElement('button');
+                button.className = 'music-section-more';
+                button.textContent = '查看全部';
+                button.onclick = more;
+                header.appendChild(button);
+            }
+            section.appendChild(header);
+            return section;
+        }
+
+        async function searchNeteaseSongs(keyword, type = 'all', page = 1, token = musicBrowserState.navToken, signal = musicBrowserState.controller?.signal) {
+            const query = String(keyword || '').trim().slice(0, 200);
+            if (!query) return;
+            searchResults.innerHTML = '<div class="netease-loading">搜索中...</div>';
             searchBtn.disabled = true;
-            
+            const hash = window.location.hash;
             try {
-                const resp = await fetch(buildApiUrl(`/cloudsearch?keywords=${encodeURIComponent(keyword)}&limit=30&randomCNIP=true`));
-                if (!resp.ok) throw new Error('搜索失败');
-                
-                const json = await resp.json();
-                if (json.code !== 200 || !json.result?.songs?.length) {
-                    searchResults.innerHTML = '<div class="netease-empty">未找到相关歌曲</div>';
+                if (type === 'all') {
+                    const settled = await Promise.allSettled([
+                        fetchMusicSearch('song', query, 8, 0, signal),
+                        fetchMusicSearch('album', query, 6, 0, signal),
+                        fetchMusicSearch('artist', query, 6, 0, signal)
+                    ]);
+                    if (!currentMusicNavigationIs(token, hash)) return;
+                    searchResults.innerHTML = '';
+                    const definitions = [
+                        { name: '歌曲', type: 'song', result: settled[0] },
+                        { name: '专辑', type: 'album', result: settled[1] },
+                        { name: '歌手', type: 'artist', result: settled[2] }
+                    ];
+                    let visibleSections = 0;
+                    definitions.forEach(definition => {
+                        const section = createMusicSection(definition.name, () => navigateMusic({ kind: 'search', q: query, type: definition.type, page: 1 }));
+                        if (definition.result.status === 'rejected') {
+                            section.insertAdjacentHTML('beforeend', `<div class="music-browser-state">${escapeHtml(definition.name)}加载失败<br><button class="music-retry-btn" data-music-reload>重试</button></div>`);
+                        } else if (!definition.result.value.items.length) {
+                            section.insertAdjacentHTML('beforeend', '<div class="netease-empty">没有结果</div>');
+                        } else {
+                            visibleSections++;
+                            if (definition.type === 'song') renderMusicSongRows(definition.result.value.items, section, { sourceType: 'search', title: query });
+                            else if (definition.type === 'album') renderMusicAlbumCards(definition.result.value.items, section);
+                            else renderMusicArtistCards(definition.result.value.items, section);
+                        }
+                        searchResults.appendChild(section);
+                    });
+                    if (!visibleSections && settled.every(result => result.status === 'fulfilled')) {
+                        searchResults.innerHTML = '<div class="netease-empty">没有找到相关内容</div>';
+                    }
                     return;
                 }
-                
-                renderSongList(json.result.songs, searchResults, 0);
-            } catch (e) {
-                searchResults.innerHTML = '<div class="netease-empty">搜索失败: ' + escapeHtml(e.message) + '</div>';
+
+                const limit = 30;
+                const result = await fetchMusicSearch(type, query, limit, (page - 1) * limit, signal);
+                if (!currentMusicNavigationIs(token, hash)) return;
+                searchResults.innerHTML = '';
+                if (!result.items.length) {
+                    searchResults.innerHTML = '<div class="netease-empty">没有找到相关内容</div>';
+                    return;
+                }
+                if (type === 'song') renderMusicSongRows(result.items, searchResults, { sourceType: 'search', title: query, page });
+                else if (type === 'album') renderMusicAlbumCards(result.items, searchResults);
+                else renderMusicArtistCards(result.items, searchResults);
+                renderMusicPagination(
+                    searchResults,
+                    page,
+                    page * limit < result.total,
+                    nextPage => navigateMusic({ kind: 'search', q: query, type, page: nextPage }),
+                    result.total
+                );
             } finally {
-                searchBtn.disabled = false;
+                if (currentMusicNavigationIs(token, hash)) searchBtn.disabled = false;
             }
         }
-        
-        // 渲染歌曲列表（支持分页）
+
+        // 歌单预览沿用本地分页，但歌曲行接入统一的实体跳转和播放队列。
         function renderSongList(songs, container, page = 0) {
-            // 保持用户当前页
-            if (typeof renderSongList._page !== 'undefined' && typeof page === 'undefined') {
-                page = renderSongList._page;
-            }
             renderSongList._page = page;
             currentPlaylistSongs = songs;
             currentPage = page;
             const start = page * SONGS_PER_PAGE;
-            const end = Math.min(start + SONGS_PER_PAGE, songs.length);
-            const pageSongs = songs.slice(start, end);
+            const pageSongs = songs.slice(start, start + SONGS_PER_PAGE);
             container.innerHTML = '';
-            const fallbackCover = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="12" fill="#e8edf3"/><circle cx="50" cy="50" r="26" fill="#c7d2de"/><circle cx="50" cy="50" r="8" fill="#f8fbff"/></svg>');
-            // 使用 DocumentFragment 批量添加元素，提高性能
-            const fragment = document.createDocumentFragment();
-            pageSongs.forEach(song => {
-                const artists = (song.artists || song.ar || []).map(a => a.name).join(', ');
-                const album = song.album?.name || song.al?.name || '';
-                const duration = song.duration || song.dt || 0;
-                const cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
-                const coverSrc = cover ? `${cover}?param=120y120` : fallbackCover;
-                const artistAlbumText = `${artists}${album ? ' · ' + album : ''}`;
-                const item = document.createElement('div');
-                item.className = 'netease-item';
-                item.innerHTML = `
-                    <img class="netease-item-cover" src="${escapeHtml(coverSrc)}" onerror="this.src='${fallbackCover}'" loading="lazy" referrerpolicy="no-referrer" alt="歌曲封面">
-                    <div class="netease-item-info">
-                        <div class="netease-item-name">${escapeHtml(song.name)}</div>
-                        <div class="netease-item-artist">${escapeHtml(artistAlbumText)}</div>
-                    </div>
-                    <span class="netease-item-duration">${fmtTime(duration / 1000)}</span>
-                    <button class="netease-item-play" aria-label="播放">▶</button>
-                `;
-                item.querySelector('.netease-item-play').onclick = (e) => {
-                    e.stopPropagation();
-                    playNeteaseSong(song);
-                };
-                item.onclick = () => playNeteaseSong(song);
-                fragment.appendChild(item);
-            });
-            container.appendChild(fragment);
-            // 添加分页控件
-            if (songs.length > SONGS_PER_PAGE) {
-                const paginationDiv = document.createElement('div');
-                paginationDiv.className = 'netease-pagination';
-                paginationDiv.style.cssText = 'display: flex; justify-content: center; gap: 10px; margin-top: 15px; padding: 10px;';
-                const totalPages = Math.ceil(songs.length / SONGS_PER_PAGE);
-                // 上一页按钮
-                if (page > 0) {
-                    const prevBtn = document.createElement('button');
-                    prevBtn.textContent = '◀ 上一页';
-                    prevBtn.style.cssText = 'padding: 8px 15px; border: 1px solid #ddd; border-radius: 5px; background: white; cursor: pointer;';
-                    prevBtn.onclick = () => renderSongList(songs, container, page - 1);
-                    paginationDiv.appendChild(prevBtn);
-                }
-                // 页码信息
-                const pageInfo = document.createElement('span');
-                pageInfo.textContent = `第 ${page + 1} / ${totalPages} 页 (${songs.length} 首歌曲)`;
-                pageInfo.style.cssText = 'padding: 8px 15px; color: #666;';
-                paginationDiv.appendChild(pageInfo);
-                // 下一页按钮
-                if (end < songs.length) {
-                    const nextBtn = document.createElement('button');
-                    nextBtn.textContent = '下一页 ▶';
-                    nextBtn.style.cssText = 'padding: 8px 15px; border: 1px solid #ddd; border-radius: 5px; background: white; cursor: pointer;';
-                    nextBtn.onclick = () => renderSongList(songs, container, page + 1);
-                    paginationDiv.appendChild(nextBtn);
-                }
-                container.appendChild(paginationDiv);
-            }
-            // 重新初始化懒加载
-            lazyLoadImages();
+            renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
+            renderMusicPagination(
+                container,
+                page + 1,
+                start + SONGS_PER_PAGE < songs.length,
+                nextPage => renderSongList(songs, container, nextPage - 1),
+                songs.length
+            );
         }
-        
+
+        function withMusicCookie(path) {
+            if (!neteaseCookie) return path;
+            const separator = path.includes('?') ? '&' : '?';
+            return `${path}${separator}cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`;
+        }
+
+        async function fetchMusicStatic(path, signal, ttl = 1_800_000) {
+            const json = await cachedFetchJson(buildApiUrl(path), { signal, useQueue: true }, ttl);
+            if (!json || (json.code !== undefined && json.code !== 200)) throw new Error(json?.message || '接口返回异常');
+            return json;
+        }
+
+        async function fetchMusicDynamic(path, signal) {
+            const accountKey = neteaseUser?.userId || 'guest';
+            const key = `${accountKey}|${path}`;
+            const cached = musicBrowserState.dynamicCache.get(key);
+            if (cached && Date.now() - cached.time < 15_000) return cached.data;
+            const response = await qFetch(buildApiUrl(withMusicCookie(path)), { signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const json = await response.json();
+            if (json?.code !== 200) throw new Error(json?.message || '状态接口返回异常');
+            musicBrowserState.dynamicCache.set(key, { time: Date.now(), data: json });
+            return json;
+        }
+
+        function formatMusicCount(value) {
+            const number = Number(value || 0);
+            if (number >= 100000000) return `${(number / 100000000).toFixed(number >= 1000000000 ? 0 : 1)}亿`;
+            if (number >= 10000) return `${(number / 10000).toFixed(number >= 100000 ? 0 : 1)}万`;
+            return String(number);
+        }
+
+        function renderMusicMvCards(mvs, container) {
+            const grid = document.createElement('div');
+            grid.className = 'music-card-grid';
+            (mvs || []).filter(mv => positiveMusicInteger(mv.id, 0)).forEach(mv => {
+                const image = toHttps(mv.imgurl || mv.cover || mv.coverUrl || '');
+                const card = document.createElement('div');
+                card.className = 'music-card mv';
+                card.innerHTML = `
+                    <a class="music-card-button" href="https://music.163.com/#/mv?id=${positiveMusicInteger(mv.id, 0)}" target="_blank" rel="noopener noreferrer" aria-label="在网易云音乐打开 MV ${escapeHtml(mv.name || '')}">
+                        <img class="music-card-image" src="${escapeHtml(image || MUSIC_FALLBACK_COVER)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                        <div class="music-card-title">${escapeHtml(mv.name || '未命名 MV')}</div>
+                        <div class="music-card-subtitle">${mv.playCount ? `${formatMusicCount(mv.playCount)} 次播放` : 'MV'}</div>
+                    </a>`;
+                card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
+                grid.appendChild(card);
+            });
+            container.appendChild(grid);
+        }
+
+        function musicEntityActionsHtml(contextId, options = {}) {
+            const playDisabled = contextId ? '' : 'disabled';
+            const followButton = options.subscriptionType ? `
+                <button class="music-action-btn" data-music-subscription="${options.subscriptionType}" data-music-id="${options.entityId}" data-active="${options.active ? 'true' : 'false'}" ${options.subscriptionAvailable === false ? 'disabled' : ''}>
+                    ${options.active ? options.activeLabel : options.inactiveLabel}
+                </button>` : '';
+            return `
+                <div class="music-entity-actions">
+                    <button class="music-action-btn primary" data-music-play-context="${escapeHtml(contextId || '')}" ${playDisabled}>播放</button>
+                    <button class="music-action-btn" data-music-shuffle-context="${escapeHtml(contextId || '')}" ${playDisabled}>随机播放</button>
+                    ${followButton}
+                </div>`;
+        }
+
+        async function renderMusicAlbumPage(route, token, signal) {
+            const hash = window.location.hash;
+            neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入专辑...</div>';
+            const [albumResult, dynamicResult] = await Promise.allSettled([
+                fetchMusicStatic(`/album?id=${route.id}`, signal),
+                fetchMusicDynamic(`/album/detail/dynamic?id=${route.id}`, signal)
+            ]);
+            if (!currentMusicNavigationIs(token, hash)) return;
+            if (albumResult.status === 'rejected') throw albumResult.reason;
+            const data = albumResult.value;
+            if (!data.album) throw new Error('没有找到这张专辑');
+            const album = normalizeMusicAlbum(data.album);
+            const songs = data.songs || [];
+            const dynamic = dynamicResult.status === 'fulfilled' ? dynamicResult.value : null;
+            const contextId = songs.length ? registerMusicContext(songs, { sourceType: 'album', sourceId: album.id, title: album.name }) : '';
+            const year = album.publishTime ? new Date(album.publishTime).getFullYear() : '';
+            const meta = [album.subType, year, songs.length ? `${songs.length} 首歌曲` : '', album.company].filter(Boolean).join(' · ');
+            const cover = album.picUrl ? `${album.picUrl}?param=500y500` : MUSIC_FALLBACK_COVER;
+            neteasePageTitle.textContent = album.name;
+            neteaseBrowserView.innerHTML = `
+                <section class="music-entity-hero">
+                    <img class="music-entity-cover" src="${escapeHtml(cover)}" referrerpolicy="no-referrer" alt="${escapeHtml(album.name)}">
+                    <div class="music-entity-info">
+                        <div class="music-entity-kind">专辑</div>
+                        <h2 class="music-entity-name">${escapeHtml(album.name)}</h2>
+                        <div class="music-entity-meta">${musicArtistLinksHtml(album.artists)}${meta ? `<br>${escapeHtml(meta)}` : ''}${dynamic?.subCount ? `<br>${formatMusicCount(dynamic.subCount)} 人收藏` : ''}</div>
+                    </div>
+                    ${album.description ? `<p class="music-entity-description">${escapeHtml(album.description)}</p>` : ''}
+                    ${musicEntityActionsHtml(contextId, {
+                        subscriptionType: 'album', entityId: album.id, active: !!dynamic?.isSub,
+                        activeLabel: '取消收藏', inactiveLabel: '收藏', subscriptionAvailable: dynamicResult.status === 'fulfilled'
+                    })}
+                </section>`;
+            neteaseBrowserView.querySelector('.music-entity-cover').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
+
+            const tracksSection = createMusicSection('曲目');
+            if (songs.length) renderMusicSongRows(songs, tracksSection, { sourceType: 'album', sourceId: album.id, title: album.name }, songs);
+            else tracksSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">这张专辑没有可用曲目</div>');
+            neteaseBrowserView.appendChild(tracksSection);
+        }
+
+        function artistSubnavHtml(route) {
+            const tabs = [
+                ['overview', '概览'], ['songs', '全部歌曲'], ['albums', '专辑 / EP'], ['mvs', 'MV']
+            ];
+            return `<nav class="music-subnav" aria-label="歌手内容">${tabs.map(([view, label]) => `
+                <button class="music-subnav-btn ${route.view === view ? 'active' : ''}" data-music-artist-view="${view}" data-music-id="${route.id}" aria-current="${route.view === view ? 'page' : 'false'}">${label}</button>`).join('')}</nav>`;
+        }
+
+        function musicPartialFailure(label) {
+            return `<div class="music-browser-state">${escapeHtml(label)}加载失败<br><button class="music-retry-btn" data-music-reload>重试</button></div>`;
+        }
+
+        async function renderMusicArtistPage(route, token, signal) {
+            const hash = window.location.hash;
+            neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入歌手...</div>';
+            const limit = route.view === 'songs' ? 50 : 30;
+            const baseRequests = [
+                fetchMusicStatic(`/artist/detail?id=${route.id}`, signal),
+                fetchMusicDynamic(`/artist/detail/dynamic?id=${route.id}`, signal),
+                fetchMusicStatic(`/artist/top/song?id=${route.id}`, signal)
+            ];
+            let extraRequests = [];
+            if (route.view === 'overview') {
+                extraRequests = [
+                    fetchMusicStatic(`/artist/album?id=${route.id}&limit=6&offset=0`, signal),
+                    fetchMusicStatic(`/artist/mv?id=${route.id}&limit=6&offset=0`, signal)
+                ];
+            } else if (route.view === 'songs') {
+                extraRequests = [fetchMusicStatic(`/artist/songs?id=${route.id}&order=hot&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
+            } else if (route.view === 'albums') {
+                extraRequests = [fetchMusicStatic(`/artist/album?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
+            } else {
+                extraRequests = [fetchMusicStatic(`/artist/mv?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
+            }
+            const settled = await Promise.allSettled([...baseRequests, ...extraRequests]);
+            if (!currentMusicNavigationIs(token, hash)) return;
+            if (settled[0].status === 'rejected') throw settled[0].reason;
+            const detail = settled[0].value?.data?.artist;
+            if (!detail) throw new Error('没有找到这位歌手');
+            const artist = normalizeMusicArtist(detail);
+            const dynamic = settled[1].status === 'fulfilled' ? settled[1].value : null;
+            const topSongs = settled[2].status === 'fulfilled' ? (settled[2].value.songs || []) : [];
+            const topContextId = topSongs.length ? registerMusicContext(topSongs, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name }) : '';
+            const cover = artist.picUrl ? `${artist.picUrl}?param=500y500` : MUSIC_FALLBACK_ARTIST;
+            const meta = [`${artist.musicSize || topSongs.length} 首歌曲`, artist.albumSize ? `${artist.albumSize} 张专辑` : '', artist.mvSize ? `${artist.mvSize} 个 MV` : ''].filter(Boolean).join(' · ');
+            neteasePageTitle.textContent = artist.name;
+            neteaseBrowserView.innerHTML = `
+                <section class="music-entity-hero">
+                    <img class="music-entity-cover artist" src="${escapeHtml(cover)}" referrerpolicy="no-referrer" alt="${escapeHtml(artist.name)}">
+                    <div class="music-entity-info">
+                        <div class="music-entity-kind">歌手</div>
+                        <h2 class="music-entity-name">${escapeHtml(artist.name)}</h2>
+                        <div class="music-entity-meta">${escapeHtml(meta)}</div>
+                    </div>
+                    ${artist.briefDesc ? `<p class="music-entity-description">${escapeHtml(artist.briefDesc)}</p>` : ''}
+                    ${musicEntityActionsHtml(topContextId, {
+                        subscriptionType: 'artist', entityId: artist.id, active: !!dynamic?.followed,
+                        activeLabel: '取消关注', inactiveLabel: '关注', subscriptionAvailable: settled[1].status === 'fulfilled'
+                    })}
+                </section>
+                ${artistSubnavHtml(route)}
+                <div id="music-artist-content"></div>`;
+            neteaseBrowserView.querySelector('.music-entity-cover').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_ARTIST; }, { once: true });
+            const content = document.getElementById('music-artist-content');
+
+            if (route.view === 'overview') {
+                const songsSection = createMusicSection('热门歌曲', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'songs', page: 1 }));
+                if (settled[2].status === 'rejected') songsSection.insertAdjacentHTML('beforeend', musicPartialFailure('热门歌曲'));
+                else if (topSongs.length) renderMusicSongRows(topSongs.slice(0, 10), songsSection, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name }, topSongs);
+                else songsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无歌曲</div>');
+                content.appendChild(songsSection);
+
+                const albumsSection = createMusicSection('专辑与 EP', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'albums', page: 1 }));
+                if (settled[3].status === 'rejected') albumsSection.insertAdjacentHTML('beforeend', musicPartialFailure('专辑'));
+                else if (settled[3].value.hotAlbums?.length) renderMusicAlbumCards(settled[3].value.hotAlbums, albumsSection);
+                else albumsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无专辑</div>');
+                content.appendChild(albumsSection);
+
+                const mvsSection = createMusicSection('MV', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'mvs', page: 1 }));
+                if (settled[4].status === 'rejected') mvsSection.insertAdjacentHTML('beforeend', musicPartialFailure('MV'));
+                else if (settled[4].value.mvs?.length) renderMusicMvCards(settled[4].value.mvs, mvsSection);
+                else mvsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无 MV</div>');
+                content.appendChild(mvsSection);
+                return;
+            }
+
+            const extra = settled[3];
+            if (extra.status === 'rejected') {
+                content.innerHTML = musicPartialFailure(route.view === 'songs' ? '歌曲' : route.view === 'albums' ? '专辑' : 'MV');
+                return;
+            }
+            if (route.view === 'songs') {
+                const songs = extra.value.songs || [];
+                if (songs.length) renderMusicSongRows(songs, content, { sourceType: 'artist-songs', sourceId: artist.id, title: artist.name, page: route.page }, songs);
+                else content.innerHTML = '<div class="netease-empty">这一页没有歌曲</div>';
+                renderMusicPagination(content, route.page, !!extra.value.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'songs', page }), Number(extra.value.total || 0));
+            } else if (route.view === 'albums') {
+                const albums = extra.value.hotAlbums || [];
+                if (albums.length) renderMusicAlbumCards(albums, content);
+                else content.innerHTML = '<div class="netease-empty">这一页没有专辑</div>';
+                renderMusicPagination(content, route.page, !!extra.value.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'albums', page }));
+            } else {
+                const mvs = extra.value.mvs || [];
+                if (mvs.length) renderMusicMvCards(mvs, content);
+                else content.innerHTML = '<div class="netease-empty">这一页没有 MV</div>';
+                renderMusicPagination(content, route.page, !!extra.value.hasMore, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'mvs', page }));
+            }
+        }
+
+        async function performMusicSubscription(button) {
+            const type = button.dataset.musicSubscription;
+            const id = positiveMusicInteger(button.dataset.musicId);
+            if (!id || !['album', 'artist'].includes(type)) return;
+            if (!neteaseUser || !neteaseCookie) {
+                musicBrowserState.authReturnHash = window.location.hash;
+                await showQRLogin();
+                return;
+            }
+            const wasActive = button.dataset.active === 'true';
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '处理中...';
+            try {
+                const endpoint = type === 'album' ? '/album/sub' : '/artist/sub';
+                const path = `${endpoint}?id=${id}&t=${wasActive ? 0 : 1}&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}&timestamp=${Date.now()}`;
+                const response = await fetch(buildApiUrl(path), { cache: 'no-store' });
+                const json = await response.json();
+                if (!response.ok || json?.code !== 200) {
+                    if ([301, 302].includes(json?.code)) {
+                        neteaseUser = null;
+                        updateUserUI();
+                        musicBrowserState.authReturnHash = window.location.hash;
+                        await showQRLogin();
+                        return;
+                    }
+                    throw new Error(json?.message || `HTTP ${response.status}`);
+                }
+                musicBrowserState.dynamicCache.clear();
+                const scrollTop = neteaseBrowserScroll.scrollTop;
+                await renderMusicRoute(parseMusicRoute(), scrollTop);
+                log(`${type === 'album' ? '专辑收藏' : '歌手关注'}已更新`, 'success');
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = originalText;
+                log(`账号操作失败: ${error?.message || error}`, 'error');
+            }
+        }
+
+        neteasePanel.addEventListener('click', event => {
+            const artistLink = event.target.closest('[data-music-artist]');
+            if (artistLink) {
+                event.stopPropagation();
+                navigateMusic({ kind: 'artist', id: positiveMusicInteger(artistLink.dataset.musicArtist), view: 'overview', page: 1 });
+                return;
+            }
+            const albumLink = event.target.closest('[data-music-album]');
+            if (albumLink) {
+                event.stopPropagation();
+                navigateMusic({ kind: 'album', id: positiveMusicInteger(albumLink.dataset.musicAlbum) });
+                return;
+            }
+            const artistView = event.target.closest('[data-music-artist-view]');
+            if (artistView) {
+                navigateMusic({ kind: 'artist', id: positiveMusicInteger(artistView.dataset.musicId), view: artistView.dataset.musicArtistView, page: 1 });
+                return;
+            }
+            const subscription = event.target.closest('[data-music-subscription]');
+            if (subscription) {
+                performMusicSubscription(subscription);
+                return;
+            }
+            const playContext = event.target.closest('[data-music-play-context]');
+            if (playContext?.dataset.musicPlayContext) {
+                activateOnlineMusicContext(playContext.dataset.musicPlayContext, 0, false);
+                return;
+            }
+            const shuffleContext = event.target.closest('[data-music-shuffle-context]');
+            if (shuffleContext?.dataset.musicShuffleContext) {
+                activateOnlineMusicContext(shuffleContext.dataset.musicShuffleContext, 0, true);
+                return;
+            }
+            if (event.target.closest('[data-music-home]')) {
+                navigateMusic({ kind: 'search', q: '', type: 'all', page: 1 });
+                return;
+            }
+            if (event.target.closest('[data-music-reload]')) {
+                renderMusicRoute(parseMusicRoute(), neteaseBrowserScroll.scrollTop);
+                return;
+            }
+            const row = event.target.closest('.netease-item[data-music-context]');
+            if (row && (event.target.closest('[data-music-play]') || !event.target.closest('button, a, input, select'))) {
+                activateOnlineMusicContext(row.dataset.musicContext, Number(row.dataset.musicIndex) || 0, false);
+            }
+        });
+
+        function setMainMusicEntityLinks(song = null) {
+            const normalized = song ? normalizeMusicSong(song) : null;
+            const albumId = normalized?.album?.id || 0;
+            if (albumId) {
+                el.coverWrap.dataset.musicAlbumId = String(albumId);
+                el.coverWrap.classList.add('music-album-link');
+                el.coverWrap.tabIndex = 0;
+                el.coverWrap.setAttribute('role', 'button');
+                el.coverWrap.setAttribute('aria-label', `打开专辑 ${normalized.album.name}`);
+            } else {
+                delete el.coverWrap.dataset.musicAlbumId;
+                el.coverWrap.classList.remove('music-album-link');
+                el.coverWrap.removeAttribute('tabindex');
+                el.coverWrap.removeAttribute('role');
+                el.coverWrap.removeAttribute('aria-label');
+            }
+            if (normalized) el.artist.innerHTML = musicArtistLinksHtml(normalized.artists);
+        }
+
+        function openMainPlayerAlbum() {
+            const albumId = positiveMusicInteger(el.coverWrap.dataset.musicAlbumId);
+            if (albumId) navigateMusic({ kind: 'album', id: albumId });
+        }
+        el.coverWrap.addEventListener('click', openMainPlayerAlbum);
+        el.coverWrap.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openMainPlayerAlbum();
+            }
+        });
+        el.artist.addEventListener('click', event => {
+            const artist = event.target.closest('[data-music-artist]');
+            if (artist) navigateMusic({ kind: 'artist', id: positiveMusicInteger(artist.dataset.musicArtist), view: 'overview', page: 1 });
+        });
+
+        function updateMusicMiniPlayer() {
+            const mini = document.getElementById('music-mini-player');
+            const track = playlist[curIdx];
+            if (!mini || !track) {
+                if (mini) mini.classList.remove('show');
+                return;
+            }
+            const song = track.netease && track.songData ? normalizeMusicSong(track.songData) : null;
+            const title = song?.name || el.title.textContent || track.name || '未命名歌曲';
+            const artists = song?.artists?.map(artist => artist.name).join(', ') || el.artist.textContent || '';
+            const cover = song?.picUrl || el.img.src || MUSIC_FALLBACK_COVER;
+            document.getElementById('music-mini-title').textContent = title;
+            document.getElementById('music-mini-artists').textContent = artists;
+            document.getElementById('music-mini-cover').src = cover;
+            document.getElementById('music-mini-play').textContent = playbackState.isPlaying ? '❚❚' : '▶';
+            const artistButton = document.getElementById('music-mini-artist');
+            const artistId = song?.artists?.find(artist => artist.id)?.id || 0;
+            artistButton.dataset.musicArtistId = artistId ? String(artistId) : '';
+            artistButton.style.display = artistId ? '' : 'none';
+            mini.classList.add('show');
+        }
+
+        document.getElementById('music-mini-main').onclick = closeMusicBrowser;
+        document.getElementById('music-mini-play').onclick = () => el.playBtn.click();
+        document.getElementById('music-mini-next').onclick = () => document.getElementById('next-btn').click();
+        document.getElementById('music-mini-artist').onclick = event => {
+            const id = positiveMusicInteger(event.currentTarget.dataset.musicArtistId);
+            if (id) navigateMusic({ kind: 'artist', id, view: 'overview', page: 1 });
+        };
+
         // 播放网易云歌曲
         async function playNeteaseSong(song, existingPlayToken = null) {
             const audioUnlockPromise = unlockAudioContext('netease-song');
@@ -5560,7 +6625,6 @@
             let cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
 
             log(`Playing: ${songName} - ${artists}`);
-            neteasePanel.classList.remove('show');
 
             await audioUnlockPromise;
             if (!isPlaybackActionCurrent(myPlayToken)) return;
@@ -5580,7 +6644,7 @@
             
             // 更新UI
             el.title.textContent = songName;
-            el.artist.textContent = artists;
+            setMainMusicEntityLinks(song);
             if (cover) {
                 el.img.src = cover;
                 el.img.onload = () => {
@@ -6069,7 +7133,7 @@
             
             curIdx = -1;
             renderPlaylist();
-            neteasePanel.classList.remove('show');
+            closeMusicBrowser();
             document.getElementById('playlist-sidebar').classList.add('show');
             observePlaylistCovers();
             
@@ -6087,6 +7151,17 @@
             const track = playlist[i];
             curIdx = i;
             ensurePlaylistRenderedAndActive();
+
+            if (track.netease && track.songData) {
+                const pendingSong = normalizeMusicSong(track.songData);
+                el.title.textContent = pendingSong.name;
+                setMainMusicEntityLinks(pendingSong.songData);
+                if (pendingSong.picUrl) {
+                    el.img.src = `${pendingSong.picUrl}?param=500y500`;
+                    el.img.style.opacity = 1;
+                }
+                updateMusicMiniPlayer();
+            }
 
             if (track.netease) {
                 const selectionToken = beginPlaybackAction();
@@ -6167,8 +7242,16 @@
         document.getElementById('next-btn').onclick = handleNext;
         
         // 搜索按钮和回车
-        searchBtn.onclick = () => searchNeteaseSongs(searchInput.value);
-        searchInput.onkeypress = (e) => { if (e.key === 'Enter') searchNeteaseSongs(searchInput.value); };
+        searchBtn.onclick = () => {
+            const current = parseMusicRoute();
+            navigateMusic({ kind: 'search', q: searchInput.value.trim(), type: current?.kind === 'search' ? current.type : 'all', page: 1 });
+        };
+        searchInput.onkeypress = (e) => {
+            if (e.key === 'Enter') {
+                const current = parseMusicRoute();
+                navigateMusic({ kind: 'search', q: searchInput.value.trim(), type: current?.kind === 'search' ? current.type : 'all', page: 1 });
+            }
+        };
         
         // 歌单按钮和回车
         playlistBtn.onclick = () => fetchPlaylist(playlistInput.value);
@@ -6344,7 +7427,7 @@
                     const currentTrack = playlist[curIdx];
                     if (currentTrack) {
                         el.title.textContent = currentTrack.name || '';
-                        el.artist.textContent = 'Ready to play';
+                        setMainMusicEntityLinks(currentTrack.songData);
                         const cover = toHttps(currentTrack.songData?.al?.picUrl);
                         if (cover) {
                             el.img.src = cover + '?param=500y500';
@@ -6353,6 +7436,7 @@
                         }
                         const items = el.plContainer.children;
                         if (items[curIdx]) items[curIdx].classList.add('active');
+                        updateMusicMiniPlayer();
                     }
                 }
             } catch (e) {
@@ -6365,6 +7449,7 @@
 
         // 页面载入时尝试恢复
         restoreSavedPlaylist();
+        if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) syncMusicRouteFromLocation();
         
     </script>
 </body>
