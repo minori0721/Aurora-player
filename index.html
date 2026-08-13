@@ -380,7 +380,25 @@ SOFTWARE.
         }
 
         .controls-row { display: flex; align-items: center; justify-content: flex-start; gap: 25px; padding-top: 20px; }
-        .btn { 
+        .project-footer {
+            position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
+            transform: translateX(-50%); z-index: 11;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            min-height: 32px; color: var(--text-sub); font-size: 0.75rem; white-space: nowrap;
+        }
+        .project-version {
+            font-family: Consolas, 'Courier New', monospace; font-weight: 600;
+        }
+        .project-footer-separator { opacity: 0.55; }
+        .project-github-link {
+            display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 3px;
+            border-radius: 4px; color: inherit; text-decoration: none;
+            transition: color 0.2s ease, opacity 0.2s ease;
+        }
+        .project-github-link:hover { color: var(--text-main); }
+        .project-github-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+        .project-github-icon { width: 15px; height: 15px; flex: 0 0 auto; fill: currentColor; }
+        .btn {
             background: var(--glass);
             -webkit-backdrop-filter: blur(15px); backdrop-filter: blur(15px); 
             border: 1px solid var(--border);
@@ -975,12 +993,17 @@ SOFTWARE.
             .main-container {
                 width: 100%; height: auto;
                 grid-template-columns: 1fr; gap: 15px;
-                padding: 70px 15px 100px 15px;
+                padding: 70px 15px calc(12px + env(safe-area-inset-bottom)) 15px;
                 box-sizing: border-box;
             }
             
             .left-panel { order: 1; }
             .right-panel { order: 2; }
+            .project-footer {
+                position: static; grid-column: 1; order: 3; transform: none;
+                justify-self: center; min-height: 44px;
+            }
+            .project-github-link { min-height: 44px; padding: 0 6px; }
             
             .cover-wrapper {
                 width: min(55vw, 250px);
@@ -1080,7 +1103,7 @@ SOFTWARE.
         
         /* 超小屏幕 */
         @media screen and (max-width: 400px) {
-            .main-container { padding: 60px 10px 90px 10px; }
+            .main-container { padding: 60px 10px calc(12px + env(safe-area-inset-bottom)) 10px; }
             .cover-wrapper { width: min(60vw, 220px); max-width: 100%; }
             .track-title { font-size: 1.3rem; }
             .glass-btn { padding: 4px 6px; font-size: 0.65rem; }
@@ -1357,6 +1380,14 @@ SOFTWARE.
                 <button class="btn desktop-only" id="lyric-toggle-btn" title="切换歌词显示(原文/原+译)" style="margin-left:8px; opacity:0.45"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM4 12h16v2H4zM4 18h16v2H4z"/></svg></button>
             </div>
         </div>
+        <footer class="project-footer" aria-label="项目版本与源码">
+            <span class="project-version">v0.0.2</span>
+            <span class="project-footer-separator" aria-hidden="true">&middot;</span>
+            <a class="project-github-link" href="https://github.com/minori0721/Aurora-player" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Aurora-player 源码仓库">
+                <svg class="project-github-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5A11.3 11.3 0 0 0 12 .7Z"/></svg>
+                <span>GitHub</span>
+            </a>
+        </footer>
     </div>
 
     <script>
@@ -1439,6 +1470,10 @@ SOFTWARE.
         const NETEASE_RESOLVED_AUDIO_CACHE_TTL = 10 * 60_000;
         const neteaseResolvedAudioCache = new Map();
         let nextSongUrlPrewarmController = null;
+        let neteaseDetailPrefetchController = null;
+        let neteaseDetailPrefetchQueue = null;
+        let neteaseDetailPrefetchSignature = '';
+        const neteaseDetailPrefetchedIds = new Set();
 
         function getNeteaseMatchStrategy(level = neteaseQuality) {
             return (level === 'lossless' || level === 'hires') ? 'lossless' : 'balanced';
@@ -1451,6 +1486,16 @@ SOFTWARE.
 
         function clearNeteaseResolvedAudioCache() {
             neteaseResolvedAudioCache.clear();
+        }
+
+        function resetNeteaseDetailPrefetchState() {
+            if (neteaseDetailPrefetchController) {
+                try { neteaseDetailPrefetchController.abort(); } catch (_) {}
+            }
+            neteaseDetailPrefetchController = null;
+            neteaseDetailPrefetchQueue = null;
+            neteaseDetailPrefetchSignature = '';
+            neteaseDetailPrefetchedIds.clear();
         }
 
         async function invalidateNeteaseResolvedAudioCache(songId, level = neteaseQuality, cookie = neteaseCookie) {
@@ -1916,21 +1961,85 @@ SOFTWARE.
         const SONGS_PER_PAGE = 50; // 每页显示的歌曲数量
 
         // --- 请求队列与缓存工具 ---
-        // 并发队列（通用请求，默认并发3）
-        const requestQueue = [];
+        // 当前交互优先于普通后台任务，预取最多占用一个并发槽。
+        const REQUEST_PRIORITY_ORDER = ['interactive', 'normal', 'idle'];
+        const requestQueues = { interactive: [], normal: [], idle: [] };
         let requestActive = 0;
+        let requestIdleActive = 0;
         const REQUEST_CONCURRENCY = 3;
-        function _processQueue() {
-            if (requestActive >= REQUEST_CONCURRENCY) return;
-            const task = requestQueue.shift();
-            if (!task) return;
-            requestActive++;
-            const {fn, resolve, reject} = task;
-            Promise.resolve().then(() => fn()).then(r => { resolve(r); }).catch(e => { reject(e); }).finally(() => { requestActive--; _processQueue(); });
+        const REQUEST_IDLE_CONCURRENCY = 1;
+
+        function createAbortError(message = 'request aborted') {
+            return new DOMException(message, 'AbortError');
         }
-        function qFetch(url, options={}) {
+
+        function takeQueuedRequest() {
+            for (const priority of REQUEST_PRIORITY_ORDER) {
+                if (priority === 'idle' && requestIdleActive >= REQUEST_IDLE_CONCURRENCY) continue;
+                const queue = requestQueues[priority];
+                while (queue.length) {
+                    const task = queue.shift();
+                    if (!task || task.finished) continue;
+                    if (task.signal?.aborted) {
+                        task.finished = true;
+                        task.cleanup();
+                        task.reject(createAbortError());
+                        continue;
+                    }
+                    return task;
+                }
+            }
+            return null;
+        }
+
+        function _processQueue() {
+            while (requestActive < REQUEST_CONCURRENCY) {
+                const task = takeQueuedRequest();
+                if (!task) return;
+                task.started = true;
+                requestActive++;
+                if (task.priority === 'idle') requestIdleActive++;
+                Promise.resolve()
+                    .then(() => task.fn())
+                    .then(task.resolve, task.reject)
+                    .finally(() => {
+                        task.finished = true;
+                        task.cleanup();
+                        requestActive--;
+                        if (task.priority === 'idle') requestIdleActive--;
+                        _processQueue();
+                    });
+            }
+        }
+
+        function qFetch(url, options = {}) {
+            const { priority: requestedPriority = 'normal', ...fetchOptions } = options;
+            const priority = REQUEST_PRIORITY_ORDER.includes(requestedPriority) ? requestedPriority : 'normal';
+            const signal = fetchOptions.signal;
             return new Promise((resolve, reject) => {
-                requestQueue.push({ fn: () => fetch(url, options), resolve, reject });
+                if (signal?.aborted) {
+                    reject(createAbortError());
+                    return;
+                }
+                const task = {
+                    priority,
+                    signal,
+                    started: false,
+                    finished: false,
+                    fn: () => fetch(url, fetchOptions),
+                    resolve,
+                    reject,
+                    cleanup: () => signal?.removeEventListener('abort', onAbort)
+                };
+                const onAbort = () => {
+                    if (task.started || task.finished) return;
+                    task.finished = true;
+                    task.cleanup();
+                    reject(createAbortError());
+                    _processQueue();
+                };
+                signal?.addEventListener('abort', onAbort, { once: true });
+                requestQueues[priority].push(task);
                 _processQueue();
             });
         }
@@ -2051,10 +2160,15 @@ SOFTWARE.
             } catch (_) { return 0; }
         }
 
+        const publicJsonMemoryCache = new Map();
         const accountJsonCache = new Map();
+        const jsonInFlight = new Map();
         const JSON_CACHE_MAX_ENTRIES = 200;
+        const JSON_CACHE_MAX_AGE = 7 * 24 * 60 * 60_000;
         const JSON_CACHE_SENSITIVE_PARAMS = new Set(['cookie', 'token', 'key', 'csrf', 'music_u']);
         const JSON_CACHE_VOLATILE_PARAMS = new Set(['timestamp', 'nocache']);
+        let publicJsonWritesSincePrune = 0;
+        let publicJsonPruneTimer = null;
 
         function describeJsonCache(url, requestedScope = 'auto') {
             const parsed = new URL(url, window.location.href);
@@ -2083,50 +2197,166 @@ SOFTWARE.
             };
         }
 
-        function trimAccountJsonCache() {
-            while (accountJsonCache.size > JSON_CACHE_MAX_ENTRIES) {
-                accountJsonCache.delete(accountJsonCache.keys().next().value);
+        function touchJsonMemoryEntry(cache, key, entry) {
+            cache.delete(key);
+            cache.set(key, entry);
+            while (cache.size > JSON_CACHE_MAX_ENTRIES) {
+                cache.delete(cache.keys().next().value);
             }
         }
 
         function clearAccountJsonCache() {
             accountJsonCache.clear();
+            jsonInFlight.forEach((record, key) => {
+                if (key.startsWith('json-account|')) record.controller.abort();
+            });
+        }
+
+        async function prunePublicJsonCache(maxEntries = JSON_CACHE_MAX_ENTRIES, maxAge = JSON_CACHE_MAX_AGE) {
+            try {
+                const db = await openIdb();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    const store = tx.objectStore(IDB_STORE);
+                    const request = store.openCursor();
+                    const entries = [];
+                    const now = Date.now();
+                    let removed = 0;
+                    request.onsuccess = () => {
+                        const cursor = request.result;
+                        if (cursor) {
+                            if (typeof cursor.key === 'string' && cursor.key.startsWith('json|')) {
+                                entries.push({ key: cursor.key, ts: Number(cursor.value?.ts || 0) });
+                            }
+                            cursor.continue();
+                            return;
+                        }
+                        entries.sort((a, b) => b.ts - a.ts);
+                        entries.forEach((entry, index) => {
+                            if (!entry.ts || now - entry.ts > maxAge || index >= maxEntries) {
+                                store.delete(entry.key);
+                                publicJsonMemoryCache.delete(entry.key);
+                                removed++;
+                            }
+                        });
+                    };
+                    request.onerror = () => reject(request.error);
+                    tx.oncomplete = () => resolve(removed);
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (_) { return 0; }
+        }
+
+        function schedulePublicJsonCachePrune() {
+            publicJsonWritesSincePrune++;
+            if (publicJsonWritesSincePrune < 20 || publicJsonPruneTimer) return;
+            publicJsonPruneTimer = setTimeout(() => {
+                publicJsonPruneTimer = null;
+                publicJsonWritesSincePrune = 0;
+                prunePublicJsonCache().catch(() => {});
+            }, 1000);
+        }
+
+        function isJsonResponseCacheable(data, cachePredicate = null) {
+            if (!data || typeof data !== 'object') return false;
+            if (data.code !== undefined && Number(data.code) !== 200) return false;
+            return typeof cachePredicate === 'function' ? cachePredicate(data) !== false : true;
+        }
+
+        function subscribeJsonRequest(record, signal) {
+            if (signal?.aborted) return Promise.reject(createAbortError());
+            record.consumers++;
+            return new Promise((resolve, reject) => {
+                let finished = false;
+                const finish = (handler, value) => {
+                    if (finished) return;
+                    finished = true;
+                    signal?.removeEventListener('abort', onAbort);
+                    record.consumers = Math.max(0, record.consumers - 1);
+                    handler(value);
+                    if (!record.settled && record.consumers === 0) record.controller.abort();
+                };
+                const onAbort = () => finish(reject, createAbortError());
+                signal?.addEventListener('abort', onAbort, { once: true });
+                record.promise.then(value => finish(resolve, value), error => finish(reject, error));
+            });
         }
 
         async function invalidateJsonCache(url, requestedScope = 'auto') {
             const cache = describeJsonCache(url, requestedScope);
-            if (cache.scope === 'public') return idbDelete(cache.key);
+            if (cache.scope === 'public') {
+                publicJsonMemoryCache.delete(cache.key);
+                return idbDelete(cache.key);
+            }
             if (cache.scope === 'account') accountJsonCache.delete(cache.key);
             return true;
         }
 
         // Public JSON persists in IDB; authenticated JSON is memory-only; none bypasses all caches.
         async function cachedFetchJson(url, options = {}, ttl = 3600_000) {
-            const { useQueue = true, cacheScope = 'auto', ...fetchOptions } = options;
+            const {
+                useQueue = true,
+                cacheScope = 'auto',
+                priority = 'normal',
+                forceRefresh = false,
+                cachePredicate = null,
+                signal,
+                ...fetchOptions
+            } = options;
             const cache = describeJsonCache(url, cacheScope);
             const now = Date.now();
             let entry = null;
-            if (cache.scope === 'public') entry = await idbGet(cache.key);
-            else if (cache.scope === 'account') entry = accountJsonCache.get(cache.key) || null;
-            if (entry?.ts && (now - entry.ts) < ttl) return entry.data;
+            if (forceRefresh) await invalidateJsonCache(url, cacheScope);
 
-            const fetchFn = useQueue ? qFetch : fetch;
-            const resp = await fetchFn(url, fetchOptions);
-            if (!resp.ok) {
-                const error = new Error(`HTTP ${resp.status}`);
-                error.status = resp.status;
-                throw error;
+            if (!forceRefresh && cache.scope === 'public') {
+                entry = publicJsonMemoryCache.get(cache.key) || null;
+                if (!entry) entry = await idbGet(cache.key);
+            } else if (!forceRefresh && cache.scope === 'account') {
+                entry = accountJsonCache.get(cache.key) || null;
             }
-            const data = await resp.json();
-            const nextEntry = { ts: Date.now(), data };
-            if (cache.scope === 'public') await idbSet(cache.key, nextEntry);
-            else if (cache.scope === 'account') {
-                accountJsonCache.set(cache.key, nextEntry);
-                trimAccountJsonCache();
+            if (entry?.ts && (now - entry.ts) < ttl && isJsonResponseCacheable(entry.data, cachePredicate)) {
+                if (cache.scope === 'public') touchJsonMemoryEntry(publicJsonMemoryCache, cache.key, entry);
+                else if (cache.scope === 'account') touchJsonMemoryEntry(accountJsonCache, cache.key, entry);
+                return entry.data;
             }
-            return data;
+            if (entry) await invalidateJsonCache(url, cacheScope);
+
+            const inFlightKey = cache.scope === 'none' ? `json-none|${url}` : cache.key;
+            const existing = jsonInFlight.get(inFlightKey);
+            if (existing) return subscribeJsonRequest(existing, signal);
+
+            const controller = new AbortController();
+            const record = { controller, consumers: 0, settled: false, promise: null };
+            record.promise = (async () => {
+                const requestOptions = { ...fetchOptions, signal: controller.signal };
+                const resp = useQueue
+                    ? await qFetch(url, { ...requestOptions, priority })
+                    : await fetch(url, requestOptions);
+                if (!resp.ok) {
+                    const error = new Error(`HTTP ${resp.status}`);
+                    error.status = resp.status;
+                    throw error;
+                }
+                const data = await resp.json();
+                if (!isJsonResponseCacheable(data, cachePredicate)) return data;
+                const nextEntry = { ts: Date.now(), data };
+                if (cache.scope === 'public') {
+                    touchJsonMemoryEntry(publicJsonMemoryCache, cache.key, nextEntry);
+                    await idbSet(cache.key, nextEntry);
+                    schedulePublicJsonCachePrune();
+                } else if (cache.scope === 'account') {
+                    touchJsonMemoryEntry(accountJsonCache, cache.key, nextEntry);
+                }
+                return data;
+            })().finally(() => {
+                record.settled = true;
+                if (jsonInFlight.get(inFlightKey) === record) jsonInFlight.delete(inFlightKey);
+            });
+            jsonInFlight.set(inFlightKey, record);
+            return subscribeJsonRequest(record, signal);
         }
         purgeSensitiveIdbCache().catch(() => {});
+        prunePublicJsonCache().catch(() => {});
 
         // 取消下一首预加载
         function cancelNextPreload() {
@@ -2148,6 +2378,7 @@ SOFTWARE.
                 prefetchInProgress = false;
                 try { nextSongFetchPromise = null; } catch (e) {}
                 try { nextSongPreloadMeta = null; } catch (e) {}
+                resetNeteaseDetailPrefetchState();
             }
             log('Next-song preload cancelled');
         }
@@ -2162,6 +2393,107 @@ SOFTWARE.
                 return nextIdx;
             }
             return curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
+        }
+
+        function getUpcomingNeteasePlaylistIds(limit = 5) {
+            if (!playlist || playlist.length === 0 || curIdx < 0 || playMode === 2) return [];
+            const ids = [];
+            const seen = new Set();
+            const addIndex = index => {
+                const track = playlist[index];
+                const id = Number(track?.songId || track?.songData?.id || 0);
+                if (!track?.netease || !Number.isSafeInteger(id) || id <= 0 || seen.has(id)) return;
+                const songData = track.songData || {};
+                const hasCompleteDetail = Array.isArray(songData.ar || songData.artists)
+                    && (songData.al || songData.album)
+                    && getNeteaseSongDurationMs(songData) > 0;
+                if (hasCompleteDetail) return;
+                seen.add(id);
+                ids.push(id);
+            };
+
+            if (playMode === 1) {
+                addIndex(nextPreloadIndex);
+                const candidates = Array.from({ length: playlist.length }, (_, index) => index)
+                    .filter(index => index !== curIdx && index !== nextPreloadIndex);
+                for (let i = candidates.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+                }
+                candidates.forEach(addIndex);
+            } else {
+                for (let offset = 1; offset < playlist.length && ids.length < limit; offset++) {
+                    addIndex((curIdx + offset) % playlist.length);
+                }
+            }
+            return ids.slice(0, Math.max(1, limit));
+        }
+
+        function applyNeteaseSongDetailToPlaylist(song, queueRef = playlist) {
+            const songId = Number(song?.id || 0);
+            if (!songId || !Array.isArray(queueRef)) return [];
+            const normalized = normalizeMusicSong(song);
+            const nextName = `${normalized.name}${normalized.artists.length ? ` - ${normalized.artists.map(artist => artist.name).join(', ')}` : ''}`;
+            const updatedIndexes = [];
+            queueRef.forEach((track, index) => {
+                const trackId = Number(track?.songId || track?.songData?.id || 0);
+                if (!track || trackId !== songId) return;
+                track.songData = normalized.songData;
+                track.name = nextName;
+                updatedIndexes.push(index);
+            });
+            if (queueRef === playlist) updatedIndexes.forEach(index => refreshPlaylistItem(index));
+            return updatedIndexes;
+        }
+
+        function prefetchUpcomingNeteaseDetails(limit = 5) {
+            const queueRef = playlist;
+            const ids = getUpcomingNeteasePlaylistIds(limit);
+            if (!queueRef || !ids.length) return;
+
+            if (neteaseDetailPrefetchQueue !== queueRef) {
+                resetNeteaseDetailPrefetchState();
+                neteaseDetailPrefetchQueue = queueRef;
+            }
+
+            const missingIds = ids.filter(id => !neteaseDetailPrefetchedIds.has(id));
+            if (!missingIds.length) return;
+            const signature = missingIds.join(',');
+            if (neteaseDetailPrefetchController && neteaseDetailPrefetchSignature === signature) return;
+            if (neteaseDetailPrefetchController) {
+                try { neteaseDetailPrefetchController.abort(); } catch (_) {}
+            }
+
+            const controller = new AbortController();
+            neteaseDetailPrefetchController = controller;
+            neteaseDetailPrefetchSignature = signature;
+            const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+            cachedFetchJson(
+                buildApiUrl(`/song/detail?ids=${encodeURIComponent(missingIds.join(','))}${cookieParam}`),
+                { signal: controller.signal, useQueue: true },
+                300_000
+            ).then(json => {
+                if (controller.signal.aborted || queueRef !== playlist) return;
+                const songs = Array.isArray(json?.songs) ? json.songs : [];
+                const songsById = new Map(songs.map(song => [Number(song?.id), song]));
+                missingIds.forEach(id => {
+                    const song = songsById.get(id);
+                    if (!song) return;
+                    applyNeteaseSongDetailToPlaylist(song, queueRef);
+                    neteaseDetailPrefetchedIds.add(id);
+                });
+                if (queueRef === playlist) {
+                    updateMusicMiniPlayer();
+                }
+                log(`预取后续歌曲详情 ${songs.length}/${missingIds.length} 首`, 'success');
+            }).catch(error => {
+                if (error?.name !== 'AbortError') log(`批量预取歌曲详情失败: ${error?.message || error}`, 'warn');
+            }).finally(() => {
+                if (neteaseDetailPrefetchController === controller) {
+                    neteaseDetailPrefetchController = null;
+                    neteaseDetailPrefetchSignature = '';
+                }
+            });
         }
 
         function prewarmNextNeteaseSongUrl() {
@@ -2243,89 +2575,14 @@ SOFTWARE.
                     return;
                 }
 
-                // --- 网易云在线预加载 ---
-                controller = new AbortController();
-                nextSongAbortController = controller;
-                // 立即记录预加载目标索引，便于播放路径复用正在进行的 Promise
-                nextPreloadIndex = nextIdx;
+                // --- 网易云在线预取 ---
+                // 在线歌曲不提前下载整首音频，避免占用内存、浪费流量以及缓存短时 URL。
+                // 只批量预取后续详情，并为最可能的下一首预热一个播放 URL。
                 prefetchAttempted = true;
-                // 构造 fetch promise 并保存到 nextSongFetchPromise，供播放时复用
-                try {
-                    const songId = nextTrack.songId || nextTrack.songData?.id;
-                    if (!songId) throw new Error('No ID');
-
-                    const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                    
-                    // 保存 Promise（包含获取链接与下载 ArrayBuffer 的完整流程）
-                    nextSongFetchPromise = (async () => {
-                        prefetchInProgress = true;
-                        try {
-                            let resolved = await resolveNeteaseAudioUrl(
-                                songId,
-                                cookieParam,
-                                neteaseQuality,
-                                { signal: controller.signal, useQueue: true },
-                                30_000,
-                                getNeteaseMatchStrategy(neteaseQuality)
-                            );
-                            let audioInfo = resolved.audioInfo || {};
-                            let audioCandidates = resolved.candidates || [];
-                            if (!audioCandidates.length) throw new Error('No URL (May need VIP)');
-                            let audioFetchResult;
-                            try {
-                                audioFetchResult = await fetchAudioWithFallback(audioCandidates, { signal: controller.signal });
-                            } catch (audioError) {
-                                if (![401, 403, 404, 410].includes(Number(audioError?.status))) throw audioError;
-                                await invalidateNeteaseResolvedAudioCache(songId, neteaseQuality, neteaseCookie);
-                                resolved = await resolveNeteaseAudioUrl(
-                                    songId, cookieParam, neteaseQuality,
-                                    { signal: controller.signal, useQueue: true, cacheScope: 'none' },
-                                    0, getNeteaseMatchStrategy(neteaseQuality)
-                                );
-                                audioInfo = resolved.audioInfo || {};
-                                audioCandidates = resolved.candidates || [];
-                                if (!audioCandidates.length) throw new Error('No URL (May need VIP)');
-                                audioFetchResult = await fetchAudioWithFallback(audioCandidates, { signal: controller.signal });
-                            }
-                            const durationSeconds = Number(nextTrack.songData?.dt || nextTrack.songData?.duration || audioInfo.time || 0) / 1000;
-                            const { resp, audioUrl: loadedAudioUrl } = audioFetchResult;
-                            const ab = await resp.arrayBuffer();
-                            const sizeMB = (ab.byteLength / 1024 / 1024).toFixed(1);
-                            const br = audioInfo.br || (durationSeconds > 0 ? getAverageBitrateKbps(ab, durationSeconds) * 1000 : 0);
-                            return { ab, br, sizeMB, audioInfo, audioUrl: loadedAudioUrl };
-                        } finally {
-                            // 不在这里清理 prefetchInProgress — 让调用方根据状态处理
-                        }
-                    })();
-
-                    // 处理 Promise 结果：填充缓存并记录信息
-                    nextSongFetchPromise.then(res => {
-                        if (!res || controller.signal.aborted) return;
-                        nextSongRawData = res.ab;
-                        nextSongPreloadMeta = { audioInfo: res.audioInfo || null, audioUrl: res.audioUrl || '' };
-                        hasPreloaded = true;
-                        nextPreloadIndex = nextIdx;
-                        const preloadBr = res.br > 0 ? ` [${Math.round(res.br / 1000)}k]` : '';
-                        log(`Preloaded: ${nextTrack.name}${preloadBr} ${res.sizeMB}MB`, 'success');
-                        // 写入辅助缓存以便 metadata 可用
-                        cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
-                        cachedFetchJson(buildApiUrl(`/lyric/new?id=${songId}${cookieParam}`), { useQueue: true }).catch(()=>{});
-                    }).catch(e => {
-                        if (e && e.name === 'AbortError') {
-                            // aborted by cancelNextPreload
-                        } else {
-                            log('Prefetch net error: ' + (e && e.message), 'warn');
-                        }
-                    }).finally(() => {
-                        prefetchInProgress = false;
-                        // 保留 nextSongFetchPromise until consumed or cancelled
-                    });
-
-                } catch (e) {
-                    if (e.name !== 'AbortError') log('Prefetch setup error: ' + e.message, 'warn');
-                    prefetchInProgress = false;
-                    nextSongFetchPromise = null;
-                }
+                prefetchUpcomingNeteaseDetails(5);
+                prewarmNextNeteaseSongUrl();
+                prefetchInProgress = false;
+                return;
             } catch (e) {
                 prefetchInProgress = false;
             }
@@ -2722,8 +2979,41 @@ SOFTWARE.
             { key: 'lossless', label: '无损 (FLAC)' },
             { key: 'hires', label: 'Hi-Res' }
         ];
+        let downloadProbeToken = 0;
+
+        function extractNeteaseQualityDetail(payload, level) {
+            const roots = [payload?.data, payload?.result, payload].filter(Boolean);
+            const aliases = {
+                standard: ['standard', 'low', 'l'],
+                higher: ['higher', 'medium', 'm'],
+                exhigh: ['exhigh', 'high', 'h'],
+                lossless: ['lossless', 'sq'],
+                hires: ['hires', 'hr']
+            };
+            for (const root of roots) {
+                const qualityMap = root.qualities || root.quality || root;
+                for (const key of aliases[level] || [level]) {
+                    const value = qualityMap?.[key];
+                    if (value && typeof value === 'object') return value;
+                }
+            }
+            return null;
+        }
+
+        function formatNeteaseQualityDetail(detail) {
+            if (!detail) return '';
+            const parts = [];
+            const br = Number(detail.br || 0);
+            const size = Number(detail.size || 0);
+            const sr = Number(detail.sr || 0);
+            if (br > 0) parts.push(`${Math.round(br / 1000)}kbps`);
+            if (sr > 0) parts.push(formatSampleRate(sr));
+            if (size > 0) parts.push(`${(size / 1024 / 1024).toFixed(1)}MB`);
+            return parts.join(' · ');
+        }
 
         function closeDownloadModal() {
+            downloadProbeToken++;
             modalController.close(downloadModal);
             downloadListEl.innerHTML = '';
         }
@@ -2760,6 +3050,15 @@ SOFTWARE.
 
             downloadListEl.innerHTML = '';
             const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+            const probeToken = ++downloadProbeToken;
+            const qualityDetailPromise = cachedFetchJson(
+                buildApiUrl(`/song/music/detail?id=${songId}${cookieParam}`),
+                { useQueue: true },
+                300_000
+            ).catch(error => {
+                if (error?.name !== 'AbortError') log(`歌曲音质详情读取失败: ${error?.message || error}`, 'warn');
+                return null;
+            });
 
             for (const q of QUALITY_LEVELS) {
                 const item = document.createElement('div');
@@ -2781,7 +3080,12 @@ SOFTWARE.
                     try {
                         const metaEl = it.querySelector('.quality-meta');
                         const rightArea = it.querySelector('.quality-action');
-                        
+                        const detailPayload = await qualityDetailPromise;
+                        if (probeToken !== downloadProbeToken) return;
+                        const detail = extractNeteaseQualityDetail(detailPayload, level);
+                        const detailText = formatNeteaseQualityDetail(detail);
+                        if (detailText) metaEl.textContent = `${detailText} · 检测下载链接…`;
+
                         let data = null;
                         let useMatchForVip = false;
                         let matchSource = '';
@@ -2829,8 +3133,9 @@ SOFTWARE.
 
                             // 2. 智能推断真实格式
                             const urlLower = data.url.toLowerCase();
-                            const br = data.br || 0;
-                            const size = data.size || 0;
+                            const br = data.br || detail?.br || 0;
+                            const size = data.size || detail?.size || 0;
+                            const sampleRate = data.sr || detail?.sr || 0;
                             
                             let realExt = 'mp3'; // 默认格式
                             let isLossless = false;
@@ -2859,6 +3164,7 @@ SOFTWARE.
                             
                             // 拼接码率 (例如: 320kbps)
                             if (br > 0) metaText += ` ${Math.round(br/1000)}kbps`;
+                            if (sampleRate > 0) metaText += ` ${formatSampleRate(sampleRate)}`;
                             
                             // 拼接大小 (例如: 12.5MB)
                             if (size > 0) {
@@ -4196,7 +4502,7 @@ SOFTWARE.
             return { path: normalized, dir: slash >= 0 ? normalized.slice(0, slash) : '', name: slash >= 0 ? normalized.slice(slash + 1) : normalized };
         }
 
-        function createImportAsset(file, relativePath) {
+        function createImportAsset(file, relativePath, handle = null) {
             const parts = splitImportPath(relativePath || file.webkitRelativePath || file.name);
             const name = parts.name || file.name;
             const normalizedName = name.normalize('NFC').toLowerCase();
@@ -4204,7 +4510,7 @@ SOFTWARE.
             const ext = dot >= 0 ? normalizedName.slice(dot + 1) : '';
             const stem = dot >= 0 ? normalizedName.slice(0, dot) : normalizedName;
             const asset = {
-                id: `asset-${importAssetSequence++}`, file,
+                id: `asset-${importAssetSequence++}`, file, handle,
                 relativePath: parts.path || file.name,
                 pathKey: normalizeImportKey(parts.path || file.name),
                 dirKey: normalizeImportKey(parts.dir),
@@ -4224,7 +4530,7 @@ SOFTWARE.
             const byPath = new Map();
             records.forEach(record => {
                 if (!record?.file) return;
-                const asset = createImportAsset(record.file, record.relativePath);
+                const asset = createImportAsset(record.file, record.relativePath, record.handle || null);
                 const previous = byPath.get(asset.pathKey);
                 if (!previous || previous.file.size !== asset.file.size || previous.file.lastModified !== asset.file.lastModified) byPath.set(asset.pathKey, asset);
             });
@@ -4234,7 +4540,7 @@ SOFTWARE.
         async function walkFileSystemHandle(handle, parentPath, output, errors) {
             const relativePath = normalizeImportPath(parentPath ? `${parentPath}/${handle.name}` : handle.name);
             if (handle.kind === 'file') {
-                try { output.push({ file: await handle.getFile(), relativePath }); }
+                try { output.push({ file: await handle.getFile(), handle, relativePath }); }
                 catch (error) { errors.push({ path: relativePath, error }); }
                 return;
             }
@@ -4455,13 +4761,15 @@ SOFTWARE.
                 invalidatePlaybackAction();
                 try { cancelNextPreload(); } catch (_) {}
                 stopAudio();
+                activePlaylistQueueToken = null;
+                playlistPendingAdvance = false;
                 resetLoopAnalysisWorkerAudio();
                 resetLoopUI();
                 companionRegistry = { sli: new Map(pendingCompanionRegistry.sli), lrc: new Map(pendingCompanionRegistry.lrc) };
                 pendingCompanionRegistry = { sli: new Map(), lrc: new Map() };
                 mergeAssetRegistry(companionRegistry, companionAssets);
                 playlist = audioAssets.map(asset => ({
-                    file: asset.file, asset, sourceKey: asset.pathKey,
+                    file: asset.file, fileHandle: asset.handle || null, asset, sourceKey: asset.pathKey,
                     name: asset.name.replace(/\.[^.]+$/, ''),
                     lrcFile: null, sliFile: null, lrcStatus: 'none', sliStatus: 'none', sliData: null
                 }));
@@ -4523,6 +4831,29 @@ SOFTWARE.
         async function playTrack(i) {
             if(i < 0 || i >= playlist.length) return;
             const track = playlist[i];
+            if (!track.file && track.fileHandle && typeof track.fileHandle.getFile === 'function') {
+                try {
+                    const permission = typeof track.fileHandle.queryPermission === 'function'
+                        ? await track.fileHandle.queryPermission({ mode: 'read' }) : 'prompt';
+                    if (permission === 'granted' || typeof track.fileHandle.requestPermission !== 'function') {
+                        track.file = await track.fileHandle.getFile();
+                    } else if (await track.fileHandle.requestPermission({ mode: 'read' }) === 'granted') {
+                        track.file = await track.fileHandle.getFile();
+                    }
+                    if (track.file) {
+                        track.needsFile = false;
+                        if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave();
+                    }
+                } catch (error) {
+                    log(`本地文件权限获取失败: ${error?.message || error}`, 'warn');
+                }
+            }
+            if (!track.file) {
+                const label = track.asset?.relativePath || track.name || '本地文件';
+                setPlaybackStatus('error', { error: `请重新选择本地文件：${label}` });
+                showImportSummary(`本地文件未恢复，请重新导入：${label}`, true);
+                return;
+            }
             const myPlayToken = beginPlaybackAction();
             prefetchAttempted = false; // 新增：无论怎么切歌，先重置预加载状态
             curIdx = i; ensurePlaylistRenderedAndActive();
@@ -4612,6 +4943,7 @@ SOFTWARE.
                             const c = {
                                 title: tag.tags.title,
                                 artist: tag.tags.artist,
+                                album: tag.tags.album,
                                 lyrics: tag.tags.lyrics || (tag.tags.USLT ? tag.tags.USLT.data : ""),
                                 picture: tag.tags.picture,
                                 fileSize: fileSize,
@@ -4745,7 +5077,8 @@ SOFTWARE.
                     // 开启了网易云搜索，立即并行尝试搜索（不再阻塞等待 duration）
                     const songName = el.title.textContent;
                     const artistName = common.artist || '';
-                    searchNeteaselyrics(songName, artistName, playbackState.duration || 0, isCurrent);
+                    const albumName = common.album || '';
+                    searchNeteaselyrics(songName, artistName, playbackState.duration || 0, isCurrent, albumName);
                     // 若当前时长尚未准备好，稍后重试一次以提高匹配准确度
                     if (!playbackState.duration) {
                         let attempts = 0;
@@ -4753,7 +5086,7 @@ SOFTWARE.
                             if (!isCurrent()) return;
                             attempts++;
                             if (playbackState.duration > 0) {
-                                searchNeteaselyrics(songName, artistName, playbackState.duration, isCurrent);
+                                searchNeteaselyrics(songName, artistName, playbackState.duration, isCurrent, albumName);
                             } else if (attempts < 30) {
                                 setTimeout(reTry, 100);
                             }
@@ -4784,7 +5117,73 @@ SOFTWARE.
             return path.includes('randomCNIP=') ? `${NETEASE_API_HOST}${path}` : `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
         }
 
-        async function searchNeteaselyrics(songName, artist, duration, isCurrent = () => true) {
+        function normalizeNeteaseMatchText(value) {
+            return String(value || '').toLowerCase().replace(/[\s\u3000]+/g, '');
+        }
+
+        function getNeteaseSongArtists(song) {
+            const rawArtists = song?.ar || song?.artists || song?.artist || [];
+            const artists = Array.isArray(rawArtists) ? rawArtists : [rawArtists];
+            return artists
+                .map(artist => typeof artist === 'string' ? artist : artist?.name)
+                .filter(Boolean);
+        }
+
+        function getNeteaseSongAlbum(song) {
+            const album = song?.al || song?.album || {};
+            return typeof album === 'string' ? album : (album?.name || song?.albumName || '');
+        }
+
+        function getNeteaseSongDurationMs(song) {
+            return Number(song?.dt || song?.duration || song?.durationMs || 0);
+        }
+
+        function extractNeteaseMatchSongs(payload) {
+            const candidates = [
+                payload?.result?.songs,
+                payload?.data?.result?.songs,
+                payload?.data?.songs,
+                payload?.songs,
+                payload?.result?.data,
+                payload?.data
+            ];
+            const list = candidates.find(value => Array.isArray(value)) || [];
+            return list.map(item => {
+                if (!item || typeof item !== 'object') return null;
+                const nested = item.song || item.songData || item.songInfo;
+                if (nested && typeof nested === 'object') return { ...item, ...nested };
+                const id = positiveMusicInteger(item.id || item.songId || item.song_id, 0);
+                const name = item.name || item.songName || item.song_name || '';
+                return id ? { ...item, id, name: String(name) } : null;
+            }).filter(song => song?.id);
+        }
+
+        function chooseNeteaseSongMatch(songs, target = {}) {
+            const targetName = normalizeNeteaseMatchText(target.name);
+            const targetArtist = normalizeNeteaseMatchText(target.artist);
+            const targetAlbum = normalizeNeteaseMatchText(target.album);
+            const targetDuration = Number(target.duration || 0) * 1000;
+            return (Array.isArray(songs) ? songs : []).map(song => {
+                const name = normalizeNeteaseMatchText(song?.name);
+                const artists = getNeteaseSongArtists(song).map(normalizeNeteaseMatchText);
+                const album = normalizeNeteaseMatchText(getNeteaseSongAlbum(song));
+                const durationMs = getNeteaseSongDurationMs(song);
+                let score = 0;
+                if (targetName && name === targetName) score += 120;
+                else if (targetName && (name.includes(targetName) || targetName.includes(name))) score += 55;
+                if (targetArtist && artists.some(value => value === targetArtist)) score += 55;
+                else if (targetArtist && artists.some(value => value.includes(targetArtist) || targetArtist.includes(value))) score += 30;
+                if (targetAlbum && album === targetAlbum) score += 40;
+                else if (targetAlbum && (album.includes(targetAlbum) || targetAlbum.includes(album))) score += 20;
+                if (targetDuration > 0 && durationMs > 0) {
+                    const diffSeconds = Math.abs(durationMs - targetDuration) / 1000;
+                    score += Math.max(0, 45 - Math.min(45, diffSeconds * 2));
+                }
+                return { song, score };
+            }).sort((a, b) => b.score - a.score)[0]?.song || null;
+        }
+
+        async function searchNeteaselyrics(songName, artist, duration, isCurrent = () => true, album = '') {
             try {
                 if (!isCurrent()) return false;
                 el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 正在搜索歌词...</div>';
@@ -4793,8 +5192,8 @@ SOFTWARE.
                 let searchSong = songName;
                 let searchArtist = artist || '';
                 
-                // 如果标题包含 " - "，分离歌手和歌名
-                if (songName.includes(' - ')) {
+                // 如果没有单独的歌手标签，且标题包含 " - "，分离歌手和歌名
+                if (!searchArtist && songName.includes(' - ')) {
                     const parts = songName.split(' - ');
                     if (parts.length >= 2) {
                         searchArtist = parts[0].trim();
@@ -4804,86 +5203,35 @@ SOFTWARE.
                 
                 log(`Searching lyrics: "${searchSong}" by "${searchArtist}"`);
                 
-                // 搜索歌曲
-                const searchResp = await fetch(buildApiUrl(`/cloudsearch?keywords=${encodeURIComponent(searchSong)}&limit=20`));
-                if (!isCurrent()) return false;
-                if (!searchResp.ok) throw new Error('搜索请求失败');
+                let bestMatch = null;
+                const matchPath = `/search/match?title=${encodeURIComponent(searchSong)}&album=${encodeURIComponent(album || '')}&artist=${encodeURIComponent(searchArtist)}&duration=${encodeURIComponent(Number(duration || 0).toFixed(3))}`;
+                try {
+                    const matchData = await cachedFetchJson(buildApiUrl(matchPath), { useQueue: true }, 300_000);
+                    if (!isCurrent()) return false;
+                    const matchedSongs = extractNeteaseMatchSongs(matchData);
+                    if (matchedSongs.length) {
+                        bestMatch = chooseNeteaseSongMatch(matchedSongs, { name: searchSong, artist: searchArtist, album, duration });
+                        log(`本地匹配接口返回 ${matchedSongs.length} 个候选`, 'success');
+                    }
+                } catch (error) {
+                    if (error?.name === 'AbortError') throw error;
+                    log(`本地匹配接口不可用，回退综合搜索: ${error?.message || error}`, 'warn');
+                }
 
-                const searchData = await searchResp.json();
-                if (!isCurrent()) return false;
-                if (searchData.code !== 200 || !searchData.result?.songs?.length) {
-                    log('No songs found on Netease', 'error');
-                    el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
-                    return false;
-                }
-                
-                log(`Found ${searchData.result.songs.length} songs`, 'success');
-                
-                // 匹配逻辑：歌名 → 歌手 → 时长
-                // /cloudsearch 返回 songs，兼容旧版 /search 也返回相同字段
-                const songs = searchData.result.songs;
-                log(`Found ${songs.length} candidates`);
-                
-                // 辅助函数：标准化字符串
-                const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
-                const targetName = normalize(searchSong);
-                const targetArtist = normalize(searchArtist);
-                
-                // 1. 先筛选歌名匹配的歌曲
-                let nameMatched = songs.filter(s => normalize(s.name) === targetName);
-                
-                // 如果完全匹配没有，尝试包含匹配
-                if (nameMatched.length === 0) {
-                    nameMatched = songs.filter(s => 
-                        normalize(s.name).includes(targetName) || 
-                        targetName.includes(normalize(s.name))
-                    );
-                }
-                
-                let candidates = nameMatched.length > 0 ? nameMatched : songs;
-                
-                if (nameMatched.length > 0) {
-                    log(`${nameMatched.length} songs with matching name`);
-                } else {
-                    log(`No exact name match, using all candidates`, 'warn');
-                }
-                
-                // 2. 从歌名匹配的歌曲中，优先选歌手匹配的
-                let bestMatch = candidates[0];
-                
-                if (targetArtist && candidates.length > 1) {
-                    // 找歌手完全匹配的
-                    const artistMatched = candidates.filter(s => {
-                        // /cloudsearch 返回 ar 字段，兼容旧版 artists 字段
-                        const songArtists = (s.ar || s.artists || []).map(a => normalize(a.name));
-                        return songArtists.some(a => a === targetArtist || a.includes(targetArtist) || targetArtist.includes(a));
-                    });
-                    
-                    if (artistMatched.length > 0) {
-                        log(`${artistMatched.length} songs with matching artist`);
-                        candidates = artistMatched;
-                        bestMatch = candidates[0];
+                if (!bestMatch) {
+                    const searchData = await cachedFetchJson(buildApiUrl(`/cloudsearch?keywords=${encodeURIComponent(searchSong)}&limit=20`), { useQueue: true }, 300_000);
+                    if (!isCurrent()) return false;
+                    const songs = searchData?.result?.songs || [];
+                    if (searchData?.code !== 200 || !songs.length) {
+                        log('No songs found on Netease', 'error');
+                        el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
+                        return false;
                     }
+                    log(`综合搜索返回 ${songs.length} 个候选`, 'success');
+                    bestMatch = chooseNeteaseSongMatch(songs, { name: searchSong, artist: searchArtist, album, duration });
                 }
-                
-                // 3. 最后按时长选最接近的
-                if (duration && duration > 0 && candidates.length > 1) {
-                    const targetMs = duration * 1000;
-                    let minDiff = Math.abs((bestMatch.duration || 0) - targetMs);
-                    
-                    for (const song of candidates) {
-                        const songDur = song.duration || 0;
-                        const diff = Math.abs(songDur - targetMs);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            bestMatch = song;
-                        }
-                    }
-                    const diffSec = (minDiff/1000).toFixed(1);
-                    log(`Best match: "${bestMatch.name}" by ${(bestMatch.ar || bestMatch.artists)?.[0]?.name || '?'} (Δ${diffSec}s)`);
-                } else {
-                    log(`Selected: "${bestMatch.name}" by ${(bestMatch.ar || bestMatch.artists)?.[0]?.name || '?'}`);  
-                }
+                if (!bestMatch?.id) throw new Error('没有可用的歌曲匹配结果');
+                log(`Selected: "${bestMatch.name}" by ${getNeteaseSongArtists(bestMatch)[0] || '?'}`);
                 
                 const songId = bestMatch.id;
                 log(`Found song ID: ${songId} - ${bestMatch.name}`);
@@ -5551,123 +5899,302 @@ SOFTWARE.
 
         let playlistCoverObserver = null;
         const PLAYLIST_COVER_CONCURRENCY = 4;
-        const PLAYLIST_COVER_BATCH_INTERVAL_MS = 120;
+        const PLAYLIST_COVER_BATCH_INTERVAL_MS = 80;
         const PLAYLIST_COVER_RETRY_MAX = 2;
         const PLAYLIST_COVER_RETRY_BASE_MS = 400;
         const PLAYLIST_COVER_FAILURE_COOLDOWN_MS = 30 * 1000;
+        const PLAYLIST_COVER_REQUEST_TIMEOUT_MS = 8 * 1000;
+        const PLAYLIST_COVER_CACHE_MAX_ENTRIES = 300;
+        let playlistCoverGeneration = 0;
         let playlistCoverActive = 0;
         let playlistCoverQueue = [];
+        let playlistCoverQueueSequence = 0;
         let playlistCoverPumpTimer = null;
+        let playlistCoverPumpDueAt = Infinity;
+        const playlistCoverResources = new Map();
 
         function getPlaylistCoverBatchSize() {
             return window.innerWidth <= 768 ? 10 : 16;
         }
 
-        function schedulePlaylistCoverPump(delay = 0) {
-            if (playlistCoverPumpTimer) return;
-            playlistCoverPumpTimer = setTimeout(() => {
-                playlistCoverPumpTimer = null;
-                pumpPlaylistCoverQueue();
-            }, delay);
+        function buildPlaylistCoverSrc(url) {
+            const value = toHttps(url || '');
+            if (!value) return '';
+            return `${value}${value.includes('?') ? '&' : '?'}param=80y80`;
         }
 
-        function enqueuePlaylistCover(img) {
-            if (!img || !img.dataset.src) return;
-            if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
-            const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
-            if (nextRetryAt > Date.now()) {
-                schedulePlaylistCoverPump(Math.max(0, nextRetryAt - Date.now()));
+        function isCurrentPlaylistCoverImage(img, src = img?.dataset?.coverSrc, requireConnected = true) {
+            return !!img && (!requireConnected || img.isConnected)
+                && img.dataset.coverGeneration === String(playlistCoverGeneration)
+                && !!src && img.dataset.coverSrc === src;
+        }
+
+        function getPlaylistCoverResource(src) {
+            let resource = playlistCoverResources.get(src);
+            if (!resource) {
+                resource = {
+                    src,
+                    status: 'idle',
+                    attempt: 0,
+                    retryAt: 0,
+                    priority: 2,
+                    queueVersion: 0,
+                    lastUsed: Date.now(),
+                    waiters: new Set(),
+                    probe: null,
+                    cancelled: false,
+                    loadToken: 0
+                };
+                playlistCoverResources.set(src, resource);
+            }
+            resource.lastUsed = Date.now();
+            return resource;
+        }
+
+        function applyPlaylistCoverResource(resource, img) {
+            if (!resource || !isCurrentPlaylistCoverImage(img, resource.src, false)) return;
+            img.src = resource.src;
+            img.classList.remove('empty');
+            img.removeAttribute('data-src');
+            img.removeAttribute('data-observing');
+            img.removeAttribute('data-next-retry-at');
+            img.dataset.coverLoaded = '1';
+            resource.waiters.delete(img);
+        }
+
+        function prunePlaylistCoverWaiters(resource) {
+            if (!resource) return 0;
+            resource.waiters.forEach(img => {
+                if (!isCurrentPlaylistCoverImage(img, resource.src)) resource.waiters.delete(img);
+            });
+            return resource.waiters.size;
+        }
+
+        function detachPlaylistCoverImage(img) {
+            const src = img?.dataset?.coverSrc;
+            if (src) playlistCoverResources.get(src)?.waiters.delete(img);
+            if (img) {
+                delete img.dataset.coverSrc;
+                delete img.dataset.coverLoaded;
+                delete img.dataset.coverGeneration;
+            }
+        }
+
+        function bindPlaylistCoverImage(img, src, enqueue = false) {
+            if (!img) return;
+            const normalizedSrc = src ? toHttps(src) : '';
+            const oldSrc = img.dataset.coverSrc || '';
+            if (oldSrc && oldSrc !== normalizedSrc) detachPlaylistCoverImage(img);
+
+            img.dataset.coverGeneration = String(playlistCoverGeneration);
+            if (!normalizedSrc) {
+                img.classList.add('empty');
+                img.removeAttribute('src');
+                img.removeAttribute('data-src');
+                img.removeAttribute('data-observing');
+                img.removeAttribute('data-next-retry-at');
+                delete img.dataset.coverSrc;
+                delete img.dataset.coverLoaded;
                 return;
             }
-            img.dataset.queued = '1';
-            playlistCoverQueue.push(img);
+
+            const resource = getPlaylistCoverResource(normalizedSrc);
+            resource.waiters.add(img);
+            img.dataset.coverSrc = normalizedSrc;
+            img.classList.add('empty');
+            if (resource.status === 'loaded') {
+                applyPlaylistCoverResource(resource, img);
+                return;
+            }
+
+            img.dataset.src = normalizedSrc;
+            img.removeAttribute('src');
+            delete img.dataset.coverLoaded;
+            if (enqueue) enqueuePlaylistCover(img, 1);
+        }
+
+        function schedulePlaylistCoverPump(delay = 0) {
+            const dueAt = performance.now() + Math.max(0, Number(delay) || 0);
+            if (playlistCoverPumpTimer && dueAt >= playlistCoverPumpDueAt) return;
+            if (playlistCoverPumpTimer) clearTimeout(playlistCoverPumpTimer);
+            playlistCoverPumpDueAt = dueAt;
+            playlistCoverPumpTimer = setTimeout(() => {
+                playlistCoverPumpTimer = null;
+                playlistCoverPumpDueAt = Infinity;
+                pumpPlaylistCoverQueue();
+            }, Math.max(0, dueAt - performance.now()));
+        }
+
+        function queuePlaylistCoverResource(resource, priority = 1) {
+            if (!resource || resource.status === 'loaded') return;
+            if (!prunePlaylistCoverWaiters(resource)) return;
+            const now = Date.now();
+            if (resource.status === 'loading' && !resource.cancelled) return;
+            if (resource.retryAt > now) {
+                schedulePlaylistCoverPump(resource.retryAt - now);
+                return;
+            }
+            resource.status = 'idle';
+            resource.priority = Math.min(Number(resource.priority || 2), priority);
+            resource.queueVersion += 1;
+            playlistCoverQueue.push({
+                resource,
+                version: resource.queueVersion,
+                priority: resource.priority,
+                sequence: ++playlistCoverQueueSequence
+            });
             schedulePlaylistCoverPump(0);
         }
 
+        function enqueuePlaylistCover(img, priority = 1) {
+            if (!img) return;
+            const src = img.dataset.coverSrc || img.dataset.src;
+            if (!src) return;
+            const resource = getPlaylistCoverResource(src);
+            resource.waiters.add(img);
+            queuePlaylistCoverResource(resource, priority);
+        }
+
         function enqueueDuePlaylistCoverRetries() {
-            if (!el.plContainer) return;
             const now = Date.now();
-            el.plContainer.querySelectorAll('.pl-item-cover[data-src][data-next-retry-at]').forEach(img => {
-                if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
-                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
-                if (!nextRetryAt || nextRetryAt > now) return;
-                img.dataset.queued = '1';
-                playlistCoverQueue.push(img);
+            playlistCoverResources.forEach(resource => {
+                if (resource.status !== 'retry-wait' || resource.retryAt > now) return;
+                resource.retryAt = 0;
+                resource.priority = 2;
+                queuePlaylistCoverResource(resource, 2);
             });
         }
 
         function getNextPlaylistCoverRetryDelay() {
-            if (!el.plContainer) return null;
             const now = Date.now();
             let nextDelay = null;
-            el.plContainer.querySelectorAll('.pl-item-cover[data-src][data-next-retry-at]').forEach(img => {
-                if (img.dataset.loading === '1' || img.dataset.queued === '1') return;
-                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
-                if (!nextRetryAt || nextRetryAt <= now) return;
-                const delay = nextRetryAt - now;
+            playlistCoverResources.forEach(resource => {
+                prunePlaylistCoverWaiters(resource);
+                if (!resource.waiters.size || resource.status !== 'retry-wait' || resource.retryAt <= now) return;
+                const delay = resource.retryAt - now;
                 if (nextDelay === null || delay < nextDelay) nextDelay = delay;
             });
             return nextDelay;
         }
 
-        function loadPlaylistCoverWithRetry(img, src, attempt = 0) {
+        function loadPlaylistCoverAttempt(resource) {
             return new Promise(resolve => {
                 const probe = new Image();
+                let settled = false;
+                const finish = ok => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeout);
+                    if (resource.probe === probe) resource.probe = null;
+                    resolve(ok);
+                };
+                const timeout = setTimeout(() => finish(false), PLAYLIST_COVER_REQUEST_TIMEOUT_MS);
+                resource.probe = probe;
                 probe.referrerPolicy = 'no-referrer';
                 probe.decoding = 'async';
-
-                probe.onload = () => {
-                    img.src = toHttps(src);
-                    img.classList.remove('empty');
-                    img.removeAttribute('data-src');
-                    img.removeAttribute('data-next-retry-at');
-                    img.dataset.loading = '0';
-                    resolve();
-                };
-
-                probe.onerror = () => {
-                    if (attempt < PLAYLIST_COVER_RETRY_MAX) {
-                        const delay = PLAYLIST_COVER_RETRY_BASE_MS * Math.pow(3, attempt) + Math.floor(Math.random() * 120);
-                        setTimeout(() => {
-                            loadPlaylistCoverWithRetry(img, src, attempt + 1).then(resolve);
-                        }, delay);
-                        return;
-                    }
-
-                    // 最终失败后保留 data-src，后续可在冷却后重试
-                    img.classList.add('empty');
-                    img.dataset.loading = '0';
-                    img.dataset.nextRetryAt = String(Date.now() + PLAYLIST_COVER_FAILURE_COOLDOWN_MS);
-                    resolve();
-                };
-
-                probe.src = toHttps(src);
+                probe.onload = () => finish(true);
+                probe.onerror = () => finish(false);
+                probe.src = resource.src;
             });
+        }
+
+        function completePlaylistCoverAttempt(resource, ok, loadToken) {
+            if (!resource) return;
+            if (loadToken !== resource.loadToken || resource.cancelled) return;
+            if (ok) {
+                resource.status = 'loaded';
+                resource.attempt = 0;
+                resource.retryAt = 0;
+                resource.priority = 2;
+                prunePlaylistCoverWaiters(resource);
+                resource.waiters.forEach(img => applyPlaylistCoverResource(resource, img));
+                return;
+            }
+
+            resource.attempt += 1;
+            const exhausted = resource.attempt > PLAYLIST_COVER_RETRY_MAX;
+            resource.status = 'retry-wait';
+            resource.retryAt = Date.now() + (exhausted
+                ? PLAYLIST_COVER_FAILURE_COOLDOWN_MS
+                : PLAYLIST_COVER_RETRY_BASE_MS * Math.pow(3, resource.attempt - 1) + Math.floor(Math.random() * 120));
+            if (exhausted) resource.attempt = 0;
+            prunePlaylistCoverWaiters(resource);
+            resource.waiters.forEach(img => {
+                if (isCurrentPlaylistCoverImage(img, resource.src)) img.classList.add('empty');
+            });
+            schedulePlaylistCoverPump(Math.max(0, resource.retryAt - Date.now()));
+        }
+
+        function cancelOrphanedPlaylistCoverResources() {
+            playlistCoverResources.forEach((resource, src) => {
+                prunePlaylistCoverWaiters(resource);
+                if (resource.waiters.size) return;
+                resource.queueVersion += 1;
+                if (resource.status === 'loading') {
+                    resource.cancelled = true;
+                    resource.loadToken += 1;
+                    resource.status = 'idle';
+                    resource.retryAt = 0;
+                    if (resource.probe) {
+                        try { resource.probe.src = ''; } catch (_) {}
+                    }
+                    return;
+                }
+                playlistCoverResources.delete(src);
+            });
+            playlistCoverQueue = playlistCoverQueue.filter(entry => {
+                return entry?.resource && playlistCoverResources.get(entry.resource.src) === entry.resource
+                    && entry.version === entry.resource.queueVersion;
+            });
+        }
+
+        function trimPlaylistCoverResourceCache() {
+            if (playlistCoverResources.size <= PLAYLIST_COVER_CACHE_MAX_ENTRIES) return;
+            const candidates = Array.from(playlistCoverResources.values())
+                .filter(resource => resource.status !== 'loading' && !resource.waiters.size)
+                .sort((a, b) => a.lastUsed - b.lastUsed);
+            while (playlistCoverResources.size > PLAYLIST_COVER_CACHE_MAX_ENTRIES && candidates.length) {
+                playlistCoverResources.delete(candidates.shift().src);
+            }
+        }
+
+        function takePlaylistCoverQueueEntry() {
+            playlistCoverQueue.sort((a, b) => a.priority - b.priority || a.sequence - b.sequence);
+            return playlistCoverQueue.shift() || null;
         }
 
         function pumpPlaylistCoverQueue() {
             if (!el.plSidebar || !el.plSidebar.classList.contains('show')) return;
             enqueueDuePlaylistCoverRetries();
+            cancelOrphanedPlaylistCoverResources();
             const batchSize = getPlaylistCoverBatchSize();
             let launched = 0;
 
-            while (playlistCoverQueue.length > 0 && playlistCoverActive < PLAYLIST_COVER_CONCURRENCY && launched < batchSize) {
-                const img = playlistCoverQueue.shift();
-                if (!img) continue;
-                img.dataset.queued = '0';
+            while (playlistCoverActive < PLAYLIST_COVER_CONCURRENCY && launched < batchSize) {
+                const entry = takePlaylistCoverQueueEntry();
+                if (!entry) break;
+                const resource = entry.resource;
+                if (!resource || entry.version !== resource.queueVersion || resource.status === 'loaded') continue;
+                if (!prunePlaylistCoverWaiters(resource)) continue;
+                const now = Date.now();
+                if (resource.retryAt > now) {
+                    schedulePlaylistCoverPump(resource.retryAt - now);
+                    continue;
+                }
 
-                if (!img.dataset.src || img.dataset.loading === '1') continue;
-                const nextRetryAt = Number(img.dataset.nextRetryAt || 0);
-                if (nextRetryAt > Date.now()) continue;
-
-                launched++;
+                resource.status = 'loading';
+                resource.cancelled = false;
+                const loadToken = ++resource.loadToken;
+                resource.lastUsed = Date.now();
                 playlistCoverActive++;
-                img.dataset.loading = '1';
-                const src = img.dataset.src;
-                loadPlaylistCoverWithRetry(img, src).finally(() => {
-                    playlistCoverActive = Math.max(0, playlistCoverActive - 1);
-                    schedulePlaylistCoverPump(0);
-                });
+                launched++;
+                loadPlaylistCoverAttempt(resource)
+                    .then(ok => completePlaylistCoverAttempt(resource, ok, loadToken))
+                    .finally(() => {
+                        playlistCoverActive = Math.max(0, playlistCoverActive - 1);
+                        trimPlaylistCoverResourceCache();
+                        schedulePlaylistCoverPump(0);
+                    });
             }
 
             if (playlistCoverQueue.length > 0) {
@@ -5686,11 +6213,14 @@ SOFTWARE.
                     const img = entry.target;
                     img.removeAttribute('data-observing');
                     observer.unobserve(img);
-                    enqueuePlaylistCover(img);
+                    const rect = img.getBoundingClientRect();
+                    const rootRect = el.plSidebar.getBoundingClientRect();
+                    const priority = rect.bottom > rootRect.top && rect.top < rootRect.bottom ? 0 : 1;
+                    enqueuePlaylistCover(img, priority);
                 });
             }, {
                 root: el.plSidebar,
-                rootMargin: '120px 0px',
+                rootMargin: '300px 0px',
                 threshold: 0.01
             });
         }
@@ -5706,7 +6236,6 @@ SOFTWARE.
             });
             schedulePlaylistCoverPump(0);
         }
-
         function updatePlaylistActiveItem() {
             const items = el.plContainer.querySelectorAll('.pl-item');
             items.forEach((node, idx) => {
@@ -5718,6 +6247,15 @@ SOFTWARE.
 
         function updatePlaylistCompanionMarker(row, track) {
             row.querySelector('.pl-item-companion')?.remove();
+            if (track?.needsFile) {
+                const marker = document.createElement('span');
+                marker.className = 'pl-item-companion warn';
+                marker.textContent = '!';
+                marker.title = '本地文件未恢复，请重新选择或导入文件';
+                marker.setAttribute('aria-label', marker.title);
+                row.appendChild(marker);
+                return;
+            }
             if (!track || track.netease || !['valid', 'invalid', 'ambiguous'].includes(track.sliStatus)) return;
             const hasWarning = track.sliStatus !== 'valid' || !!track.sliRuntimeError;
             const marker = document.createElement('span');
@@ -5733,9 +6271,10 @@ SOFTWARE.
             const track = playlist[index];
             if (!row || !track) return;
 
+            row.setAttribute('aria-label', track.needsFile ? `第 ${index + 1} 首：${track.name}，需要重新选择本地文件` : `播放第 ${index + 1} 首：${track.name}`);
             const titleEl = row.querySelector('.pl-item-title');
             if (titleEl) {
-                const icon = track.netease ? '☁️ ' : '';
+                const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
                 titleEl.textContent = `${icon}${track.name}`;
             }
             updatePlaylistCompanionMarker(row, track);
@@ -5743,74 +6282,71 @@ SOFTWARE.
             const coverEl = row.querySelector('.pl-item-cover');
             if (!coverEl) return;
             const coverUrl = toHttps(track.songData?.album?.picUrl || track.songData?.al?.picUrl || '');
-            if (!coverUrl) {
-                coverEl.classList.add('empty');
-                coverEl.removeAttribute('src');
-                coverEl.removeAttribute('data-src');
-                coverEl.removeAttribute('data-observing');
-                coverEl.removeAttribute('data-loading');
-                coverEl.removeAttribute('data-queued');
-                coverEl.removeAttribute('data-next-retry-at');
-                return;
-            }
-
-            const src = `${coverUrl}?param=80y80`;
-            coverEl.classList.remove('empty');
-            coverEl.dataset.src = src;
-            coverEl.removeAttribute('src');
-            coverEl.removeAttribute('data-observing');
-            coverEl.removeAttribute('data-next-retry-at');
-            if (el.plSidebar && el.plSidebar.classList.contains('show')) {
-                enqueuePlaylistCover(coverEl);
-                observePlaylistCovers();
-            }
+            const src = buildPlaylistCoverSrc(coverUrl);
+            if (coverEl.dataset.coverSrc === src && src && coverEl.dataset.coverLoaded === '1') return;
+            bindPlaylistCoverImage(coverEl, src, !!(el.plSidebar && el.plSidebar.classList.contains('show')));
+            if (src && el.plSidebar && el.plSidebar.classList.contains('show')) observePlaylistCovers();
         }
 
         function ensurePlaylistRenderedAndActive() {
             if (el.plContainer.children.length !== playlist.length) renderPlaylist();
             else updatePlaylistActiveItem();
         }
-        function renderPlaylist() {
-            el.plContainer.innerHTML = '';
+
+        function createPlaylistRow(track, index) {
+            const d = document.createElement('button');
+            d.type = 'button';
+            d.className = 'pl-item';
+            const indexEl = document.createElement('span');
+            indexEl.className = 'pl-item-index';
+            indexEl.textContent = String(index + 1);
+
+            const coverEl = document.createElement('img');
+            coverEl.className = 'pl-item-cover empty';
+            coverEl.width = 30;
+            coverEl.height = 30;
+            coverEl.alt = '歌曲封面';
+            coverEl.loading = 'lazy';
+            coverEl.decoding = 'async';
+            coverEl.referrerPolicy = 'no-referrer';
+            const coverUrl = toHttps(track.songData?.album?.picUrl || track.songData?.al?.picUrl || '');
+            bindPlaylistCoverImage(coverEl, buildPlaylistCoverSrc(coverUrl));
+
+            const titleEl = document.createElement('span');
+            titleEl.className = 'pl-item-title';
+            d.appendChild(indexEl);
+            d.appendChild(coverEl);
+            d.appendChild(titleEl);
+            updatePlaylistCompanionMarker(d, track);
+            d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(index); };
+            d.setAttribute('aria-label', track.needsFile ? `第 ${index + 1} 首：${track.name}，需要重新选择本地文件` : `播放第 ${index + 1} 首：${track.name}`);
+            const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
+            titleEl.textContent = `${icon}${track.name}`;
+            return d;
+        }
+
+        function appendPlaylistRows(startIndex = 0, force = false) {
+            if (!force && el.plContainer.children.length !== startIndex) {
+                renderPlaylist();
+                return;
+            }
             const frag = document.createDocumentFragment();
-            playlist.forEach((t, i) => {
-                const d = document.createElement('button');
-                d.type = 'button';
-                d.className = 'pl-item';
-                d.setAttribute('aria-label', `播放第 ${i + 1} 首：${t.name}`);
-                const icon = t.netease ? '☁️ ' : '';
-                const coverUrl = toHttps(t.songData?.album?.picUrl || t.songData?.al?.picUrl || '');
-
-                const indexEl = document.createElement('span');
-                indexEl.className = 'pl-item-index';
-                indexEl.textContent = String(i + 1);
-
-                const coverEl = document.createElement('img');
-                coverEl.className = 'pl-item-cover';
-                coverEl.alt = '歌曲封面';
-                coverEl.loading = 'lazy';
-                coverEl.decoding = 'async';
-                coverEl.referrerPolicy = 'no-referrer';
-                if (coverUrl) {
-                    coverEl.dataset.src = `${coverUrl}?param=80y80`;
-                } else {
-                    coverEl.classList.add('empty');
-                }
-
-                const titleEl = document.createElement('span');
-                titleEl.className = 'pl-item-title';
-                titleEl.textContent = `${icon}${t.name}`;
-
-                d.appendChild(indexEl);
-                d.appendChild(coverEl);
-                d.appendChild(titleEl);
-                updatePlaylistCompanionMarker(d, t);
-                d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(i); };
-                frag.appendChild(d);
-            });
+            for (let i = startIndex; i < playlist.length; i++) frag.appendChild(createPlaylistRow(playlist[i], i));
             el.plContainer.appendChild(frag);
             updatePlaylistActiveItem();
             observePlaylistCovers();
+            cancelOrphanedPlaylistCoverResources();
+            trimPlaylistCoverResourceCache();
+        }
+
+        function renderPlaylist() {
+            playlistCoverGeneration += 1;
+            if (playlistCoverObserver && el.plContainer) {
+                el.plContainer.querySelectorAll('.pl-item-cover').forEach(img => playlistCoverObserver.unobserve(img));
+            }
+            el.plContainer.innerHTML = '';
+            playlistCoverQueue = [];
+            appendPlaylistRows(0, true);
             if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave();
         }
         function scrollPlaylistToCurrent() {
@@ -5954,9 +6490,12 @@ SOFTWARE.
             renderedHash: '',
             navToken: 0,
             controller: null,
+            navigationControllers: new Set(),
             contexts: new Map(),
             contextSeed: 0,
-            dynamicCache: new Map(),
+            artistSession: null,
+            artistPrefetchTimer: null,
+            artistPrefetchController: null,
             authReturnHash: '',
             lastNonMusicHash: '',
             lastSearchRoute: null,
@@ -6078,11 +6617,27 @@ SOFTWARE.
             return token === musicBrowserState.navToken && hash === window.location.hash;
         }
 
-        async function renderMusicRoute(route, restoreScroll = 0) {
+        function abortMusicNavigationRequests() {
+            const controllers = musicBrowserState.navigationControllers || new Set();
+            controllers.forEach(controller => {
+                try { controller.abort(); } catch (_) {}
+            });
+            controllers.clear();
+            if (musicBrowserState.controller) {
+                try { musicBrowserState.controller.abort(); } catch (_) {}
+                musicBrowserState.controller = null;
+            }
+        }
+
+        async function renderMusicRoute(route, restoreScroll = 0, options = {}) {
             if (!route) {
                 modalController.close(neteasePanel, false);
                 return;
             }
+            const previousRoute = musicBrowserState.route;
+            const sameArtistEntity = previousRoute?.kind === 'artist'
+                && route.kind === 'artist'
+                && Number(previousRoute.id) === Number(route.id);
             if (window.neteaseQrAbortController) {
                 window.neteaseQrAbortController.abort();
                 window.neteaseQrAbortController = null;
@@ -6091,14 +6646,19 @@ SOFTWARE.
                 clearInterval(qrCheckTimer);
                 qrCheckTimer = null;
             }
-            if (musicBrowserState.controller) musicBrowserState.controller.abort();
+            const preserveSameArtistRequests = sameArtistEntity && previousRoute?.kind === 'artist' && route.kind === 'artist';
+            if (!preserveSameArtistRequests) abortMusicNavigationRequests();
             const controller = new AbortController();
             const token = ++musicBrowserState.navToken;
             const hash = window.location.hash;
             musicBrowserState.controller = controller;
+            musicBrowserState.navigationControllers.add(controller);
             musicBrowserState.route = route;
             musicBrowserState.renderedHash = hash;
-            musicBrowserState.contexts.clear();
+            if (!sameArtistEntity) {
+                musicBrowserState.contexts.clear();
+                if (route.kind !== 'artist') musicBrowserState.artistSession = null;
+            }
             modalController.open(neteasePanel, closeMusicBrowser);
             document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'true');
             neteasePageTitle.textContent = getMusicRouteTitle(route);
@@ -6127,10 +6687,10 @@ SOFTWARE.
                     else if (!neteaseUser) document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
                 } else if (route.kind === 'album') {
                     setMusicBrowserTab('entity');
-                    await renderMusicAlbumPage(route, token, controller.signal);
+                    await renderMusicAlbumPage(route, token, controller.signal, options);
                 } else if (route.kind === 'artist') {
                     setMusicBrowserTab('entity');
-                    await renderMusicArtistPage(route, token, controller.signal);
+                    await renderMusicArtistPage(route, token, controller.signal, options);
                 } else {
                     setMusicBrowserTab('entity');
                     neteaseBrowserView.innerHTML = `<div class="music-browser-state"><strong>${escapeHtml(route.reason || '页面不可用')}</strong><button class="music-retry-btn" data-music-home>返回搜索</button></div>`;
@@ -6142,7 +6702,11 @@ SOFTWARE.
                 }
             }
 
-            if (!currentMusicNavigationIs(token, hash)) return;
+            if (!currentMusicNavigationIs(token, hash)) {
+                musicBrowserState.navigationControllers.delete(controller);
+                return;
+            }
+            musicBrowserState.navigationControllers.delete(controller);
             requestAnimationFrame(() => {
                 if (currentMusicNavigationIs(token, hash)) neteaseBrowserScroll.scrollTop = Math.max(0, Number(restoreScroll) || 0);
             });
@@ -6154,6 +6718,12 @@ SOFTWARE.
             const hash = buildMusicHash(route);
             const url = window.location.href.split('#')[0] + hash;
             const current = getMusicHistoryState();
+            const currentRoute = parseMusicRoute();
+            const sameArtistViewSwitch = currentRoute?.kind === 'artist'
+                && route?.kind === 'artist'
+                && Number(currentRoute.id) === Number(route.id)
+                && currentRoute.view !== route.view;
+            const replace = options.replace ?? sameArtistViewSwitch;
             const beginsSession = options.newSession || !window.location.hash.startsWith(MUSIC_ROUTE_PREFIX) || !current;
             const musicState = beginsSession ? {
                 sessionId: createMusicSessionId(), depth: 0, scrollTop: 0,
@@ -6162,12 +6732,12 @@ SOFTWARE.
                 routeHash: hash
             } : {
                 ...current,
-                depth: options.replace ? current.depth : current.depth + 1,
+                depth: replace ? current.depth : current.depth + 1,
                 scrollTop: 0,
                 routeHash: hash
             };
             const state = { ...(history.state || {}), auroraMusic: musicState };
-            if (options.replace) history.replaceState(state, '', url);
+            if (replace) history.replaceState(state, '', url);
             else history.pushState(state, '', url);
             renderMusicRoute(parseMusicRoute(hash), 0);
         }
@@ -6194,7 +6764,7 @@ SOFTWARE.
             document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
             saveMusicScrollState();
             try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
-            if (musicBrowserState.controller) musicBrowserState.controller.abort();
+            abortMusicNavigationRequests();
             if (window.neteaseQrAbortController) window.neteaseQrAbortController.abort();
             if (qrCheckTimer) clearInterval(qrCheckTimer);
             modalController.close(neteasePanel);
@@ -6215,6 +6785,7 @@ SOFTWARE.
         function syncMusicRouteFromLocation() {
             const route = parseMusicRoute();
             if (!route) {
+                abortMusicNavigationRequests();
                 modalController.close(neteasePanel, false);
                 document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
                 musicBrowserState.renderedHash = window.location.hash;
@@ -6261,6 +6832,11 @@ SOFTWARE.
         let neteaseCookie = localStorage.getItem('netease_cookie') || '';
         let qrCheckTimer = null;
         let myPlaylistsCache = null; // 我的歌单缓存
+        let myPlaylistsData = [];
+        let myPlaylistsLoading = false;
+        let myPlaylistsLoadPromise = null;
+        let myPlaylistsLoadToken = 0;
+        let myPlaylistsAbortController = null;
         let pendingQualityInfo = null; // 等待计算的音质信息（MP3等）
         let currentAudioQuality = ''; // 当前播放音质
         let neteaseVipType = 0; // 0=普通 1=VIP 2=SVIP 3=音乐包
@@ -6285,8 +6861,16 @@ SOFTWARE.
             }
             clearAccountJsonCache();
             clearNeteaseResolvedAudioCache();
+            resetNeteaseDetailPrefetchState();
+            if (myPlaylistsAbortController) {
+                try { myPlaylistsAbortController.abort(); } catch (_) {}
+                myPlaylistsAbortController = null;
+            }
+            myPlaylistsLoadToken++;
             myPlaylistsCache = null;
-            musicBrowserState.dynamicCache.clear();
+            myPlaylistsData = [];
+            myPlaylistsLoading = false;
+            myPlaylistsLoadPromise = null;
             return authGeneration;
         }
 
@@ -6346,6 +6930,10 @@ SOFTWARE.
                         neteaseUser = json.data.profile;
                         updateUserUI();
                         log(`Logged in as: ${neteaseUser.nickname}`, 'success');
+                        const currentRoute = parseMusicRoute();
+                        if (currentRoute?.kind === 'playlist-mine' && neteasePanel.classList.contains('show')) {
+                            void loadMyPlaylists();
+                        }
                         return true;
                     }
                     neteaseUser = null;
@@ -6497,7 +7085,6 @@ SOFTWARE.
                             localStorage.setItem('netease_cookie', neteaseCookie);
                             // 获取用户信息
                             await checkLoginStatus();
-                            musicBrowserState.dynamicCache.clear();
                             setTimeout(() => {
                                 const returnRoute = parseMusicRoute(musicBrowserState.authReturnHash || window.location.hash)
                                     || { kind: 'search', q: '', type: 'all', page: 1 };
@@ -6540,84 +7127,166 @@ SOFTWARE.
             log('Logged out');
         };
         
-        // 加载我的歌单
+        function buildMyPlaylistsHtml(playlists, userId, status = {}) {
+            const list = Array.isArray(playlists) ? playlists : [];
+            if (!list.length && !status.loading && !status.error) return '<div class="netease-empty">暂无歌单</div>';
+
+            let html = '';
+            if (status.loading) {
+                html += `<div class="playlist-load-status"><span class="playlist-load-message">已加载 ${list.length} 个歌单，后台继续加载...</span></div>`;
+            } else if (status.error) {
+                html += `<div class="playlist-load-status"><span class="playlist-load-message">${escapeHtml(status.error)}</span></div>`;
+            }
+
+            const created = list.filter(p => p.creator?.userId === userId);
+            const collected = list.filter(p => p.creator?.userId !== userId);
+            const renderPlaylist = (p, isCollected) => {
+                const id = positiveMusicInteger(p?.id, 0);
+                if (!id) return '';
+                const cover = toHttps(p.coverImgUrl || '');
+                const subtitle = isCollected
+                    ? `${escapeHtml(p.trackCount || 0)} 首 · ${escapeHtml(p.creator?.nickname || '')}`
+                    : `${escapeHtml(p.trackCount || 0)} 首`;
+                return `
+                    <div class="netease-item" onclick="loadPlaylistById(${id})">
+                        <img class="netease-item-cover" data-src="${escapeHtml(cover)}?param=100y100" alt="歌单封面">
+                        <div class="netease-item-info">
+                            <div class="netease-item-name">${escapeHtml(p.name || '未命名歌单')}</div>
+                            <div class="netease-item-artist">${subtitle}</div>
+                        </div>
+                    </div>`;
+            };
+
+            if (created.length) {
+                html += '<div class="my-playlists-title">📁 我创建的歌单</div>';
+                html += created.map(p => renderPlaylist(p, false)).join('');
+            }
+            if (collected.length) {
+                html += '<div class="my-playlists-title" style="margin-top:15px">❤️ 我收藏的歌单</div>';
+                html += collected.map(p => renderPlaylist(p, true)).join('');
+            }
+            return html || '<div class="netease-empty">暂无歌单</div>';
+        }
+
+        function renderMyPlaylistsView(userId, status = {}) {
+            const container = document.getElementById('mylist-content');
+            const html = buildMyPlaylistsHtml(myPlaylistsData, userId, status);
+            container.innerHTML = html;
+            observeMusicImages(container);
+            return html;
+        }
+
+        // 首屏只取一页，后续页在后台按 offset 继续加载。
         async function loadMyPlaylists() {
             const container = document.getElementById('mylist-content');
-            
             if (!neteaseUser) {
                 container.innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
                 return;
             }
 
-            // 如果有缓存直接使用
             if (myPlaylistsCache) {
                 container.innerHTML = myPlaylistsCache;
                 observeMusicImages(container);
                 return;
             }
-            
+            if (myPlaylistsLoadPromise) return myPlaylistsLoadPromise;
+            if (myPlaylistsLoading) {
+                renderMyPlaylistsView(neteaseUser.userId, { loading: true });
+                return;
+            }
+
             const snapshot = captureAuthSnapshot();
             const userId = neteaseUser.userId;
-            container.innerHTML = '<div class="netease-loading">加载中...</div>';
+            const loadToken = ++myPlaylistsLoadToken;
+            const controller = new AbortController();
+            myPlaylistsAbortController = controller;
+            myPlaylistsData = [];
+            myPlaylistsLoading = true;
+            container.innerHTML = '<div class="netease-loading">正在加载首批歌单...</div>';
 
-            try {
-                const resp = await accountFetch(buildApiUrl(`/user/playlist?uid=${userId}&cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}`));
-                if (!resp.ok) throw new Error('获取歌单失败');
-
+            const isCurrent = () => !controller.signal.aborted
+                && loadToken === myPlaylistsLoadToken
+                && isAuthSnapshotCurrent(snapshot)
+                && neteaseUser?.userId === userId;
+            const playlistMap = new Map();
+            const mergePage = page => {
+                (Array.isArray(page) ? page : []).forEach(item => {
+                    const id = positiveMusicInteger(item?.id, 0);
+                    if (id && !playlistMap.has(id)) playlistMap.set(id, item);
+                });
+                myPlaylistsData = Array.from(playlistMap.values());
+            };
+            const fetchPage = async offset => {
+                const limit = 30;
+                const cookieParam = snapshot.cookie ? `&cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}` : '';
+                const url = buildApiUrl(`/user/playlist?uid=${userId}&limit=${limit}&offset=${offset}${cookieParam}`);
+                const resp = await accountFetch(url, { signal: controller.signal });
+                if (!resp.ok) throw new Error(`获取歌单失败: HTTP ${resp.status}`);
                 const json = await resp.json();
-                if (!isAuthSnapshotCurrent(snapshot) || neteaseUser?.userId !== userId) return;
-                const playlists = json.playlist;
-                
-                if (!playlists || playlists.length === 0) {
-                    container.innerHTML = '<div class="netease-empty">暂无歌单</div>';
-                    return;
+                if (!isCurrent()) throw new DOMException('stale playlist response', 'AbortError');
+                const page = Array.isArray(json?.playlist) ? json.playlist : [];
+                const more = json?.more === true || (json?.more === undefined && page.length >= limit);
+                return { page, more };
+            };
+
+            let backgroundStarted = false;
+            const loadMore = async (offset, more) => {
+                try {
+                    let nextOffset = offset;
+                    let hasMore = more;
+                    let lastError = null;
+                    while (hasMore && isCurrent()) {
+                        try {
+                            const result = await fetchPage(nextOffset);
+                            if (!isCurrent()) return;
+                            mergePage(result.page);
+                            renderMyPlaylistsView(userId, { loading: result.more });
+                            nextOffset += result.page.length || 30;
+                            hasMore = result.more && result.page.length > 0;
+                        } catch (error) {
+                            if (error?.name === 'AbortError' || controller.signal.aborted) return;
+                            lastError = error;
+                            break;
+                        }
+                    }
+                    if (!isCurrent()) return;
+                    myPlaylistsLoading = false;
+                    const html = renderMyPlaylistsView(userId, lastError
+                        ? { error: `歌单后台加载失败，已显示 ${myPlaylistsData.length} 个` }
+                        : {});
+                    myPlaylistsCache = html;
+                } finally {
+                    if (myPlaylistsAbortController === controller) myPlaylistsAbortController = null;
                 }
-                
-                // 分类：我创建的 & 我收藏的
-                const created = playlists.filter(p => p.creator?.userId === userId);
-                const collected = playlists.filter(p => p.creator?.userId !== userId);
-                
-                let html = '';
-                
-                if (created.length > 0) {
-                    html += '<div class="my-playlists-title">📁 我创建的歌单</div>';
-                    created.forEach(p => {
-                        html += `
-                            <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" data-src="${escapeHtml(toHttps(p.coverImgUrl))}?param=100y100" alt="歌单封面">
-                                <div class="netease-item-info">
-                                    <div class="netease-item-name">${escapeHtml(p.name)}</div>
-                                    <div class="netease-item-artist">${escapeHtml(p.trackCount)} 首</div>
-                                </div>
-                            </div>
-                        `;
-                    });
+            };
+
+            const firstPagePromise = (async () => {
+                try {
+                    const result = await fetchPage(0);
+                    if (!isCurrent()) return;
+                    mergePage(result.page);
+                    renderMyPlaylistsView(userId, { loading: result.more });
+                    const nextOffset = result.page.length || 30;
+                    if (result.more && result.page.length) {
+                        backgroundStarted = true;
+                        void loadMore(nextOffset, true);
+                    } else {
+                        myPlaylistsLoading = false;
+                        myPlaylistsCache = renderMyPlaylistsView(userId);
+                    }
+                } catch (error) {
+                    if (error?.name === 'AbortError' || controller.signal.aborted) return;
+                    if (isCurrent()) {
+                        myPlaylistsLoading = false;
+                        container.innerHTML = '<div class="netease-empty">加载失败: ' + escapeHtml(error.message) + '</div>';
+                    }
+                } finally {
+                    if (!backgroundStarted && myPlaylistsAbortController === controller) myPlaylistsAbortController = null;
+                    if (myPlaylistsLoadPromise === firstPagePromise) myPlaylistsLoadPromise = null;
                 }
-                
-                if (collected.length > 0) {
-                    html += '<div class="my-playlists-title" style="margin-top:15px">❤️ 我收藏的歌单</div>';
-                    collected.forEach(p => {
-                        html += `
-                            <div class="netease-item" onclick="loadPlaylistById(${p.id})">
-                                <img class="netease-item-cover" data-src="${escapeHtml(toHttps(p.coverImgUrl))}?param=100y100" alt="歌单封面">
-                                <div class="netease-item-info">
-                                    <div class="netease-item-name">${escapeHtml(p.name)}</div>
-                                    <div class="netease-item-artist">${escapeHtml(p.trackCount)} 首 · ${escapeHtml(p.creator?.nickname || '')}</div>
-                                </div>
-                            </div>
-                        `;
-                    });
-                }
-                
-                myPlaylistsCache = html; // 保存缓存
-                container.innerHTML = html;
-                observeMusicImages(container);
-                
-            } catch (e) {
-                if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) {
-                    container.innerHTML = '<div class="netease-empty">加载失败: ' + escapeHtml(e.message) + '</div>';
-                }
-            }
+            })();
+            myPlaylistsLoadPromise = firstPagePromise;
+            return firstPagePromise;
         }
         
         // 点击歌单加载
@@ -6632,6 +7301,8 @@ SOFTWARE.
         
         // 当前加载的歌单数据
         let currentPlaylistData = null;
+        let activePlaylistQueueToken = null;
+        let playlistPendingAdvance = false;
         
         const MUSIC_FALLBACK_COVER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="12" fill="#e8edf3"/><circle cx="80" cy="80" r="42" fill="#c7d2de"/><circle cx="80" cy="80" r="12" fill="#f8fbff"/></svg>');
         const MUSIC_FALLBACK_ARTIST = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="80" fill="#e8edf3"/><circle cx="80" cy="62" r="28" fill="#c7d2de"/><path d="M31 145c5-31 24-48 49-48s44 17 49 48" fill="#c7d2de"/></svg>');
@@ -6722,10 +7393,23 @@ SOFTWARE.
             return `<button class="music-link" data-music-album="${album.id}">${escapeHtml(album.name)}</button>`;
         }
 
+        const MUSIC_CONTEXT_MAX_ENTRIES = 24;
+
+        function getMusicContextStableKey(meta = {}) {
+            if (meta.contextKey) return String(meta.contextKey);
+            if (!meta.sourceType) return '';
+            return [meta.sourceType, meta.sourceId || meta.title || '', meta.page || 0].join('|');
+        }
+
         function registerMusicContext(songs, meta = {}) {
             const normalized = (songs || []).map(normalizeMusicSong).filter(song => song.id);
-            const id = `music-context-${++musicBrowserState.contextSeed}`;
+            const stableKey = getMusicContextStableKey(meta);
+            const id = stableKey ? `music-context-${stableKey}` : `music-context-${++musicBrowserState.contextSeed}`;
+            musicBrowserState.contexts.delete(id);
             musicBrowserState.contexts.set(id, { songs: normalized, meta });
+            while (musicBrowserState.contexts.size > MUSIC_CONTEXT_MAX_ENTRIES) {
+                musicBrowserState.contexts.delete(musicBrowserState.contexts.keys().next().value);
+            }
             return id;
         }
 
@@ -6807,6 +7491,8 @@ SOFTWARE.
                 songData: song.songData,
                 context: { ...context.meta }
             }));
+            activePlaylistQueueToken = null;
+            playlistPendingAdvance = false;
             curIdx = -1;
             renderPlaylist();
             await playTrackFromPlaylist(index);
@@ -6970,25 +7656,40 @@ SOFTWARE.
             return `${path}${separator}cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}`;
         }
 
-        async function fetchMusicStatic(path, signal, ttl = 1_800_000) {
-            const json = await cachedFetchJson(buildApiUrl(path), { signal, useQueue: true }, ttl);
+        async function fetchMusicStatic(path, signal, ttl = 1_800_000, options = {}) {
+            const requestOptions = {
+                useQueue: true,
+                priority: options.priority || 'interactive',
+                cacheScope: options.cacheScope || 'public',
+                forceRefresh: !!options.forceRefresh
+            };
+            if (signal) requestOptions.signal = signal;
+            const json = await cachedFetchJson(buildApiUrl(path), requestOptions, ttl);
             if (!json || (json.code !== undefined && json.code !== 200)) throw new Error(json?.message || '接口返回异常');
             return json;
         }
 
-        async function fetchMusicDynamic(path, signal) {
+        async function fetchMusicDynamic(path, signal, options = {}) {
             const snapshot = captureAuthSnapshot();
-            const accountKey = neteaseUser?.userId || 'guest';
-            const key = `${accountKey}|${path}`;
-            const cached = musicBrowserState.dynamicCache.get(key);
-            if (cached && Date.now() - cached.time < 15_000) return cached.data;
-            const response = await accountFetch(buildApiUrl(withMusicCookie(path)), { signal });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const json = await response.json();
+            const requestOptions = {
+                useQueue: true,
+                priority: options.priority || 'interactive',
+                cacheScope: 'account',
+                forceRefresh: !!options.forceRefresh
+            };
+            if (signal) requestOptions.signal = signal;
+            const json = await cachedFetchJson(
+                buildApiUrl(withMusicCookie(path)),
+                requestOptions,
+                15_000
+            );
             if (!isAuthSnapshotCurrent(snapshot)) throw new DOMException('stale account response', 'AbortError');
             if (json?.code !== 200) throw new Error(json?.message || '状态接口返回异常');
-            musicBrowserState.dynamicCache.set(key, { time: Date.now(), data: json });
             return json;
+        }
+
+        function fetchMusicDynamicShared(path, options = {}) {
+            return fetchMusicDynamic(path, options.signal || null, options);
         }
 
         function formatMusicCount(value) {
@@ -7020,9 +7721,14 @@ SOFTWARE.
 
         function musicEntityActionsHtml(contextId, options = {}) {
             const playDisabled = contextId ? '' : 'disabled';
+            const subscriptionState = options.subscriptionState || (options.subscriptionAvailable === false ? 'loading' : 'known');
+            const subscriptionDisabled = subscriptionState === 'loading' ? 'disabled' : '';
+            const subscriptionLabel = subscriptionState === 'unknown'
+                ? '重试状态'
+                : (options.active ? options.activeLabel : options.inactiveLabel);
             const followButton = options.subscriptionType ? `
-                <button class="music-action-btn" data-music-subscription="${options.subscriptionType}" data-music-id="${options.entityId}" data-active="${options.active ? 'true' : 'false'}" ${options.subscriptionAvailable === false ? 'disabled' : ''}>
-                    ${options.active ? options.activeLabel : options.inactiveLabel}
+                <button class="music-action-btn" data-music-subscription="${options.subscriptionType}" data-music-subscription-state="${subscriptionState}" data-music-id="${options.entityId}" data-active="${options.active ? 'true' : 'false'}" ${subscriptionDisabled}>
+                    ${subscriptionLabel}
                 </button>` : '';
             return `
                 <div class="music-entity-actions">
@@ -7032,12 +7738,12 @@ SOFTWARE.
                 </div>`;
         }
 
-        async function renderMusicAlbumPage(route, token, signal) {
+        async function renderMusicAlbumPage(route, token, signal, options = {}) {
             const hash = window.location.hash;
             neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入专辑...</div>';
             const [albumResult, dynamicResult] = await Promise.allSettled([
-                fetchMusicStatic(`/album?id=${route.id}`, signal),
-                fetchMusicDynamic(`/album/detail/dynamic?id=${route.id}`, signal)
+                fetchMusicStatic(`/album?id=${route.id}`, signal, 1_800_000, options),
+                fetchMusicDynamic(`/album/detail/dynamic?id=${route.id}`, signal, options)
             ]);
             if (!currentMusicNavigationIs(token, hash)) return;
             if (albumResult.status === 'rejected') throw albumResult.reason;
@@ -7062,7 +7768,8 @@ SOFTWARE.
                     ${album.description ? `<p class="music-entity-description">${escapeHtml(album.description)}</p>` : ''}
                     ${musicEntityActionsHtml(contextId, {
                         subscriptionType: 'album', entityId: album.id, active: !!dynamic?.isSub,
-                        activeLabel: '取消收藏', inactiveLabel: '收藏', subscriptionAvailable: dynamicResult.status === 'fulfilled'
+                        activeLabel: '取消收藏', inactiveLabel: '收藏',
+                        subscriptionState: dynamicResult.status === 'fulfilled' ? 'known' : (neteaseUser ? 'unknown' : 'guest')
                     })}
                 </section>`;
             neteaseBrowserView.querySelector('.music-entity-cover').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
@@ -7081,44 +7788,164 @@ SOFTWARE.
                 <button class="music-subnav-btn ${route.view === view ? 'active' : ''}" data-music-artist-view="${view}" data-music-id="${route.id}" aria-current="${route.view === view ? 'page' : 'false'}">${label}</button>`).join('')}</nav>`;
         }
 
-        function musicPartialFailure(label) {
-            return `<div class="music-browser-state">${escapeHtml(label)}加载失败<br><button class="music-retry-btn" data-music-reload>重试</button></div>`;
+        function musicPartialFailure(label, retryView = '') {
+            const retryAttribute = retryView
+                ? `data-music-retry-view="${escapeHtml(retryView)}"`
+                : 'data-music-reload';
+            return `<div class="music-browser-state">${escapeHtml(label)}加载失败<br><button class="music-retry-btn" ${retryAttribute}>重试</button></div>`;
         }
 
-        async function renderMusicArtistPage(route, token, signal) {
-            const hash = window.location.hash;
-            neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入歌手...</div>';
-            const limit = route.view === 'songs' ? 50 : 30;
-            const baseRequests = [
-                fetchMusicStatic(`/artist/detail?id=${route.id}`, signal),
-                fetchMusicDynamic(`/artist/detail/dynamic?id=${route.id}`, signal),
-                fetchMusicStatic(`/artist/top/song?id=${route.id}`, signal)
-            ];
-            let extraRequests = [];
-            if (route.view === 'overview') {
-                extraRequests = [
-                    fetchMusicStatic(`/artist/album?id=${route.id}&limit=6&offset=0`, signal),
-                    fetchMusicStatic(`/artist/mv?id=${route.id}&limit=6&offset=0`, signal)
-                ];
-            } else if (route.view === 'songs') {
-                extraRequests = [fetchMusicStatic(`/artist/songs?id=${route.id}&order=hot&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
-            } else if (route.view === 'albums') {
-                extraRequests = [fetchMusicStatic(`/artist/album?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
-            } else {
-                extraRequests = [fetchMusicStatic(`/artist/mv?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`, signal)];
+        function fulfilledMusicResult(value) {
+            return { status: 'fulfilled', value };
+        }
+
+        async function fetchArtistBaseData(artistId, signal, options = {}) {
+            const baseOptions = {
+                ...options,
+                forceRefresh: !!options.forceRefresh || !!options.forceRefreshBase
+            };
+            let aggregate = null;
+            let aggregateError = null;
+            try {
+                aggregate = await fetchMusicStatic(`/artists?id=${artistId}`, signal, 1_800_000, baseOptions);
+            } catch (error) {
+                if (error?.name === 'AbortError') throw error;
+                aggregateError = error;
             }
-            const settled = await Promise.allSettled([...baseRequests, ...extraRequests]);
-            if (!currentMusicNavigationIs(token, hash)) return;
-            if (settled[0].status === 'rejected') throw settled[0].reason;
-            const detail = settled[0].value?.data?.artist;
-            if (!detail) throw new Error('没有找到这位歌手');
+
+            const aggregateArtist = aggregate?.artist || aggregate?.data?.artist || null;
+            const aggregateSongs = Array.isArray(aggregate?.hotSongs) ? aggregate.hotSongs : null;
+            let detailResult = aggregateArtist
+                ? fulfilledMusicResult({ code: 200, data: { artist: aggregateArtist } })
+                : null;
+            let topResult = aggregateSongs
+                ? fulfilledMusicResult({ code: 200, songs: aggregateSongs, more: false })
+                : null;
+
+            const fallbackTasks = [];
+            if (!detailResult) {
+                fallbackTasks.push({
+                    type: 'detail',
+                    promise: fetchMusicStatic(`/artist/detail?id=${artistId}`, signal, 1_800_000, baseOptions)
+                });
+            }
+            if (!topResult) {
+                fallbackTasks.push({
+                    type: 'top',
+                    promise: fetchMusicStatic(`/artist/top/song?id=${artistId}`, signal, 1_800_000, baseOptions)
+                });
+            }
+            if (fallbackTasks.length) {
+                const settled = await Promise.allSettled(fallbackTasks.map(task => task.promise));
+                settled.forEach((result, index) => {
+                    const task = fallbackTasks[index];
+                    if (task.type === 'detail') detailResult = result;
+                    else topResult = result;
+                });
+            }
+
+            return {
+                detailResult: detailResult || { status: 'rejected', reason: aggregateError || new Error('没有找到这位歌手') },
+                topResult: topResult || { status: 'rejected', reason: aggregateError || new Error('热门歌曲加载失败') }
+            };
+        }
+
+        async function fetchArtistViewData(route, signal, options = {}) {
+            const forcedViews = options.forceRefreshViews instanceof Set ? options.forceRefreshViews : new Set();
+            if (route.view === 'overview') {
+                const albumsPath = `/artist/album?id=${route.id}&limit=30&offset=0`;
+                const mvsPath = `/artist/mv?id=${route.id}&limit=30&offset=0`;
+                const [albumsResult, mvsResult] = await Promise.allSettled([
+                    fetchMusicStatic(albumsPath, signal, 1_800_000, {
+                        ...options,
+                        forceRefresh: forcedViews.has('albums')
+                    }),
+                    fetchMusicStatic(mvsPath, signal, 1_800_000, {
+                        ...options,
+                        forceRefresh: forcedViews.has('mvs')
+                    })
+                ]);
+                return { albumsResult, mvsResult };
+            }
+
+            const limit = route.view === 'songs' ? 50 : 30;
+            const endpoint = route.view === 'songs'
+                ? `/artist/songs?id=${route.id}&order=hot&limit=${limit}&offset=${(route.page - 1) * limit}`
+                : route.view === 'albums'
+                    ? `/artist/album?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`
+                    : `/artist/mv?id=${route.id}&limit=${limit}&offset=${(route.page - 1) * limit}`;
+            const result = await fetchMusicStatic(endpoint, signal, 1_800_000, {
+                ...options,
+                forceRefresh: !!options.forceRefresh || forcedViews.has(route.view)
+            });
+            return { result };
+        }
+
+        function updateArtistSubnav(route) {
+            neteaseBrowserView.querySelectorAll('[data-music-artist-view]').forEach(button => {
+                const active = button.dataset.musicArtistView === route.view;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-current', active ? 'page' : 'false');
+            });
+        }
+
+        function updateArtistDynamicState(session, dynamic) {
+            if (!dynamic || !session) return;
+            session.dynamic = dynamic;
+            const button = neteaseBrowserView.querySelector(`[data-music-subscription="artist"][data-music-id="${session.id}"]`);
+            if (!button) return;
+            const followed = !!dynamic.followed;
+            button.dataset.active = followed ? 'true' : 'false';
+            button.dataset.musicSubscriptionState = 'known';
+            button.disabled = false;
+            button.textContent = followed ? '取消关注' : '关注';
+        }
+
+        function updateArtistDynamicUnavailable(session) {
+            if (!session) return;
+            const button = neteaseBrowserView.querySelector(`[data-music-subscription="artist"][data-music-id="${session.id}"]`);
+            if (!button) return;
+            const loggedIn = !!(neteaseUser && neteaseCookie);
+            button.dataset.musicSubscriptionState = loggedIn ? 'unknown' : 'guest';
+            button.disabled = false;
+            button.textContent = loggedIn ? '重试状态' : '关注';
+        }
+
+        function createArtistSession(baseData, artistId) {
+            const detail = baseData.detailResult.status === 'fulfilled'
+                ? baseData.detailResult.value?.data?.artist
+                : null;
+            if (!detail) {
+                throw baseData.detailResult.reason || new Error('没有找到这位歌手');
+            }
             const artist = normalizeMusicArtist(detail);
-            const dynamic = settled[1].status === 'fulfilled' ? settled[1].value : null;
-            const topSongs = settled[2].status === 'fulfilled' ? (settled[2].value.songs || []) : [];
-            const topContextId = topSongs.length ? registerMusicContext(topSongs, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name }) : '';
+            const topSongs = baseData.topResult.status === 'fulfilled'
+                ? (baseData.topResult.value?.songs || [])
+                : [];
+            const topContextId = topSongs.length
+                ? registerMusicContext(topSongs, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name })
+                : '';
+            return {
+                id: artistId,
+                artist,
+                topSongs,
+                topContextId,
+                topError: baseData.topResult.status === 'rejected' ? baseData.topResult.reason : null,
+                dynamic: null
+            };
+        }
+
+        function renderArtistShell(session, route, dynamic = null) {
+            const { artist, topSongs, topContextId } = session;
             const cover = artist.picUrl ? `${artist.picUrl}?param=500y500` : MUSIC_FALLBACK_ARTIST;
-            const meta = [`${artist.musicSize || topSongs.length} 首歌曲`, artist.albumSize ? `${artist.albumSize} 张专辑` : '', artist.mvSize ? `${artist.mvSize} 个 MV` : ''].filter(Boolean).join(' · ');
+            const meta = [
+                `${artist.musicSize || topSongs.length} 首歌曲`,
+                artist.albumSize ? `${artist.albumSize} 张专辑` : '',
+                artist.mvSize ? `${artist.mvSize} 个 MV` : ''
+            ].filter(Boolean).join(' · ');
             neteasePageTitle.textContent = artist.name;
+            neteaseBrowserView.dataset.musicEntityKind = 'artist';
+            neteaseBrowserView.dataset.musicEntityId = String(artist.id);
             neteaseBrowserView.innerHTML = `
                 <section class="music-entity-hero">
                     <img class="music-entity-cover artist" src="${escapeHtml(cover)}" referrerpolicy="no-referrer" alt="${escapeHtml(artist.name)}">
@@ -7130,55 +7957,134 @@ SOFTWARE.
                     ${artist.briefDesc ? `<p class="music-entity-description">${escapeHtml(artist.briefDesc)}</p>` : ''}
                     ${musicEntityActionsHtml(topContextId, {
                         subscriptionType: 'artist', entityId: artist.id, active: !!dynamic?.followed,
-                        activeLabel: '取消关注', inactiveLabel: '关注', subscriptionAvailable: settled[1].status === 'fulfilled'
+                        activeLabel: '取消关注', inactiveLabel: '关注',
+                        subscriptionState: dynamic ? 'known' : (neteaseUser ? 'loading' : 'guest')
                     })}
                 </section>
                 ${artistSubnavHtml(route)}
-                <div id="music-artist-content"></div>`;
-            neteaseBrowserView.querySelector('.music-entity-cover').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_ARTIST; }, { once: true });
-            const content = document.getElementById('music-artist-content');
+                <div id="music-artist-content" aria-live="polite"></div>`;
+            const image = neteaseBrowserView.querySelector('.music-entity-cover');
+            image?.addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_ARTIST; }, { once: true });
+            updateArtistSubnav(route);
+            if (dynamic) updateArtistDynamicState(session, dynamic);
+        }
+
+        function renderArtistContent(session, route, viewData, token, hash) {
+            if (!currentMusicNavigationIs(token, hash)) return;
+            const content = neteaseBrowserView.querySelector('#music-artist-content');
+            if (!content) return;
+            content.innerHTML = '';
+            const { artist, topSongs, topError } = session;
 
             if (route.view === 'overview') {
                 const songsSection = createMusicSection('热门歌曲', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'songs', page: 1 }));
-                if (settled[2].status === 'rejected') songsSection.insertAdjacentHTML('beforeend', musicPartialFailure('热门歌曲'));
-                else if (topSongs.length) renderMusicSongRows(topSongs.slice(0, 10), songsSection, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name }, topSongs);
+                if (topSongs.length) renderMusicSongRows(topSongs.slice(0, 10), songsSection, { sourceType: 'artist-top', sourceId: artist.id, title: artist.name }, topSongs);
+                else if (topError) songsSection.insertAdjacentHTML('beforeend', musicPartialFailure('热门歌曲', 'top'));
                 else songsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无歌曲</div>');
                 content.appendChild(songsSection);
 
                 const albumsSection = createMusicSection('专辑与 EP', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'albums', page: 1 }));
-                if (settled[3].status === 'rejected') albumsSection.insertAdjacentHTML('beforeend', musicPartialFailure('专辑'));
-                else if (settled[3].value.hotAlbums?.length) renderMusicAlbumCards(settled[3].value.hotAlbums, albumsSection);
+                if (viewData.albumsResult.status === 'rejected') albumsSection.insertAdjacentHTML('beforeend', musicPartialFailure('专辑', 'albums'));
+                else if (viewData.albumsResult.value.hotAlbums?.length) renderMusicAlbumCards(viewData.albumsResult.value.hotAlbums.slice(0, 6), albumsSection);
                 else albumsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无专辑</div>');
                 content.appendChild(albumsSection);
 
                 const mvsSection = createMusicSection('MV', () => navigateMusic({ kind: 'artist', id: artist.id, view: 'mvs', page: 1 }));
-                if (settled[4].status === 'rejected') mvsSection.insertAdjacentHTML('beforeend', musicPartialFailure('MV'));
-                else if (settled[4].value.mvs?.length) renderMusicMvCards(settled[4].value.mvs, mvsSection);
+                if (viewData.mvsResult.status === 'rejected') mvsSection.insertAdjacentHTML('beforeend', musicPartialFailure('MV', 'mvs'));
+                else if (viewData.mvsResult.value.mvs?.length) renderMusicMvCards(viewData.mvsResult.value.mvs.slice(0, 6), mvsSection);
                 else mvsSection.insertAdjacentHTML('beforeend', '<div class="netease-empty">暂无 MV</div>');
                 content.appendChild(mvsSection);
                 return;
             }
 
-            const extra = settled[3];
-            if (extra.status === 'rejected') {
-                content.innerHTML = musicPartialFailure(route.view === 'songs' ? '歌曲' : route.view === 'albums' ? '专辑' : 'MV');
-                return;
-            }
+            const extra = viewData.result;
             if (route.view === 'songs') {
-                const songs = extra.value.songs || [];
+                const songs = extra.songs || [];
                 if (songs.length) renderMusicSongRows(songs, content, { sourceType: 'artist-songs', sourceId: artist.id, title: artist.name, page: route.page }, songs);
                 else content.innerHTML = '<div class="netease-empty">这一页没有歌曲</div>';
-                renderMusicPagination(content, route.page, !!extra.value.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'songs', page }), Number(extra.value.total || 0));
+                renderMusicPagination(content, route.page, !!extra.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'songs', page }), Number(extra.total || 0));
             } else if (route.view === 'albums') {
-                const albums = extra.value.hotAlbums || [];
+                const albums = extra.hotAlbums || [];
                 if (albums.length) renderMusicAlbumCards(albums, content);
                 else content.innerHTML = '<div class="netease-empty">这一页没有专辑</div>';
-                renderMusicPagination(content, route.page, !!extra.value.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'albums', page }));
+                renderMusicPagination(content, route.page, !!extra.more, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'albums', page }));
             } else {
-                const mvs = extra.value.mvs || [];
+                const mvs = extra.mvs || [];
                 if (mvs.length) renderMusicMvCards(mvs, content);
                 else content.innerHTML = '<div class="netease-empty">这一页没有 MV</div>';
-                renderMusicPagination(content, route.page, !!extra.value.hasMore, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'mvs', page }));
+                renderMusicPagination(content, route.page, !!extra.hasMore, page => navigateMusic({ kind: 'artist', id: artist.id, view: 'mvs', page }));
+            }
+        }
+
+        async function renderMusicArtistPage(route, token, signal, options = {}) {
+            const hash = window.location.hash;
+            const session = musicBrowserState.artistSession;
+            const sameEntity = !options.forceRefresh && !options.forceRefreshBase && session?.id === Number(route.id)
+                && neteaseBrowserView.dataset.musicEntityId === String(route.id)
+                && !!neteaseBrowserView.querySelector('#music-artist-content');
+            const dynamicPromise = fetchMusicDynamicShared(`/artist/detail/dynamic?id=${route.id}`, {
+                signal,
+                forceRefresh: !!options.forceRefreshDynamic
+            })
+                .catch(error => {
+                    if (error?.name !== 'AbortError' && currentMusicNavigationIs(token, hash)) log(`歌手状态读取失败: ${error?.message || error}`, 'warn');
+                    return null;
+                });
+
+            let activeSession = sameEntity ? session : null;
+            if (!activeSession) {
+                neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入歌手...</div>';
+                const baseData = await fetchArtistBaseData(route.id, signal, options);
+                if (!currentMusicNavigationIs(token, hash)) return;
+                activeSession = createArtistSession(baseData, Number(route.id));
+                musicBrowserState.artistSession = activeSession;
+                renderArtistShell(activeSession, route);
+            } else {
+                updateArtistSubnav(route);
+            }
+
+            dynamicPromise.then(dynamic => {
+                if (dynamic && currentMusicNavigationIs(token, hash) && musicBrowserState.artistSession === activeSession) {
+                    updateArtistDynamicState(activeSession, dynamic);
+                } else if (!dynamic && currentMusicNavigationIs(token, hash) && musicBrowserState.artistSession === activeSession) {
+                    updateArtistDynamicUnavailable(activeSession);
+                }
+            });
+
+            const content = neteaseBrowserView.querySelector('#music-artist-content');
+            if (content) {
+                content.setAttribute('aria-busy', 'true');
+                content.innerHTML = '<div class="netease-loading">正在载入内容...</div>';
+            }
+            const viewData = await fetchArtistViewData(route, signal, options);
+            if (!currentMusicNavigationIs(token, hash) || musicBrowserState.artistSession !== activeSession) return;
+            renderArtistContent(activeSession, route, viewData, token, hash);
+            content?.removeAttribute('aria-busy');
+        }
+
+        async function refreshMusicSubscriptionState(button) {
+            const type = button.dataset.musicSubscription;
+            const id = positiveMusicInteger(button.dataset.musicId);
+            if (!id || !['album', 'artist'].includes(type)) return;
+            const snapshot = captureAuthSnapshot();
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '读取中...';
+            try {
+                const endpoint = type === 'album' ? '/album/detail/dynamic' : '/artist/detail/dynamic';
+                const dynamic = await fetchMusicDynamic(`${endpoint}?id=${id}`, musicBrowserState.controller?.signal, { forceRefresh: true });
+                if (!isAuthSnapshotCurrent(snapshot)) return;
+                const active = type === 'album' ? !!dynamic.isSub : !!dynamic.followed;
+                button.dataset.active = active ? 'true' : 'false';
+                button.dataset.musicSubscriptionState = 'known';
+                button.disabled = false;
+                button.textContent = active ? (type === 'album' ? '取消收藏' : '取消关注') : (type === 'album' ? '收藏' : '关注');
+            } catch (error) {
+                if (error?.name === 'AbortError') return;
+                button.dataset.musicSubscriptionState = 'unknown';
+                button.disabled = false;
+                button.textContent = '重试状态';
+                if (originalText !== '重试状态') log(`账号状态重试失败: ${error?.message || error}`, 'warn');
             }
         }
 
@@ -7189,6 +8095,10 @@ SOFTWARE.
             if (!neteaseUser || !neteaseCookie) {
                 musicBrowserState.authReturnHash = window.location.hash;
                 await showQRLogin();
+                return;
+            }
+            if (button.dataset.musicSubscriptionState === 'unknown') {
+                await refreshMusicSubscriptionState(button);
                 return;
             }
             const wasActive = button.dataset.active === 'true';
@@ -7211,7 +8121,7 @@ SOFTWARE.
                     }
                     throw new Error(json?.message || `HTTP ${response.status}`);
                 }
-                musicBrowserState.dynamicCache.clear();
+                clearAccountJsonCache();
                 const scrollTop = neteaseBrowserScroll.scrollTop;
                 await renderMusicRoute(parseMusicRoute(), scrollTop);
                 log(`${type === 'album' ? '专辑收藏' : '歌手关注'}已更新`, 'success');
@@ -7260,8 +8170,19 @@ SOFTWARE.
                 navigateMusic({ kind: 'search', q: '', type: 'all', page: 1 });
                 return;
             }
+            const retryView = event.target.closest('[data-music-retry-view]')?.dataset.musicRetryView;
+            if (retryView) {
+                    const route = parseMusicRoute();
+                if (route?.kind === 'artist') {
+                    const options = retryView === 'albums' || retryView === 'mvs'
+                        ? { forceRefreshViews: new Set([retryView]) }
+                        : { forceRefreshBase: true };
+                    renderMusicRoute(route, neteaseBrowserScroll.scrollTop, options);
+                }
+                return;
+            }
             if (event.target.closest('[data-music-reload]')) {
-                renderMusicRoute(parseMusicRoute(), neteaseBrowserScroll.scrollTop);
+                renderMusicRoute(parseMusicRoute(), neteaseBrowserScroll.scrollTop, { forceRefresh: true });
                 return;
             }
             const row = event.target.closest('.netease-item[data-music-context]');
@@ -7378,8 +8299,11 @@ SOFTWARE.
                     if (!isPlaybackActionCurrent(myPlayToken)) return;
                     if (detailJson?.songs?.[0]) {
                         const detail = detailJson.songs[0];
-                        cover = toHttps(detail.al?.picUrl || '');
-                        artists = (detail.ar || []).map(a => a.name).join(', ');
+                        song = detail;
+                        songName = detail.name || songName;
+                        cover = toHttps(detail.album?.picUrl || detail.al?.picUrl || '');
+                        artists = (detail.artists || detail.ar || []).map(a => a.name).join(', ');
+                        applyNeteaseSongDetailToPlaylist(detail);
                     }
                 } catch (e) {}
             }
@@ -7457,17 +8381,10 @@ SOFTWARE.
 
                         try { fetchLyricById(songId, { isCurrent: () => isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
-                        // 预取下一首的元数据（并发1）
+                        // 批量预取后续详情，但仍只预热下一首音频 URL。
                         try {
-                            const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
-                            if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
-                                const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
-                                if (nextId) {
-                                    const cookieParamLocal = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                                    cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParamLocal}`), { useQueue: true }).catch(()=>{});
-                                    prewarmNextNeteaseSongUrl();
-                                }
-                            }
+                            prefetchUpcomingNeteaseDetails(5);
+                            prewarmNextNeteaseSongUrl();
                         } catch (_) {}
 
                         return;
@@ -7583,19 +8500,10 @@ SOFTWARE.
                 // 直接用歌曲ID获取歌词（已知ID无需搜索）
                 try { fetchLyricById(songId, { signal: controller.signal, isCurrent: () => isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
-                    // 预取下一首的元数据（并发1），带 cookie 以避免权限/匹配问题
+                    // 批量预取后续详情，但仍只预热下一首音频 URL。
                     try {
-                        const nextIdx = (curIdx + 1) < playlist.length ? (curIdx + 1) : null;
-                        if (nextIdx !== null && playlist[nextIdx] && playlist[nextIdx].netease) {
-                            const nextId = playlist[nextIdx].songId || playlist[nextIdx].songData?.id;
-                            if (nextId) {
-                                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                                // 预取 song/detail 和 song/url（短时缓存）
-                                // 使用 cachedFetchJson 替代 prefetchFetch，确保结果被写入 IDB 缓存
-                                cachedFetchJson(buildApiUrl(`/song/detail?ids=${nextId}${cookieParam}`), { useQueue: true }).catch(()=>{});
-                                prewarmNextNeteaseSongUrl();
-                            }
-                        }
+                        prefetchUpcomingNeteaseDetails(5);
+                        prewarmNextNeteaseSongUrl();
                     } catch (_) {}
                 
             } catch (e) {
@@ -7614,9 +8522,24 @@ SOFTWARE.
         
         // 取消歌单请求
         window.cancelPlaylistRequest = function() {
-            if (window.currentPlaylistAbortController) {
-                window.currentPlaylistAbortController.abort();
-                window.currentPlaylistAbortController = null;
+            const controller = window.currentPlaylistAbortController;
+            const token = window._currentPlaylistLoadToken;
+            if (controller) controller.abort();
+            window.currentPlaylistAbortController = null;
+
+            const data = currentPlaylistData;
+            if (data && data.loadToken === token) {
+                const wasWaitingForNext = playlistPendingAdvance || !!data.pendingAdvance;
+                data.loading = false;
+                data.cancelled = true;
+                data.tracksLoadIncomplete = data.loadedCount < data.totalCount || data.failedBatches.length > 0;
+                data.pendingAdvance = false;
+                playlistPendingAdvance = false;
+                if (wasWaitingForNext && playbackState.status === 'loading') setPlaybackStatus('paused');
+                playlistBtn.disabled = false;
+                renderPlaylistLoadProgress(data, token);
+                updatePlaylistLoadStatus('已取消加载，保留已加载歌曲', data.loadedCount, data.totalCount, token, 'done');
+            } else {
                 playlistResults.innerHTML = '<div class="netease-empty">请求已取消</div>';
             }
         };
@@ -7659,17 +8582,159 @@ SOFTWARE.
             }
         }
 
-        function updatePlaylistLoadStatus(message, loaded = 0, total = 0, token = window._currentPlaylistLoadToken) {
+        function updatePlaylistLoadStatus(message, loaded = 0, total = 0, token = window._currentPlaylistLoadToken, action = 'cancel') {
             if (token !== window._currentPlaylistLoadToken) return;
             let status = playlistResults.querySelector('.playlist-load-status');
             if (!status) {
                 status = document.createElement('div');
                 status.className = 'playlist-load-status';
                 status.innerHTML = '<span class="playlist-load-message"></span><button type="button" class="music-retry-btn">取消</button>';
-                status.querySelector('button').onclick = window.cancelPlaylistRequest;
                 playlistResults.prepend(status);
             }
             status.querySelector('.playlist-load-message').textContent = total > 0 ? `${message} ${loaded}/${total}` : message;
+            const actionButton = status.querySelector('button');
+            if (action === 'cancel') {
+                actionButton.textContent = '取消';
+                actionButton.disabled = false;
+                actionButton.onclick = window.cancelPlaylistRequest;
+            } else {
+                actionButton.textContent = '已结束';
+                actionButton.disabled = true;
+                actionButton.onclick = null;
+            }
+        }
+
+        function getPlaylistTrackIds(data) {
+            return (Array.isArray(data?.trackIds) ? data.trackIds : [])
+                .map(item => positiveMusicInteger(typeof item === 'object' ? item?.id : item, 0))
+                .filter(Boolean);
+        }
+
+        function buildPlaylistSongDetailBatches(ids, cookieParam = '') {
+            const batches = [];
+            const maxUrlLength = 7000;
+            let batch = [];
+            ids.forEach(id => {
+                const candidate = [...batch, id];
+                const path = `/song/detail?ids=${encodeURIComponent(candidate.join(','))}${cookieParam}`;
+                if (batch.length && buildApiUrl(path).length > maxUrlLength) {
+                    batches.push(batch);
+                    batch = [id];
+                } else {
+                    batch = candidate;
+                }
+            });
+            if (batch.length) batches.push(batch);
+            return batches;
+        }
+
+        function createOnlinePlaylistEntry(song, slotIndex = -1) {
+            const normalized = normalizeMusicSong(song);
+            const artists = normalized.artists.map(artist => artist.name).join(', ');
+            return {
+                name: `${normalized.name}${artists ? ` - ${artists}` : ''}`,
+                netease: true,
+                songId: normalized.id,
+                songData: normalized.songData,
+                playlistSlot: slotIndex
+            };
+        }
+
+        function getLoadedPlaylistTracks(data) {
+            return Array.isArray(data?.tracks) ? data.tracks.filter(Boolean) : [];
+        }
+
+        function getContiguousPlaylistCount(data) {
+            if (!Array.isArray(data?.tracks)) return 0;
+            let count = 0;
+            while (count < data.tracks.length && data.tracks[count]) count++;
+            return count;
+        }
+
+        function updatePlaylistImportButton(data) {
+            const button = playlistPreview.querySelector('.netease-import-btn');
+            if (!button) return;
+            const loaded = Number(data?.loadedCount || 0);
+            const total = Number(data?.totalCount || 0);
+            const contiguous = getContiguousPlaylistCount(data);
+            button.disabled = contiguous <= 0;
+            if (data?.imported) {
+                button.textContent = data.loading
+                    ? `已导入 ${playlist.length}/${total} 首 · 后台加载中`
+                    : `已导入 ${playlist.length}/${total || loaded} 首`;
+            } else if (!loaded) {
+                button.textContent = '等待首批歌曲…';
+            } else if (data.loading) {
+                button.textContent = `播放已加载 ${contiguous}/${total} 首`;
+            } else if (data.tracksLoadIncomplete) {
+                button.textContent = `导入已加载 ${loaded}/${total} 首`;
+            } else {
+                button.textContent = `导入全部 ${loaded} 首`;
+            }
+        }
+
+        function settlePlaylistAdvance(data) {
+            if (!data?.importToken || activePlaylistQueueToken !== data.importToken || data.queueRef !== playlist) return;
+            const waiting = playlistPendingAdvance || !!data.pendingAdvance;
+            if (!waiting) return;
+
+            if (curIdx + 1 < playlist.length) {
+                playlistPendingAdvance = false;
+                data.pendingAdvance = false;
+                playTrackFromPlaylist(curIdx + 1);
+                return;
+            }
+
+            if (data.loading) {
+                setPlaybackStatus('loading');
+                showImportSummary('正在等待歌单继续加载下一首…', false);
+                return;
+            }
+
+            playlistPendingAdvance = false;
+            data.pendingAdvance = false;
+            if (data.cancelled || data.tracksLoadIncomplete) {
+                setPlaybackStatus('paused');
+                showImportSummary(`歌单加载已结束，当前没有可播放的下一首（已加载 ${data.loadedCount}/${data.totalCount} 首）`, false);
+                log('Playlist advance stopped because the remaining tracks are unavailable', 'warn');
+                return;
+            }
+            handleNext();
+        }
+
+        function appendLoadedTracksToImportedQueue(data) {
+            if (!data?.importToken || activePlaylistQueueToken !== data.importToken || data.queueRef !== playlist) return;
+            const previousLength = playlist.length;
+            while (data.nextQueueSlot < data.tracks.length) {
+                const song = data.tracks[data.nextQueueSlot];
+                if (!song && data.loading) break;
+                if (song) playlist.push(createOnlinePlaylistEntry(song, data.nextQueueSlot));
+                data.nextQueueSlot++;
+            }
+            if (playlist.length === previousLength) {
+                settlePlaylistAdvance(data);
+                return;
+            }
+
+            if (el.plContainer.children.length === previousLength) appendPlaylistRows(previousLength);
+            else renderPlaylist();
+            log(`歌单后台追加 ${playlist.length - previousLength} 首，当前 ${playlist.length}/${data.totalCount} 首`, 'success');
+            updatePlaylistImportButton(data);
+            settlePlaylistAdvance(data);
+        }
+
+        function renderPlaylistLoadProgress(data, token) {
+            if (!data || token !== window._currentPlaylistLoadToken) return;
+            const loadedTracks = getLoadedPlaylistTracks(data);
+            const pageCount = Math.max(1, Math.ceil(loadedTracks.length / SONGS_PER_PAGE));
+            const page = Math.min(typeof renderSongList._page === 'number' ? renderSongList._page : 0, pageCount - 1);
+            renderSongList(loadedTracks, playlistResults, page);
+            const message = data.loading
+                ? (data.imported ? '后台加载歌曲...' : '可导入已加载歌曲...')
+                : (data.tracksLoadIncomplete ? '歌单加载完成，但有歌曲未获取...' : '歌单歌曲加载完成');
+            updatePlaylistLoadStatus(message, data.loadedCount, data.totalCount, token, data.loading ? 'cancel' : 'done');
+            updatePlaylistImportButton(data);
+            appendLoadedTracksToImportedQueue(data);
         }
 
         async function fetchPlaylist(input) {
@@ -7708,46 +8773,98 @@ SOFTWARE.
                 if (!isCurrent()) return;
                 if (detailJson.code !== 200 || !detailJson.playlist) throw new Error('歌单不存在或当前账号无权访问');
 
-                const data = detailJson.playlist;
-                const trackCount = Math.max(0, Number(data.trackCount) || 0);
-                currentPlaylistData = { ...data, tracks: [], tracksLoadIncomplete: false, failedOffsets: [] };
+            const data = detailJson.playlist;
+            const trackIds = getPlaylistTrackIds(data);
+            const totalCount = trackIds.length || Math.max(0, Number(data.trackCount) || 0);
+            const slots = new Array(totalCount).fill(null);
+            const slotIndexesById = new Map();
+            trackIds.forEach((id, index) => {
+                if (!slotIndexesById.has(id)) slotIndexesById.set(id, []);
+                slotIndexesById.get(id).push(index);
+            });
+            currentPlaylistData = {
+                ...data,
+                playlistId,
+                trackIds,
+                totalCount,
+                tracks: slots,
+                loadedCount: 0,
+                loading: true,
+                tracksLoadIncomplete: false,
+                failedBatches: [],
+                slotIndexesById,
+                imported: false,
+                importToken: null,
+                queueRef: null,
+                nextQueueSlot: 0,
+                loadToken: myLoadToken
+            };
                 playlistPreview.innerHTML = `
                     <div class="netease-playlist-info">
                         <img class="netease-playlist-cover" src="${escapeHtml(toHttps(data.coverImgUrl))}?param=200y200" loading="lazy" decoding="async" alt="歌单封面">
                         <div class="netease-playlist-meta">
                             <div class="netease-playlist-name">${escapeHtml(data.name)}</div>
-                            <div class="netease-playlist-desc">${trackCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount / 10000) + '万播放' : ''}</div>
-                            <button class="netease-import-btn" onclick="importPlaylistToQueue()">导入到播放列表</button>
+                        <div class="netease-playlist-desc">${totalCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount / 10000) + '万播放' : ''}</div>
+                            <button class="netease-import-btn" onclick="importPlaylistToQueue()" disabled>等待首批歌曲…</button>
                         </div>
                     </div>`;
 
-                if (!trackCount) {
+                if (!totalCount) {
+                    currentPlaylistData.loading = false;
                     playlistResults.innerHTML = '<div class="netease-empty">这个歌单没有歌曲</div>';
                     return;
                 }
 
-                const limit = 50;
-                const offsets = [];
-                for (let offset = 0; offset < trackCount; offset += limit) offsets.push(offset);
-                const results = new Map();
-                const failedOffsets = new Set();
-                let cursor = 0;
-
-                const renderProgress = () => {
-                    if (!isCurrent()) return;
-                    const tracks = Array.from(results.keys()).sort((a, b) => a - b).flatMap(offset => results.get(offset));
-                    renderSongList(tracks, playlistResults, typeof renderSongList._page === 'number' ? renderSongList._page : 0);
-                    updatePlaylistLoadStatus('正在加载歌曲...', tracks.length, trackCount, myLoadToken);
+                const assignSongs = songs => {
+                    if (!trackIds.length) {
+                        (Array.isArray(songs) ? songs : []).forEach(song => {
+                            const emptyIndex = currentPlaylistData.tracks.findIndex(item => !item);
+                            if (emptyIndex >= 0) {
+                                currentPlaylistData.tracks[emptyIndex] = song;
+                                currentPlaylistData.loadedCount++;
+                            }
+                        });
+                        return;
+                    }
+                    (Array.isArray(songs) ? songs : []).forEach(song => {
+                        const id = positiveMusicInteger(song?.id, 0);
+                        const slotsForId = currentPlaylistData.slotIndexesById.get(id) || [];
+                        for (const slotIndex of slotsForId) {
+                            if (!currentPlaylistData.tracks[slotIndex]) {
+                                currentPlaylistData.tracks[slotIndex] = song;
+                                currentPlaylistData.loadedCount++;
+                            }
+                        }
+                    });
                 };
 
-                const fetchBatch = async offset => {
-                    const url = buildApiUrl(`/playlist/track/all?id=${playlistId}&limit=${limit}&offset=${offset}${cookieParam}`);
+                assignSongs(Array.isArray(data.tracks) ? data.tracks : []);
+                if (currentPlaylistData.loadedCount) renderPlaylistLoadProgress(currentPlaylistData, myLoadToken);
+                playlistBtn.disabled = false;
+
+                const missingIds = [];
+                const missingSet = new Set();
+                currentPlaylistData.tracks.forEach((song, index) => {
+                    if (song) return;
+                    const id = trackIds[index];
+                    if (id && !missingSet.has(id)) {
+                        missingSet.add(id);
+                        missingIds.push(id);
+                    }
+                });
+                const legacyBaseOffset = currentPlaylistData.loadedCount;
+
+                const fetchBatch = async (ids, batchIndex, legacy = false) => {
+                    const path = legacy
+                        ? `/playlist/track/all?id=${playlistId}&limit=50&offset=${legacyBaseOffset + batchIndex * 50}${cookieParam}`
+                        : `/song/detail?ids=${encodeURIComponent(ids.join(','))}${cookieParam}`;
+                    const url = buildApiUrl(path);
                     let delay = 300;
                     let lastError = null;
                     for (let attempt = 0; attempt < 4; attempt++) {
                         if (!isCurrent()) throw new DOMException('aborted', 'AbortError');
                         try {
-                            const response = await fetchWithStageTimeout(url, { signal }, 12_000, `歌曲批次 ${offset / limit + 1} 超时`);
+                            const response = await fetchWithStageTimeout(url, { signal }, 12_000, `歌曲批次 ${batchIndex + 1} 超时`);
                             if (response.status === 429 || response.status >= 500) {
                                 const retryError = new Error(`歌曲批次请求失败: HTTP ${response.status}`);
                                 retryError.retryable = true;
@@ -7768,33 +8885,38 @@ SOFTWARE.
                     throw lastError || new Error('歌曲批次加载失败');
                 };
 
+                const batches = trackIds.length
+                    ? buildPlaylistSongDetailBatches(missingIds, cookieParam)
+                    : Array.from({ length: Math.ceil(Math.max(0, totalCount - currentPlaylistData.loadedCount) / 50) }, (_, index) => index);
+                let cursor = 0;
                 const worker = async () => {
                     while (isCurrent()) {
-                        const index = cursor++;
-                        if (index >= offsets.length) return;
-                        const offset = offsets[index];
+                        const batchIndex = cursor++;
+                        if (batchIndex >= batches.length) return;
                         try {
-                            results.set(offset, await fetchBatch(offset));
+                            const songs = trackIds.length
+                                ? await fetchBatch(batches[batchIndex], batchIndex)
+                                : await fetchBatch([], batchIndex, true);
+                            if (!isCurrent()) return;
+                            assignSongs(songs);
                         } catch (error) {
                             if (error.name === 'AbortError' || signal.aborted) return;
-                            failedOffsets.add(offset);
-                            log(`歌单批次 ${offset / limit + 1} 加载失败: ${error.message}`, 'warn');
+                            currentPlaylistData.failedBatches.push(batchIndex);
+                            log(`歌单批次 ${batchIndex + 1} 加载失败: ${error.message}`, 'warn');
                         }
-                        renderProgress();
+                        renderPlaylistLoadProgress(currentPlaylistData, myLoadToken);
                     }
                 };
 
-                await Promise.all(Array.from({ length: Math.min(3, offsets.length) }, () => worker()));
+                await Promise.all(Array.from({ length: Math.min(2, batches.length) }, () => worker()));
                 if (!isCurrent()) return;
-                const tracks = Array.from(results.keys()).sort((a, b) => a - b).flatMap(offset => results.get(offset));
-                renderSongList(tracks, playlistResults, 0);
-                currentPlaylistData.tracks = tracks;
-                currentPlaylistData.failedOffsets = Array.from(failedOffsets).sort((a, b) => a - b);
-                currentPlaylistData.tracksLoadIncomplete = failedOffsets.size > 0 || tracks.length < trackCount;
+                currentPlaylistData.loading = false;
+                currentPlaylistData.tracksLoadIncomplete = currentPlaylistData.failedBatches.length > 0 || currentPlaylistData.loadedCount < totalCount;
+                renderPlaylistLoadProgress(currentPlaylistData, myLoadToken);
                 if (currentPlaylistData.tracksLoadIncomplete) {
                     const warning = document.createElement('div');
                     warning.className = 'netease-empty';
-                    warning.textContent = `歌单加载不完整：已加载 ${tracks.length}/${trackCount} 首，请重试后再导入。`;
+                    warning.textContent = `歌单加载不完整：已加载 ${currentPlaylistData.loadedCount}/${totalCount} 首，可先导入已加载歌曲。`;
                     playlistResults.prepend(warning);
                 }
             } catch (error) {
@@ -7811,34 +8933,37 @@ SOFTWARE.
 
         // 导入歌单到播放队列
         window.importPlaylistToQueue = async function() {
-            if (!currentPlaylistData || !currentPlaylistData.tracks) return;
-            if (currentPlaylistData.tracksLoadIncomplete) {
-                alert('歌单还没有完整加载完成，请重新获取歌单后再导入。');
+            const data = currentPlaylistData;
+            if (!data || !Array.isArray(data.tracks)) return;
+            if (data.imported) {
+                appendLoadedTracksToImportedQueue(data);
                 return;
             }
-            
-            const tracks = currentPlaylistData.tracks;
-            log(`Importing ${tracks.length} songs from playlist`);
-            
-            // 创建播放列表条目
-            playlist = tracks.map(song => {
-                const artists = (song.ar || []).map(a => a.name).join(', ');
-                return {
-                    name: `${song.name} - ${artists}`,
-                    netease: true,
-                    songId: song.id,
-                    songData: song
-                };
-            });
-            
+
+            const contiguousCount = getContiguousPlaylistCount(data);
+            if (!contiguousCount) {
+                alert('首批歌曲还没有加载完成，请稍候再试。');
+                return;
+            }
+
+            const importToken = `playlist-${data.loadToken}-${Date.now()}`;
+            const tracks = data.tracks.slice(0, contiguousCount);
+            playlist = tracks.map((song, index) => createOnlinePlaylistEntry(song, index));
+            activePlaylistQueueToken = importToken;
+            playlistPendingAdvance = false;
+            data.imported = true;
+            data.importToken = importToken;
+            data.queueRef = playlist;
+            data.nextQueueSlot = contiguousCount;
             curIdx = -1;
             renderPlaylist();
             closeMusicBrowser();
             document.getElementById('playlist-sidebar').classList.add('show');
             observePlaylistCovers();
             
-            log(`Imported ${playlist.length} songs`, 'success');
-            
+            updatePlaylistImportButton(data);
+            log(`Imported ${playlist.length}/${data.totalCount} songs; background loading continues`, 'success');
+            showImportSummary(`已导入 ${playlist.length}/${data.totalCount} 首，剩余歌曲后台加载中`, false);
             // 自动播放第一首
             if (playlist.length > 0) {
                 playTrackFromPlaylist(0);
@@ -7849,6 +8974,13 @@ SOFTWARE.
         async function playTrackFromPlaylist(i) {
             if (i < 0 || i >= playlist.length) return;
             const track = playlist[i];
+            const importedQueue = currentPlaylistData?.imported
+                && currentPlaylistData.importToken === activePlaylistQueueToken
+                && currentPlaylistData.queueRef === playlist;
+            if (importedQueue) {
+                playlistPendingAdvance = false;
+                currentPlaylistData.pendingAdvance = false;
+            }
             curIdx = i;
             ensurePlaylistRenderedAndActive();
 
@@ -7912,6 +9044,21 @@ SOFTWARE.
             if (isAuto && playMode === 2 && audioBuffer) {
                 log('Single Loop: Auto Replay ⚡️');
                 startAudio(0);
+                return;
+            }
+
+            const loadingImportedPlaylist = currentPlaylistData?.imported
+                && currentPlaylistData.importToken === activePlaylistQueueToken
+                && currentPlaylistData.queueRef === playlist
+                && currentPlaylistData.loading
+                && playMode === 0
+                && curIdx >= playlist.length - 1;
+            if (loadingImportedPlaylist) {
+                playlistPendingAdvance = true;
+                currentPlaylistData.pendingAdvance = true;
+                setPlaybackStatus('loading');
+                showImportSummary('正在等待歌单继续加载下一首…', false);
+                log('Playlist reached loaded end; waiting for the next batch', 'success');
                 return;
             }
             // 确定目标下一首索引（在决定后再评估是否取消预取，以便在手动切歌时复用预加载）
@@ -8068,8 +9215,12 @@ SOFTWARE.
 
         // ========== 结构化播放列表持久化 ==========
         const PLAYER_STATE_KEY = 'current-playlist';
-        const PLAYER_STATE_SCHEMA = 2;
+        const PLAYER_SNAPSHOT_KEY = 'aurora_playlist_snapshot_v3';
+        const PLAYER_STATE_SCHEMA = 3;
         let playlistStateSaveTimer = null;
+        let playlistStateRevision = 0;
+        let playlistStatePending = null;
+        let playlistStateWriting = false;
 
         function normalizePersistedArtist(artist = {}) {
             return { id: positiveMusicInteger(artist.id, 0), name: String(artist.name || '') };
@@ -8090,31 +9241,171 @@ SOFTWARE.
             };
         }
 
-        async function saveCurrentPlaylist() {
+        function serializeLocalTrack(track) {
+            const file = track.file || track.asset?.file || null;
+            const asset = track.asset || {};
+            return {
+                type: 'local',
+                name: String(track.name || file?.name || asset.name || '本地文件'),
+                relativePath: String(asset.relativePath || file?.webkitRelativePath || file?.name || track.name || ''),
+                pathKey: String(track.sourceKey || asset.pathKey || ''),
+                size: Number(file?.size || asset.file?.size || 0),
+                lastModified: Number(file?.lastModified || asset.file?.lastModified || 0),
+                handle: track.fileHandle || asset.handle || null
+            };
+        }
+
+        function getPersistedPlaylistSource() {
+            const data = currentPlaylistData;
+            if (!data?.imported || data.importToken !== activePlaylistQueueToken || data.queueRef !== playlist) return null;
+            return {
+                type: 'netease-playlist',
+                id: String(data.playlistId || ''),
+                loadedCount: Number(data.loadedCount || playlist.length),
+                totalCount: Number(data.totalCount || playlist.length),
+                loading: !!data.loading
+            };
+        }
+
+        function serializePlaylistTrack(track) {
+            if (track?.netease) return { type: 'netease', ...serializeNeteaseTrack(track) };
+            return serializeLocalTrack(track || {});
+        }
+
+        function buildPlaylistState() {
+            if (!Array.isArray(playlist) || !playlist.length) return null;
+            playlistStateRevision = Math.max(playlistStateRevision + 1, Date.now());
+            return {
+                schema: PLAYER_STATE_SCHEMA,
+                revision: playlistStateRevision,
+                savedAt: Date.now(),
+                selectedIndex: Math.max(0, Math.min(playlist.length - 1, Number(curIdx) || 0)),
+                source: getPersistedPlaylistSource(),
+                tracks: playlist.map(serializePlaylistTrack)
+            };
+        }
+
+        function createCompactPlaylistState(state) {
+            return {
+                schema: state.schema,
+                revision: state.revision,
+                savedAt: state.savedAt,
+                selectedIndex: state.selectedIndex,
+                source: state.source,
+                tracks: state.tracks.map(track => {
+                    const compact = { ...track };
+                    delete compact.handle;
+                    return compact;
+                })
+            };
+        }
+
+        function writeCompactPlaylistState(state) {
             try {
-                const entries = playlist.map((track, sourceIndex) => ({ track, sourceIndex }))
-                    .filter(entry => entry.track.netease)
-                    .map(entry => ({ ...serializeNeteaseTrack(entry.track), sourceIndex: entry.sourceIndex }));
-                if (!entries.length) {
-                    await idbDelete(PLAYER_STATE_KEY, IDB_PLAYER_STORE);
-                    return;
-                }
-                const selected = entries.findIndex(entry => entry.sourceIndex === curIdx);
-                const tracks = entries.map(({ sourceIndex, ...track }) => track);
-                await idbSet(PLAYER_STATE_KEY, {
-                    schema: PLAYER_STATE_SCHEMA,
-                    savedAt: Date.now(),
-                    selectedIndex: selected >= 0 ? selected : 0,
-                    tracks
-                }, IDB_PLAYER_STORE);
+                localStorage.setItem(PLAYER_SNAPSHOT_KEY, JSON.stringify(createCompactPlaylistState(state)));
+                return true;
             } catch (error) {
-                console.warn('saveCurrentPlaylist error', error);
+                console.warn('Compact playlist snapshot failed:', error);
+                return false;
             }
+        }
+
+        async function persistPlaylistState(state) {
+            let ok = await idbSet(PLAYER_STATE_KEY, state, IDB_PLAYER_STORE);
+            if (ok) return true;
+            const withoutHandles = {
+                ...state,
+                tracks: state.tracks.map(track => {
+                    const copy = { ...track };
+                    delete copy.handle;
+                    return copy;
+                })
+            };
+            ok = await idbSet(PLAYER_STATE_KEY, withoutHandles, IDB_PLAYER_STORE);
+            if (!ok) console.warn('IndexedDB playlist persistence unavailable; compact snapshot remains available');
+            return ok;
+        }
+
+        function drainPlaylistStateWrites() {
+            if (playlistStateWriting) return;
+            playlistStateWriting = true;
+            (async () => {
+                while (playlistStatePending) {
+                    const nextState = playlistStatePending;
+                    playlistStatePending = null;
+                    try { await persistPlaylistState(nextState); }
+                    catch (error) { console.warn('saveCurrentPlaylist error', error); }
+                }
+                playlistStateWriting = false;
+            })();
+        }
+
+        function saveCurrentPlaylist() {
+            const state = buildPlaylistState();
+            if (!state) return Promise.resolve(false);
+            writeCompactPlaylistState(state);
+            playlistStatePending = state;
+            drainPlaylistStateWrites();
+            return Promise.resolve(true);
         }
 
         function schedulePlaylistStateSave() {
             clearTimeout(playlistStateSaveTimer);
             playlistStateSaveTimer = setTimeout(() => saveCurrentPlaylist(), 120);
+        }
+
+        function readCompactPlaylistState() {
+            try {
+                const raw = localStorage.getItem(PLAYER_SNAPSHOT_KEY);
+                const state = raw ? JSON.parse(raw) : null;
+                return state && Array.isArray(state.tracks) ? state : null;
+            } catch (error) {
+                console.warn('Compact playlist restore failed:', error);
+                return null;
+            }
+        }
+
+        function normalizePersistedPlaylistState(state) {
+            if (!state || !Array.isArray(state.tracks) || !state.tracks.length) return null;
+            const schema = Number(state.schema || 0);
+            if (schema !== 2 && schema !== PLAYER_STATE_SCHEMA) return null;
+            const tracks = state.tracks.map(item => {
+                if (schema === PLAYER_STATE_SCHEMA && item?.type === 'local') {
+                    return { ...item, type: 'local' };
+                }
+                const artists = (item?.artists || item?.ar || []).map(normalizePersistedArtist);
+                const title = String(item?.title || inferLegacyTitle(item) || item?.name || '');
+                return {
+                    type: 'netease',
+                    id: positiveMusicInteger(item?.id, 0),
+                    title,
+                    displayName: String(item?.displayName || item?.name || title),
+                    artists,
+                    album: {
+                        id: positiveMusicInteger(item?.album?.id || item?.al?.id, 0),
+                        name: String(item?.album?.name || item?.al?.name || ''),
+                        picUrl: toHttps(item?.album?.picUrl || item?.al?.picUrl || '')
+                    }
+                };
+            });
+            const normalized = {
+                ...state,
+                schema: PLAYER_STATE_SCHEMA,
+                revision: Number(state.revision || state.savedAt || Date.now()),
+                savedAt: Number(state.savedAt || Date.now()),
+                selectedIndex: Math.max(0, Math.min(tracks.length - 1, Number(state.selectedIndex) || 0)),
+                source: state.source || null,
+                tracks
+            };
+            if (schema !== PLAYER_STATE_SCHEMA) {
+                normalized._upgraded = true;
+            }
+            return normalized;
+        }
+
+        function pickNewestPlaylistState(...states) {
+            return states.map(normalizePersistedPlaylistState).filter(Boolean)
+                .sort((a, b) => Number(b.revision || b.savedAt || 0) - Number(a.revision || a.savedAt || 0))[0] || null;
         }
 
         function inferLegacyTitle(item) {
@@ -8133,9 +9424,12 @@ SOFTWARE.
                 if (!Array.isArray(legacy) || !legacy.length) return null;
                 const state = {
                     schema: PLAYER_STATE_SCHEMA,
+                    revision: Date.now(),
                     savedAt: Date.now(),
                     selectedIndex: Math.max(0, Math.min(legacy.length - 1, Number.parseInt(rawIndex, 10) || 0)),
+                    source: null,
                     tracks: legacy.map(item => ({
+                        type: 'netease',
                         id: positiveMusicInteger(item.id, 0),
                         title: inferLegacyTitle(item),
                         displayName: String(item.name || inferLegacyTitle(item)),
@@ -8160,9 +9454,34 @@ SOFTWARE.
 
         async function restoreSavedPlaylist() {
             try {
-                const state = await idbGet(PLAYER_STATE_KEY, IDB_PLAYER_STORE) || await migrateLegacyPlaylistState();
+                const idbState = await idbGet(PLAYER_STATE_KEY, IDB_PLAYER_STORE);
+                const compactState = readCompactPlaylistState();
+                const state = pickNewestPlaylistState(idbState, compactState) || await migrateLegacyPlaylistState();
                 if (playlist.length || state?.schema !== PLAYER_STATE_SCHEMA || !Array.isArray(state.tracks) || !state.tracks.length) return;
+                const needsStateUpgrade = !!state._upgraded;
+                if (needsStateUpgrade) {
+                    delete state._upgraded;
+                    writeCompactPlaylistState(state);
+                    playlistStatePending = state;
+                    drainPlaylistStateWrites();
+                }
                 playlist = state.tracks.map(item => {
+                    if (item.type === 'local') {
+                        const relativePath = String(item.relativePath || item.name || '本地文件');
+                        return {
+                            name: String(item.name || relativePath),
+                            file: null,
+                            fileHandle: item.handle || null,
+                            needsFile: true,
+                            sourceKey: String(item.pathKey || ''),
+                            asset: { relativePath, pathKey: String(item.pathKey || ''), name: String(item.name || relativePath) },
+                            lrcFile: null,
+                            sliFile: null,
+                            lrcStatus: 'none',
+                            sliStatus: 'none',
+                            sliData: null
+                        };
+                    }
                     const ar = (item.artists || []).map(normalizePersistedArtist);
                     const al = { id: item.album?.id || 0, name: item.album?.name || '', picUrl: toHttps(item.album?.picUrl || '') };
                     return {
@@ -8170,21 +9489,30 @@ SOFTWARE.
                         songData: { id: item.id, name: String(item.title || ''), ar, al, artists: ar, album: al }
                     };
                 });
+                activePlaylistQueueToken = null;
+                playlistPendingAdvance = false;
                 curIdx = Math.max(0, Math.min(playlist.length - 1, Number(state.selectedIndex) || 0));
                 renderPlaylist();
                 const currentTrack = playlist[curIdx];
-                el.title.textContent = currentTrack.songData.name || currentTrack.name;
-                setMainMusicEntityLinks(currentTrack.songData);
-                setArtistTag(currentTrack.songData.ar.map(artist => artist.name).join(', ') || '网易云');
-                const cover = toHttps(currentTrack.songData.al.picUrl);
-                if (cover) {
-                    el.img.src = cover + '?param=500y500';
-                    el.img.style.opacity = 1;
-                    el.img.onload = () => updateTheme(el.img);
+                if (currentTrack.netease) {
+                    el.title.textContent = currentTrack.songData.name || currentTrack.name;
+                    setMainMusicEntityLinks(currentTrack.songData);
+                    setArtistTag(currentTrack.songData.ar.map(artist => artist.name).join(', ') || '网易云');
+                    const cover = toHttps(currentTrack.songData.al.picUrl);
+                    if (cover) {
+                        el.img.src = cover + '?param=500y500';
+                        el.img.style.opacity = 1;
+                        el.img.onload = () => updateTheme(el.img);
+                    }
+                } else {
+                    el.title.textContent = currentTrack.name;
+                    setMainMusicEntityLinks(null);
+                    setArtistTag('本地文件');
                 }
                 setPlaybackStatus('idle');
                 updateMusicMiniPlayer();
-                log(`Restored ${playlist.length} songs from history`, 'success');
+                const needsFile = playlist.filter(track => track.needsFile).length;
+                log(`Restored ${playlist.length} songs from history${needsFile ? `; ${needsFile} local files need re-selection` : ''}`, needsFile ? 'warn' : 'success');
             } catch (error) {
                 console.warn('Failed to restore playlist:', error);
             }
