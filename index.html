@@ -1047,9 +1047,18 @@ SOFTWARE.
             }
             .tool-group::-webkit-scrollbar { display: none; }
             .glass-btn {
-                min-width: 44px; min-height: 44px; padding: 5px 8px; font-size: 0.7rem;
-                border-radius: 12px;
+                min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.7rem;
+                border-radius: 999px; box-sizing: border-box;
                 flex-shrink: 0; justify-content: center;
+            }
+            .top-bar #btn-import,
+            .top-bar #toggle-advanced {
+                min-width: 60px; padding-left: 10px; padding-right: 10px;
+            }
+            .top-bar #toggle-netease-panel,
+            .top-bar #download-btn-mobile,
+            .top-bar #toggle-list {
+                width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%;
             }
             /* 移动端隐藏部分按钮文字，只显示图标 */
             .glass-btn .btn-text { display: none; }
@@ -1096,7 +1105,8 @@ SOFTWARE.
             .drag-mask p { font-size: 0.9rem; }
             
             /* 移动端：显示高级按钮，隐藏原来的三个 */
-            .mobile-only { display: block; }
+            .mobile-only { display: flex; }
+            .advanced-menu-container.mobile-only { display: block; }
             .desktop-only { display: none !important; }
             .advanced-menu { right: 0; left: auto; }
         }
@@ -1106,7 +1116,9 @@ SOFTWARE.
             .main-container { padding: 60px 10px calc(12px + env(safe-area-inset-bottom)) 10px; }
             .cover-wrapper { width: min(60vw, 220px); max-width: 100%; }
             .track-title { font-size: 1.3rem; }
-            .glass-btn { padding: 4px 6px; font-size: 0.65rem; }
+            .glass-btn { padding: 0 8px; font-size: 0.65rem; }
+            .top-bar #btn-import,
+            .top-bar #toggle-advanced { min-width: 56px; padding-left: 8px; padding-right: 8px; }
             .controls-row { gap: 10px; }
             .btn { width: 44px; height: 44px; }
             .btn-play { width: 52px; height: 52px; }
@@ -1381,7 +1393,7 @@ SOFTWARE.
             </div>
         </div>
         <footer class="project-footer" aria-label="项目版本与源码">
-            <span class="project-version">v0.0.2</span>
+            <span class="project-version">v0.0.3</span>
             <span class="project-footer-separator" aria-hidden="true">&middot;</span>
             <a class="project-github-link" href="https://github.com/minori0721/Aurora-player" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Aurora-player 源码仓库">
                 <svg class="project-github-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5A11.3 11.3 0 0 0 12 .7Z"/></svg>
@@ -1469,6 +1481,11 @@ SOFTWARE.
         };
         const NETEASE_RESOLVED_AUDIO_CACHE_TTL = 10 * 60_000;
         const neteaseResolvedAudioCache = new Map();
+        const LOCAL_PREFETCH_TRIGGER_SEC = 10;
+        const NETEASE_PREFETCH_TRIGGER_SEC = 15;
+        const NETEASE_PREFETCH_PLAYBACK_WAIT_MS = 1000;
+        const NETEASE_PREFETCH_MAX_BYTES_DESKTOP = 64 * 1024 * 1024;
+        const NETEASE_PREFETCH_MAX_BYTES_MOBILE = 32 * 1024 * 1024;
         let nextSongUrlPrewarmController = null;
         let neteaseDetailPrefetchController = null;
         let neteaseDetailPrefetchQueue = null;
@@ -1922,29 +1939,117 @@ SOFTWARE.
         let prefetchInProgress = false; // 防止重复发起预取
         let nextSongFetchPromise = null; // 如果预取正在进行，保存其 Promise（用于播放时复用）
         let nextSongPreloadMeta = null; // 保存预取音频的 URL/音质信息，供命中预取时刷新标签
+        let nextPreloadToken = 0;
+        let nextPreloadQueueRef = null;
+        let nextPreloadTrack = null;
+        let nextPreloadSongId = 0;
+        let nextPreloadLevel = '';
+        let nextPreloadCookie = '';
+        let nextPreloadAuthGeneration = -1;
+        let nextPreloadKind = 'none'; // local / netease / netease-url
+        let nextPreloadStatus = 'idle'; // idle / loading / ready / url-ready / failed
+
+        function getPlaylistTrackSongId(track) {
+            const id = Number(track?.songId || track?.songData?.id || 0);
+            return Number.isSafeInteger(id) && id > 0 ? id : 0;
+        }
+
+        function hasLockedNextPreloadTarget(queueRef = playlist, index = nextPreloadIndex, track = null) {
+            if (!queueRef || !Number.isInteger(index) || index < 0 || index >= queueRef.length) return false;
+            const target = queueRef[index];
+            return nextPreloadKind !== 'none'
+                && nextPreloadQueueRef === queueRef
+                && nextPreloadTrack === target
+                && (!track || target === track);
+        }
+
+        function isNextPreloadCompatible(queueRef = playlist, index = nextPreloadIndex, track = null) {
+            if (!hasLockedNextPreloadTarget(queueRef, index, track)) return false;
+            const target = queueRef[index];
+            if (target?.netease) {
+                return nextPreloadKind.startsWith('netease')
+                    && nextPreloadSongId === getPlaylistTrackSongId(target)
+                    && nextPreloadLevel === neteaseQuality
+                    && nextPreloadCookie === neteaseCookie
+                    && nextPreloadAuthGeneration === authGeneration;
+            }
+            return nextPreloadKind === 'local';
+        }
+
+        function isNextPreloadSnapshotCurrent(token, queueRef, index, track, songId = 0, level = '', generation = authGeneration) {
+            if (token !== nextPreloadToken || queueRef !== playlist) return false;
+            if (!hasLockedNextPreloadTarget(queueRef, index, track)) return false;
+            if (nextPreloadTrack !== track || queueRef[index] !== track) return false;
+            if (nextPreloadKind.startsWith('netease')) {
+                return nextPreloadSongId === Number(songId)
+                    && nextPreloadLevel === level
+                    && nextPreloadCookie === neteaseCookie
+                    && nextPreloadAuthGeneration === generation
+                    && generation === authGeneration;
+            }
+            return true;
+        }
+
+        function takeNextPrewarmedNeteaseUrl(songId, level = neteaseQuality) {
+            const index = nextPreloadIndex;
+            const track = playlist[index];
+            const candidates = Array.isArray(nextSongPreloadMeta?.candidates)
+                ? nextSongPreloadMeta.candidates.filter(Boolean)
+                : [];
+            if (!candidates.length || nextPreloadKind !== 'netease-url') return null;
+            if (!isNextPreloadCompatible(playlist, index, track)
+                || nextPreloadSongId !== Number(songId)
+                || nextPreloadLevel !== level) return null;
+
+            const result = {
+                audioInfo: nextSongPreloadMeta.audioInfo ? { ...nextSongPreloadMeta.audioInfo } : null,
+                audioUrl: nextSongPreloadMeta.audioUrl || candidates[0],
+                proxyUrl: nextSongPreloadMeta.proxyUrl || '',
+                candidates: [...candidates],
+                usedMatch: !!nextSongPreloadMeta.usedMatch,
+                matchSource: nextSongPreloadMeta.matchSource || ''
+            };
+            cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
+            return result;
+        }
+
+        function getNeteasePrefetchLimitBytes() {
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const slowNetwork = !!connection?.saveData || /(^|-)2g$/.test(String(connection?.effectiveType || ''));
+            const lowMemory = Number.isFinite(Number(navigator.deviceMemory)) && Number(navigator.deviceMemory) <= 4;
+            const compactViewport = typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
+            return slowNetwork || lowMemory || compactViewport
+                ? NETEASE_PREFETCH_MAX_BYTES_MOBILE
+                : NETEASE_PREFETCH_MAX_BYTES_DESKTOP;
+        }
+
+        function createStalePreloadError() {
+            const error = new Error('stale preload');
+            error.stale = true;
+            return error;
+        }
+
+        function takeNextPreloadedRawData(index, track, songId = 0, level = '') {
+            const token = nextPreloadToken;
+            const queueRef = playlist;
+            if (!hasPreloaded || !nextSongRawData) return null;
+            if (!isNextPreloadSnapshotCurrent(token, queueRef, index, track, songId, level, nextPreloadAuthGeneration)) return null;
+
+            const result = {
+                ab: nextSongRawData,
+                ...(nextSongPreloadMeta || {})
+            };
+            cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
+            prefetchAttempted = false;
+            return result;
+        }
 
         // 等待预取完成（短等待），返回 true 表示预取已完成且数据可用
-        async function waitForPrefetchCompletion(timeoutMs = 3000) {
+        async function waitForPrefetchCompletion(timeoutMs = NETEASE_PREFETCH_PLAYBACK_WAIT_MS, token = nextPreloadToken) {
             if (hasPreloaded && nextSongRawData) return true;
-            if (!prefetchInProgress) return false;
-            return await new Promise(resolve => {
-                const intervalMs = 50;
-                let elapsed = 0;
-                const iv = setInterval(() => {
-                    if (hasPreloaded && nextSongRawData) {
-                        clearInterval(iv); clearTimeout(to);
-                        resolve(true);
-                    } else if (!prefetchInProgress) {
-                        clearInterval(iv); clearTimeout(to);
-                        resolve(false);
-                    }
-                    elapsed += intervalMs;
-                }, intervalMs);
-                const to = setTimeout(() => {
-                    clearInterval(iv);
-                    resolve(false);
-                }, timeoutMs);
-            });
+            if (!prefetchInProgress || !nextSongFetchPromise) return false;
+            const result = await waitForPromiseWithTimeout(nextSongFetchPromise, timeoutMs);
+            return result.ok && token === nextPreloadToken && hasPreloaded && !!nextSongRawData;
         }
 
         // 等待任意 Promise 在限定时间内解析（返回 {ok, value}）
@@ -2358,8 +2463,9 @@ SOFTWARE.
         purgeSensitiveIdbCache().catch(() => {});
         prunePublicJsonCache().catch(() => {});
 
-        // 取消下一首预加载
-        function cancelNextPreload() {
+        // 取消下一首预加载；令牌递增后，任何迟到的 Promise 都不能回填新状态。
+        function cancelNextPreload({ resetAttempted = true, silent = false, resetDetails = true } = {}) {
+            nextPreloadToken++;
             try {
                 if (nextSongAbortController) {
                     try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); }
@@ -2374,20 +2480,28 @@ SOFTWARE.
                 nextSongRawData = null;
                 hasPreloaded = false;
                 nextPreloadIndex = null;
-                prefetchAttempted = false; // <--- 切歌时重置为 false
+                nextPreloadQueueRef = null;
+                nextPreloadTrack = null;
+                nextPreloadSongId = 0;
+                nextPreloadLevel = '';
+                nextPreloadCookie = '';
+                nextPreloadAuthGeneration = -1;
+                nextPreloadKind = 'none';
+                nextPreloadStatus = 'idle';
+                if (resetAttempted) prefetchAttempted = false;
                 prefetchInProgress = false;
                 try { nextSongFetchPromise = null; } catch (e) {}
                 try { nextSongPreloadMeta = null; } catch (e) {}
-                resetNeteaseDetailPrefetchState();
+                if (resetDetails) resetNeteaseDetailPrefetchState();
             }
-            log('Next-song preload cancelled');
+            if (!silent) log('Next-song preload cancelled');
         }
 
         function getLikelyNextPlaylistIndex() {
             if (!playlist || playlist.length === 0 || curIdx < 0 || playMode === 2) return null;
             if (playMode === 1) {
                 if (playlist.length === 1) return null;
-                if (nextPreloadIndex !== null && nextPreloadIndex !== curIdx) return nextPreloadIndex;
+                if (hasLockedNextPreloadTarget(playlist, nextPreloadIndex) && nextPreloadIndex !== curIdx) return nextPreloadIndex;
                 let nextIdx = Math.floor(Math.random() * playlist.length);
                 if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
                 return nextIdx;
@@ -2498,92 +2612,308 @@ SOFTWARE.
 
         function prewarmNextNeteaseSongUrl() {
             try {
+                if (!playlist || playlist.length === 0 || curIdx < 0 || playMode === 2 || getActiveCustomLoop()) return;
+                const queueRef = playlist;
                 const nextIdx = getLikelyNextPlaylistIndex();
                 if (nextIdx === null) return;
-                const nextTrack = playlist[nextIdx];
-                if (!nextTrack || !nextTrack.netease) return;
-                const songId = nextTrack.songId || nextTrack.songData?.id;
-                if (!songId) return;
+                const nextTrack = queueRef[nextIdx];
+                const songId = getPlaylistTrackSongId(nextTrack);
+                if (!nextTrack?.netease || !songId) return;
 
+                const sameTarget = hasLockedNextPreloadTarget(queueRef, nextIdx, nextTrack)
+                    && nextPreloadSongId === songId
+                    && nextPreloadLevel === neteaseQuality
+                    && nextPreloadCookie === neteaseCookie
+                    && nextPreloadAuthGeneration === authGeneration;
+                if (prefetchInProgress || hasPreloaded) return;
+                if (sameTarget && (nextPreloadStatus === 'url-loading' || nextPreloadStatus === 'url-ready')) return;
+
+                if (!sameTarget) cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
                 if (nextSongUrlPrewarmController) {
                     try { nextSongUrlPrewarmController.abort(); } catch(e) {}
                 }
+
+                const token = ++nextPreloadToken;
                 const controller = new AbortController();
+                const cookieSnapshot = neteaseCookie;
+                const levelSnapshot = neteaseQuality;
+                const generationSnapshot = authGeneration;
                 nextSongUrlPrewarmController = controller;
-                const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
-                const strategy = getNeteaseMatchStrategy(neteaseQuality);
-                resolveNeteaseAudioUrl(songId, cookieParam, neteaseQuality, { signal: controller.signal, useQueue: true }, 30_000, strategy)
-                    .then(result => {
-                        if (controller.signal.aborted) return;
-                        if (result?.candidates?.length) {
-                            const detail = result.usedMatch ? ` via match${result.matchSource ? `/${result.matchSource}` : ''}` : '';
-                            log(`Prewarmed next URL: ${nextTrack.name}${detail}`, 'success');
-                        }
-                    })
-                    .catch(e => {
-                        if (e?.name !== 'AbortError') log('Next URL prewarm failed: ' + (e?.message || 'Unknown error'), 'warn');
-                    })
-                    .finally(() => {
-                        if (nextSongUrlPrewarmController === controller) nextSongUrlPrewarmController = null;
-                    });
+                nextPreloadQueueRef = queueRef;
+                nextPreloadTrack = nextTrack;
+                nextPreloadIndex = nextIdx;
+                nextPreloadSongId = songId;
+                nextPreloadLevel = levelSnapshot;
+                nextPreloadCookie = cookieSnapshot;
+                nextPreloadAuthGeneration = generationSnapshot;
+                nextPreloadKind = 'netease-url';
+                nextPreloadStatus = 'url-loading';
+                nextSongPreloadMeta = null;
+                const cookieParam = cookieSnapshot ? `&cookie=${encodeURIComponent(cleanCookie(cookieSnapshot))}` : '';
+                const strategy = getNeteaseMatchStrategy(levelSnapshot);
+                resolveNeteaseAudioUrl(
+                    songId,
+                    cookieParam,
+                    levelSnapshot,
+                    { signal: controller.signal, useQueue: true, priority: 'idle' },
+                    30_000,
+                    strategy
+                ).then(result => {
+                    if (controller.signal.aborted || !isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) return;
+                    if (result?.candidates?.length) {
+                        nextSongPreloadMeta = {
+                            audioUrl: result.audioUrl || result.candidates[0],
+                            audioInfo: result.audioInfo || null,
+                            candidates: [...result.candidates],
+                            usedMatch: !!result.usedMatch,
+                            matchSource: result.matchSource || ''
+                        };
+                        nextPreloadStatus = 'url-ready';
+                        const detail = result.usedMatch ? ` via match${result.matchSource ? `/${result.matchSource}` : ''}` : '';
+                        log(`Prewarmed next URL: ${nextTrack.name}${detail}`, 'success');
+                    } else {
+                        nextPreloadStatus = 'failed';
+                    }
+                }).catch(e => {
+                    if (e?.name !== 'AbortError' && !e?.stale) log('Next URL prewarm failed: ' + (e?.message || 'Unknown error'), 'warn');
+                    if (isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) nextPreloadStatus = 'failed';
+                }).finally(() => {
+                    if (nextSongUrlPrewarmController === controller) nextSongUrlPrewarmController = null;
+                    if (isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)
+                        && nextPreloadStatus === 'url-loading') nextPreloadStatus = 'failed';
+                });
             } catch (_) {}
         }
 
-        // 预加载下一首原始数据（ArrayBuffer），支持本地与网易云
-        async function prefetchNextSong() {
+        async function readResponseArrayBufferWithLimit(response, maxBytes, signal) {
+            const contentLength = Number(response.headers?.get?.('content-length') || 0);
+            if (contentLength > maxBytes) {
+                try { await response.body?.cancel?.(); } catch (_) {}
+                return { buffer: null, tooLarge: true, byteLength: contentLength };
+            }
+            if (!response.body?.getReader) {
+                const buffer = await response.arrayBuffer();
+                return buffer.byteLength > maxBytes
+                    ? { buffer: null, tooLarge: true, byteLength: buffer.byteLength }
+                    : { buffer, tooLarge: false, byteLength: buffer.byteLength };
+            }
+
+            const reader = response.body.getReader();
+            const chunks = [];
+            let total = 0;
             try {
-                if (!playlist || playlist.length === 0 || curIdx < 0) return;
-                
-                // 单曲循环模式下，不要预加载下一首，省流
-                if (playMode === 2) return; 
-
-                // 决定下一首索引
-                const nextIdx = getLikelyNextPlaylistIndex();
-                if (nextIdx === null) return;
-
-                if (hasPreloaded && nextPreloadIndex === nextIdx) return; 
-                if (prefetchInProgress) return; 
-                prefetchInProgress = true;
-
-                // 取消旧的
-                if (nextSongAbortController) {
-                    try { nextSongAbortController.abort(); } catch(e) {}
-                    nextSongAbortController = null;
-                }
-                nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false; // <--- 切歌时重置为 false
-
-                const nextTrack = playlist[nextIdx];
-                if (!nextTrack) { prefetchInProgress = false; return; }
-
-                let controller = null;
-
-                // --- 本地文件预加载 ---
-                if (nextTrack.file) {
-                    controller = { aborted: false, abort() { this.aborted = true; } };
-                    nextSongAbortController = controller;
-                    try {
-                        const ab = await nextTrack.file.arrayBuffer();
-                        if (controller.aborted) return;
-                        nextSongRawData = ab;
-                        hasPreloaded = true;
-                        nextPreloadIndex = nextIdx;
-                        log(`Preloaded local file: ${nextTrack.name}`, 'success');
-                    } catch (e) {
-                        log('Local prefetch error', 'warn');
+                while (true) {
+                    if (signal?.aborted) {
+                        try { await reader.cancel(); } catch (_) {}
+                        throw createAbortError();
                     }
-                    prefetchInProgress = false;
-                    return;
+                    const part = await reader.read();
+                    if (part.done) break;
+                    const chunk = part.value || new Uint8Array(0);
+                    total += chunk.byteLength;
+                    if (total > maxBytes) {
+                        try { await reader.cancel(); } catch (_) {}
+                        return { buffer: null, tooLarge: true, byteLength: total };
+                    }
+                    chunks.push(chunk);
+                }
+            } catch (error) {
+                try { await reader.cancel(); } catch (_) {}
+                throw error;
+            }
+
+            const output = new Uint8Array(total);
+            let offset = 0;
+            chunks.forEach(chunk => {
+                output.set(chunk, offset);
+                offset += chunk.byteLength;
+            });
+            return { buffer: output.buffer, tooLarge: false, byteLength: total };
+        }
+
+        async function fetchNeteaseAudioForPrefetch(snapshot, controller) {
+            const signal = controller.signal;
+            const cookieParam = snapshot.cookie ? `&cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}` : '';
+            const strategy = getNeteaseMatchStrategy(snapshot.level);
+            const maxBytes = getNeteasePrefetchLimitBytes();
+            let refreshAttempted = false;
+
+            while (true) {
+                if (signal.aborted || !isNextPreloadSnapshotCurrent(snapshot.token, snapshot.queueRef, snapshot.index, snapshot.track, snapshot.songId, snapshot.level, snapshot.authGeneration)) {
+                    throw createStalePreloadError();
+                }
+                let resolved = await resolveNeteaseAudioUrl(
+                    snapshot.songId,
+                    cookieParam,
+                    snapshot.level,
+                    { signal, useQueue: true, priority: 'idle' },
+                    30_000,
+                    strategy
+                );
+                if (signal.aborted || !isNextPreloadSnapshotCurrent(snapshot.token, snapshot.queueRef, snapshot.index, snapshot.track, snapshot.songId, snapshot.level, snapshot.authGeneration)) {
+                    throw createStalePreloadError();
+                }
+                let audioInfo = resolved.audioInfo || null;
+                let candidates = resolved.candidates || [];
+                if (!audioInfo || !candidates.length) throw new Error('NO_URL_FROM_PREFETCH');
+
+                let audioFetchResult;
+                try {
+                    audioFetchResult = await fetchAudioWithFallback(candidates, { signal });
+                } catch (error) {
+                    const shouldRefresh = !refreshAttempted && [401, 403, 404, 410].includes(Number(error?.status));
+                    if (!shouldRefresh) throw error;
+                    refreshAttempted = true;
+                    await invalidateNeteaseResolvedAudioCache(snapshot.songId, snapshot.level, snapshot.cookie);
+                    if (signal.aborted || !isNextPreloadSnapshotCurrent(snapshot.token, snapshot.queueRef, snapshot.index, snapshot.track, snapshot.songId, snapshot.level, snapshot.authGeneration)) {
+                        throw createStalePreloadError();
+                    }
+                    continue;
                 }
 
-                // --- 网易云在线预取 ---
-                // 在线歌曲不提前下载整首音频，避免占用内存、浪费流量以及缓存短时 URL。
-                // 只批量预取后续详情，并为最可能的下一首预热一个播放 URL。
+                const response = audioFetchResult.resp;
+                const headerSize = Number(response.headers?.get?.('content-length') || 0);
+                const apiSize = Number(audioInfo.size || 0);
+                const sizeHint = Math.max(Number.isFinite(headerSize) ? headerSize : 0, Number.isFinite(apiSize) ? apiSize : 0);
+                if (sizeHint > maxBytes) {
+                    try { await response.body?.cancel?.(); } catch (_) {}
+                    return {
+                        kind: 'url',
+                        audioUrl: audioFetchResult.audioUrl,
+                        audioInfo,
+                        candidates: [...candidates],
+                        sizeHint,
+                        maxBytes,
+                        usedMatch: !!resolved.usedMatch,
+                        matchSource: resolved.matchSource || ''
+                    };
+                }
+
+                const readResult = await readResponseArrayBufferWithLimit(response, maxBytes, signal);
+                if (signal.aborted || !isNextPreloadSnapshotCurrent(snapshot.token, snapshot.queueRef, snapshot.index, snapshot.track, snapshot.songId, snapshot.level, snapshot.authGeneration)) {
+                    throw createStalePreloadError();
+                }
+                if (readResult.tooLarge) {
+                    return {
+                        kind: 'url',
+                        audioUrl: audioFetchResult.audioUrl,
+                        audioInfo,
+                        candidates: [...candidates],
+                        sizeHint: readResult.byteLength,
+                        maxBytes,
+                        usedMatch: !!resolved.usedMatch,
+                        matchSource: resolved.matchSource || ''
+                    };
+                }
+                return {
+                    kind: 'raw',
+                    ab: readResult.buffer,
+                    audioUrl: audioFetchResult.audioUrl,
+                    audioInfo,
+                    candidates: [...candidates],
+                    usedMatch: !!resolved.usedMatch,
+                    matchSource: resolved.matchSource || ''
+                };
+            }
+        }
+
+        // 本地仍提前 10 秒；网易云提前 15 秒下载整首音频。
+        async function prefetchNextSong(requestedIndex = null) {
+            try {
+                if (!playlist || playlist.length === 0 || curIdx < 0 || playMode === 2 || getActiveCustomLoop() || !playbackState.isPlaying) return;
+                const queueRef = playlist;
+                const nextIdx = Number.isInteger(requestedIndex)
+                    && requestedIndex >= 0
+                    && requestedIndex < queueRef.length
+                    && requestedIndex !== curIdx
+                    ? requestedIndex
+                    : getLikelyNextPlaylistIndex();
+                if (nextIdx === null) return;
+                const nextTrack = queueRef[nextIdx];
+                if (!nextTrack) return;
+                const songId = getPlaylistTrackSongId(nextTrack);
+                if (!nextTrack.file && (!nextTrack.netease || !songId)) return;
+
+                const sameTarget = hasLockedNextPreloadTarget(queueRef, nextIdx, nextTrack)
+                    && (nextTrack.file || (nextPreloadSongId === songId
+                        && nextPreloadLevel === neteaseQuality
+                        && nextPreloadCookie === neteaseCookie
+                        && nextPreloadAuthGeneration === authGeneration));
+                if (sameTarget && (prefetchInProgress || hasPreloaded)) return;
+                if (!sameTarget) cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
+                if (nextSongUrlPrewarmController) {
+                    try { nextSongUrlPrewarmController.abort(); } catch (_) {}
+                    nextSongUrlPrewarmController = null;
+                }
+
+                const token = ++nextPreloadToken;
+                const controller = nextTrack.file
+                    ? { aborted: false, abort() { this.aborted = true; } }
+                    : new AbortController();
+                const levelSnapshot = nextTrack.file ? '' : neteaseQuality;
+                const generationSnapshot = nextTrack.file ? -1 : authGeneration;
+                const snapshot = {
+                    token,
+                    queueRef,
+                    index: nextIdx,
+                    track: nextTrack,
+                    songId,
+                    level: levelSnapshot,
+                    authGeneration: generationSnapshot,
+                    cookie: neteaseCookie
+                };
+                nextSongAbortController = controller;
+                nextPreloadQueueRef = queueRef;
+                nextPreloadTrack = nextTrack;
+                nextPreloadIndex = nextIdx;
+                nextPreloadSongId = songId;
+                nextPreloadLevel = levelSnapshot;
+                nextPreloadCookie = snapshot.cookie;
+                nextPreloadAuthGeneration = generationSnapshot;
+                nextPreloadKind = nextTrack.file ? 'local' : 'netease';
+                nextPreloadStatus = 'loading';
+                nextSongRawData = null;
+                hasPreloaded = false;
+                nextSongPreloadMeta = null;
+                prefetchInProgress = true;
                 prefetchAttempted = true;
-                prefetchUpcomingNeteaseDetails(5);
-                prewarmNextNeteaseSongUrl();
-                prefetchInProgress = false;
-                return;
-            } catch (e) {
+
+                const work = nextTrack.file
+                    ? (async () => {
+                        const ab = await nextTrack.file.arrayBuffer();
+                        if (controller.aborted || !isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, 0, '', -1)) throw createStalePreloadError();
+                        return { kind: 'raw', ab, audioUrl: '', audioInfo: null };
+                    })()
+                    : fetchNeteaseAudioForPrefetch(snapshot, controller);
+                nextSongFetchPromise = work;
+                work.then(result => {
+                    if (!result || controller.aborted || !isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) return;
+                    nextSongPreloadMeta = {
+                        audioUrl: result.audioUrl || '',
+                        audioInfo: result.audioInfo || null,
+                        candidates: Array.isArray(result.candidates) ? [...result.candidates] : [],
+                        usedMatch: !!result.usedMatch,
+                        matchSource: result.matchSource || ''
+                    };
+                    nextSongRawData = result.kind === 'raw' ? result.ab : null;
+                    hasPreloaded = result.kind === 'raw' && !!result.ab;
+                    nextPreloadKind = nextTrack.file ? 'local' : (result.kind === 'raw' ? 'netease' : 'netease-url');
+                    nextPreloadStatus = hasPreloaded ? 'ready' : 'url-ready';
+                    if (hasPreloaded) {
+                        log(`Preloaded ${nextTrack.file ? 'local file' : 'Netease audio'}: ${nextTrack.name}`, 'success');
+                    } else {
+                        log(`Skipped full Netease preload for ${nextTrack.name}: ${(result.sizeHint / 1024 / 1024).toFixed(1)}MB exceeds ${(result.maxBytes / 1024 / 1024).toFixed(0)}MB limit`, 'info');
+                    }
+                }).catch(error => {
+                    if (error?.name !== 'AbortError' && !error?.stale) log(`Next-song preload failed: ${error?.message || error}`, 'warn');
+                    if (isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) nextPreloadStatus = 'failed';
+                }).finally(() => {
+                    if (!isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) return;
+                    prefetchInProgress = false;
+                    if (nextPreloadStatus === 'loading') nextPreloadStatus = 'failed';
+                });
+            } catch (error) {
+                if (error?.name !== 'AbortError' && !error?.stale) log(`Next-song preload setup failed: ${error?.message || error}`, 'warn');
                 prefetchInProgress = false;
             }
         }
@@ -4886,24 +5216,24 @@ SOFTWARE.
 
             try {
                 let ab = null;
-                // 如果该索引是已预加载的下一首，尝试短等待预取完成（最多800ms），否则取消预取并走本地读取
-                if (nextPreloadIndex === i) {
+                // 只复用当前队列中身份一致的预加载目标，等待不超过 1 秒，超时立即回退到本地读取。
+                const localPreloadMatches = hasLockedNextPreloadTarget(playlist, i, track) && nextPreloadKind === 'local';
+                if (localPreloadMatches) {
                     try {
                         if (hasPreloaded && nextSongRawData) {
                             // 直接使用
                         } else if (prefetchInProgress) {
-                            const ok = await waitForPrefetchCompletion(800);
+                            const preloadToken = nextPreloadToken;
+                            const ok = await waitForPrefetchCompletion(LOCAL_PREFETCH_TRIGGER_SEC * 100, preloadToken);
                             assertPlaybackActionCurrent(myPlayToken, track);
                             if (!ok || !hasPreloaded || !nextSongRawData) {
                                 try { cancelNextPreload(); } catch(e) {}
                             }
                         }
 
-                        if (hasPreloaded && nextSongRawData) {
-                            ab = nextSongRawData;
-                            // 释放预加载状态，解码后释放内存
-                            nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false;
-                            if (nextSongAbortController) { try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); } catch(e) {} nextSongAbortController = null; }
+                        const preloaded = takeNextPreloadedRawData(i, track);
+                        if (preloaded?.ab) {
+                            ab = preloaded.ab;
                             log('Using preloaded raw data for local track', 'success');
                         } else {
                             ab = await track.file.arrayBuffer();
@@ -5575,10 +5905,15 @@ SOFTWARE.
             }
             if(playbackState.duration) {
                 setPlaybackProgress(now / playbackState.duration);
-                // 当剩余播放时间 <= 10 秒时，非阻塞地预取下一首原始数据（比按百分比更稳定）
-                if (playMode !== 2 && playbackState.duration && (playbackState.duration - now) <= 10 && !hasPreloaded && !prefetchAttempted) {
+                const nextIdx = getLikelyNextPlaylistIndex();
+                const nextTrack = nextIdx === null ? null : playlist[nextIdx];
+                const triggerSec = nextTrack?.netease ? NETEASE_PREFETCH_TRIGGER_SEC : LOCAL_PREFETCH_TRIGGER_SEC;
+                // 阈值按下一首歌曲类型判断；暂停、自定义循环和单曲循环不启动下一首预取。
+                if (playbackState.isPlaying && nextTrack && !getActiveCustomLoop()
+                    && (playbackState.duration - now) <= triggerSec
+                    && !hasPreloaded && !prefetchAttempted) {
                     prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
-                    try { prefetchNextSong(); } catch(e) {}
+                    try { prefetchNextSong(nextIdx); } catch(e) {}
                 }
             }
             // 刷新歌词高亮与居中（会做防抖判断）
@@ -6318,7 +6653,12 @@ SOFTWARE.
             d.appendChild(coverEl);
             d.appendChild(titleEl);
             updatePlaylistCompanionMarker(d, track);
-            d.onclick = () => { try { cancelNextPreload(); } catch(e) {} ; playTrackFromPlaylist(index); };
+            d.onclick = () => {
+                if (!isNextPreloadCompatible(playlist, index, track)) {
+                    try { cancelNextPreload(); } catch(e) {}
+                }
+                playTrackFromPlaylist(index);
+            };
             d.setAttribute('aria-label', track.needsFile ? `第 ${index + 1} 首：${track.name}，需要重新选择本地文件` : `播放第 ${index + 1} 首：${track.name}`);
             const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
             titleEl.textContent = `${icon}${track.name}`;
@@ -6854,6 +7194,7 @@ SOFTWARE.
         function advanceAuthGeneration() {
             authGeneration++;
             abortAccountRequests();
+            try { cancelNextPreload(); } catch (_) {}
             if (currentAbortController) {
                 currentAbortController.abort();
                 currentAbortController = null;
@@ -6904,6 +7245,7 @@ SOFTWARE.
         qualitySelect.value = neteaseQuality;
         qualitySelect.onchange = () => {
             neteaseQuality = qualitySelect.value;
+            try { cancelNextPreload(); } catch (_) {}
             clearNeteaseResolvedAudioCache();
             localStorage.setItem('netease_quality', neteaseQuality);
             log(`音质设置: ${qualitySelect.options[qualitySelect.selectedIndex].text}`);
@@ -8331,37 +8673,51 @@ SOFTWARE.
             resetLoopUI();
             lyrics = [];
             
-            // 如果有正在进行的 next-song 预取 Promise，且它对应当前要播放的歌曲，则复用该 Promise（避免重复下载）
+            // 如果预取目标仍是当前歌曲，则复用完整音频或已预热的 URL；在线预取最多短等待 1 秒。
+            let prewarmedResolved = null;
             try {
-                const nextPrefetchMatches = nextSongFetchPromise && (typeof nextPreloadIndex === 'number') && playlist[nextPreloadIndex] && ((playlist[nextPreloadIndex].songId || playlist[nextPreloadIndex].songData?.id) == songId);
+                const preloadIndex = nextPreloadIndex;
+                const preloadTrack = playlist[preloadIndex];
+                const nextPrefetchMatches = isNextPreloadCompatible(playlist, preloadIndex, preloadTrack)
+                    && nextPreloadSongId === Number(songId);
                 if (nextPrefetchMatches) {
-                    // 优化：优先检查是否已完成（事件驱动），否则用单次超时等待（最多6000ms）——无轮询，完成时立即响应
+                    const preloadToken = nextPreloadToken;
                     let res = null;
                     if (hasPreloaded && nextSongRawData) {
                         res = { ab: nextSongRawData, ...(nextSongPreloadMeta || {}) };
-                    } else if (nextSongFetchPromise) {
-                        const wrapped = await waitForPromiseWithTimeout(nextSongFetchPromise, 6000);
+                    } else if (prefetchInProgress && nextSongFetchPromise) {
+                        const wrapped = await waitForPromiseWithTimeout(nextSongFetchPromise, NETEASE_PREFETCH_PLAYBACK_WAIT_MS);
                         if (!isPlaybackActionCurrent(myPlayToken)) return;
                         res = wrapped.ok ? wrapped.value : null;
                     }
 
-                    if (res && res.ab) {
+                    if (!res?.ab && nextPreloadKind === 'netease-url') {
+                        prewarmedResolved = takeNextPrewarmedNeteaseUrl(songId, neteaseQuality);
+                    }
+
+                    if (res?.ab && isNextPreloadSnapshotCurrent(preloadToken, playlist, preloadIndex, preloadTrack, songId, neteaseQuality, authGeneration)) {
+                        // Promise 恰好在提交回调前完成时，先把结果补进统一状态，再由同一入口消费。
+                        if (!hasPreloaded) {
+                            nextSongRawData = res.ab;
+                            nextSongPreloadMeta = { ...res };
+                            hasPreloaded = true;
+                            nextPreloadStatus = 'ready';
+                        }
+                        const consumed = takeNextPreloadedRawData(preloadIndex, preloadTrack, songId, neteaseQuality);
+                        if (!consumed?.ab) {
+                            try { cancelNextPreload(); } catch(e) {}
+                        } else {
                         el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
                         el.bufferLine.style.width = '30%';
 
-                        const ab = res.ab;
-                        // 清理预加载状态并防止后续复用
-                        nextSongRawData = null; hasPreloaded = false; nextPreloadIndex = null; prefetchAttempted = false;
-                        try { nextSongFetchPromise = null; } catch(e) {}
-                        try { nextSongPreloadMeta = null; } catch(e) {}
-                        if (nextSongAbortController) { try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); } catch(e) {} nextSongAbortController = null; }
+                        const ab = consumed.ab;
 
                         el.bufferLine.style.width = '60%';
-                        const preloadedProbe = createAudioQualityProbe(ab, res.audioUrl || '', res.audioInfo || {});
+                        const preloadedProbe = createAudioQualityProbe(ab, consumed.audioUrl || '', consumed.audioInfo || {});
                         const decodedBuffer = await actx.decodeAudioData(ab);
                         assertPlaybackActionCurrent(myPlayToken);
                         audioBuffer = decodedBuffer;
-                        const preloadedQuality = describeAudioQualityFromBuffer(ab, res.audioUrl || '', decodedBuffer, { ...(res.audioInfo || {}), _qualityProbe: preloadedProbe });
+                        const preloadedQuality = describeAudioQualityFromBuffer(ab, consumed.audioUrl || '', decodedBuffer, { ...(consumed.audioInfo || {}), _qualityProbe: preloadedProbe });
                         currentAudioQuality = preloadedQuality.label;
                         setArtistTag('网易云', currentAudioQuality);
                         log(`Audio: ${currentAudioQuality}`, 'success');
@@ -8388,8 +8744,9 @@ SOFTWARE.
                         } catch (_) {}
 
                         return;
-                    } else {
-                        // 预取未在短时间内完成，放弃复用，取消预取并继续后续正常流程
+                        }
+                    } else if (!prewarmedResolved) {
+                        // 预取未在短时间内完成，放弃复用，取消预取并继续后续正常流程。
                         try { cancelNextPreload(); } catch(e) {}
                     }
                 }
@@ -8410,7 +8767,7 @@ SOFTWARE.
                 const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
                 if (window._currentPlayActionToken !== myPlayToken) throw new Error('stale');
 
-                let resolved = await resolveNeteaseAudioUrl(
+                let resolved = prewarmedResolved || await resolveNeteaseAudioUrl(
                     songId,
                     cookieParam,
                     neteaseQuality,
@@ -9069,8 +9426,8 @@ SOFTWARE.
                     else playTrackFromPlaylist(0);
                     return;
                 }
-                // 优先使用已预加载的随机目标（如果存在），以提升命中率
-                if (hasPreloaded && nextPreloadIndex !== null && nextPreloadIndex !== curIdx) nextIdx = nextPreloadIndex;
+                // 随机目标一旦被预热或完整预加载就锁定，自动切歌必须使用同一个目标。
+                if (hasLockedNextPreloadTarget(playlist, nextPreloadIndex) && nextPreloadIndex !== curIdx) nextIdx = nextPreloadIndex;
                 else {
                     nextIdx = Math.floor(Math.random() * playlist.length);
                     if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
@@ -9079,13 +9436,13 @@ SOFTWARE.
                 nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
             }
 
-            // 手动触发时：仅在目标不是当前正在/已预加载的那一首时才取消预取（否则保留以复用）
-            if (!isAuto) {
-                const prefetchMatchesTarget = (nextPreloadIndex !== null && nextPreloadIndex === nextIdx);
-                const hasOngoingPrefetch = prefetchInProgress || hasPreloaded || !!nextSongFetchPromise;
-                if (!prefetchMatchesTarget || !hasOngoingPrefetch) {
-                    try { cancelNextPreload(); } catch(err) {}
-                }
+            // 目标改变时无论手动还是自动都取消旧预取；目标一致时保留以复用。
+            const prefetchMatchesTarget = hasLockedNextPreloadTarget(playlist, nextPreloadIndex)
+                && nextPreloadIndex === nextIdx;
+            const hasAnyPreload = nextPreloadKind !== 'none' && nextPreloadStatus !== 'idle';
+            const hasOngoingPrefetch = prefetchInProgress || hasPreloaded || !!nextSongFetchPromise || hasAnyPreload;
+            if (!prefetchMatchesTarget && hasOngoingPrefetch) {
+                try { cancelNextPreload(); } catch(err) {}
             }
 
             playTrackFromPlaylist(nextIdx);
