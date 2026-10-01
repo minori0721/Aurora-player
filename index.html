@@ -273,6 +273,8 @@ SOFTWARE.
             cursor: pointer; padding: 0 5px; line-height: 1; display: none;
         }
         .panel-close:hover { color: var(--text-main); }
+        .panel-float[hidden], .playlist-sidebar[hidden], .playlist-fab-group[hidden],
+        .vol-popup[hidden], .advanced-menu[hidden] { display: none !important; }
 
         /* 分析面板特别样式 */
         #analyze-panel { right: 350px; width: 300px; } /* 放在循环面板左边 */
@@ -1284,7 +1286,7 @@ SOFTWARE.
             <!-- 移动端高级菜单 -->
             <div class="advanced-menu-container mobile-only">
                 <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
-                <div class="advanced-menu" id="advanced-menu">
+                <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
                     <button class="advanced-menu-item" data-action="debug">🐞 Debug</button>
                     <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
                     <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
@@ -1296,8 +1298,8 @@ SOFTWARE.
         </div>
     </div>
 
-    <div class="panel-float" id="analyze-panel">
-        <h4 class="panel-title">Loop Analyzer (智能对齐分析)<button class="panel-close" onclick="this.closest('.panel-float').classList.remove('show')">&times;</button></h4>
+    <div class="panel-float" id="analyze-panel" hidden inert aria-hidden="true">
+        <h4 class="panel-title">Loop Analyzer (智能对齐分析)<button class="panel-close" aria-label="关闭智能分析">&times;</button></h4>
         <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
             不知道在哪里设置循环点？试试智能分析！<br>
             1. 粗略设置 A/B 点 (前后误差<2s)<br>
@@ -1334,8 +1336,8 @@ SOFTWARE.
         <div id="ana-msg" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
     </div>
 
-    <div class="loop-panel panel-float" id="loop-panel">
-        <h4 class="panel-title">Loop Controller<button class="panel-close" onclick="this.closest('.panel-float').classList.remove('show')">&times;</button></h4>
+    <div class="loop-panel panel-float" id="loop-panel" hidden inert aria-hidden="true">
+        <h4 class="panel-title">Loop Controller<button class="panel-close" aria-label="关闭循环设定">&times;</button></h4>
         <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable" aria-label="开启循环"></div>
         <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100" aria-label="循环基准采样率"></div>
         <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0" aria-label="循环起点 A"></div>
@@ -1347,11 +1349,11 @@ SOFTWARE.
         <div id="loop-msg" style="font-size:0.7rem; color:green; height:15px; text-align:right;"></div>
     </div>
 
-    <div class="playlist-sidebar" id="playlist-sidebar">
+    <div class="playlist-sidebar" id="playlist-sidebar" hidden inert aria-hidden="true">
         <h3 style="margin-top:0;">PLAYLIST</h3>
         <div id="pl-container"></div>
     </div>
-    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions">
+    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions" hidden inert>
         <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放" aria-label="定位到当前播放">🎯</button>
         <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部" aria-label="回到列表顶部">⬆️</button>
     </div>
@@ -1392,7 +1394,7 @@ SOFTWARE.
                 <button class="btn btn-play" id="play-btn" aria-label="播放"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
                 <button class="btn" id="next-btn" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
                 <div class="vol-container">
-                    <div class="vol-popup" id="vol-popup"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
+                    <div class="vol-popup" id="vol-popup" hidden inert aria-hidden="true"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
                     <button class="btn" id="vol-btn" title="音量" aria-label="打开音量控制" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
                 </div>
                 <button class="btn desktop-only" id="download-btn" title="下载" style="margin-left:8px"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h3.67v6h6V9h3.67L12 2z"/></svg></button>
@@ -1400,7 +1402,7 @@ SOFTWARE.
             </div>
         </div>
         <footer class="project-footer" aria-label="项目版本与源码">
-            <span class="project-version">v0.0.4</span>
+            <span class="project-version">v0.0.5</span>
             <span class="project-footer-separator" aria-hidden="true">&middot;</span>
             <a class="project-github-link" href="https://github.com/minori0721/Aurora-player" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Aurora-player 源码仓库">
                 <svg class="project-github-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5A11.3 11.3 0 0 0 12 .7Z"/></svg>
@@ -1411,13 +1413,23 @@ SOFTWARE.
 
     <script>
         const debugConsole = document.getElementById('debug-console');
+        const DEBUG_LOG_LIMIT = 1000;
+        let debugScrollFrame = null;
+        function scheduleDebugScroll() {
+            if (debugConsole.style.display !== 'block' || debugScrollFrame !== null) return;
+            debugScrollFrame = requestAnimationFrame(() => {
+                debugScrollFrame = null;
+                if (debugConsole.style.display === 'block') debugConsole.scrollTop = debugConsole.scrollHeight;
+            });
+        }
         function log(msg, type='') {
             console.log(msg);
             const div = document.createElement('div');
             div.className = `log-item ${type==='error'?'log-err':(type==='success'?'log-suc':'')}`;
             div.textContent = `> ${msg}`;
             debugConsole.appendChild(div);
-            debugConsole.scrollTop = debugConsole.scrollHeight;
+            while (debugConsole.children.length > DEBUG_LOG_LIMIT) debugConsole.firstElementChild.remove();
+            scheduleDebugScroll();
         }
 
         // 清洗 Cookie，只保留核心凭证（如 MUSIC_U、__csrf），去掉浏览器指令（Max-Age/Expires/Path/Domain/SameSite/Secure/HttpOnly）
@@ -1487,6 +1499,7 @@ SOFTWARE.
             lossless: ['bikonoo', 'msls', 'qijieya', 'baka', 'gdmusic', 'unm', null]
         };
         const NETEASE_RESOLVED_AUDIO_CACHE_TTL = 10 * 60_000;
+        const NETEASE_RESOLVED_AUDIO_CACHE_MAX_ENTRIES = 200;
         const neteaseResolvedAudioCache = new Map();
         const LOCAL_PREFETCH_TRIGGER_SEC = 10;
         const LOCAL_PREFETCH_PLAYBACK_WAIT_MS = 1000;
@@ -1519,6 +1532,15 @@ SOFTWARE.
 
         function clearNeteaseResolvedAudioCache() {
             neteaseResolvedAudioCache.clear();
+        }
+
+        function pruneNeteaseResolvedAudioCache(now = Date.now()) {
+            for (const [key, entry] of neteaseResolvedAudioCache) {
+                if (now - entry.ts >= NETEASE_RESOLVED_AUDIO_CACHE_TTL) neteaseResolvedAudioCache.delete(key);
+            }
+            while (neteaseResolvedAudioCache.size > NETEASE_RESOLVED_AUDIO_CACHE_MAX_ENTRIES) {
+                neteaseResolvedAudioCache.delete(neteaseResolvedAudioCache.keys().next().value);
+            }
         }
 
         function resetNeteaseDetailPrefetchState() {
@@ -1770,12 +1792,15 @@ SOFTWARE.
             const now = Date.now();
             const cached = neteaseResolvedAudioCache.get(cacheKey);
             if (cached && (now - cached.ts) < NETEASE_RESOLVED_AUDIO_CACHE_TTL) {
+                neteaseResolvedAudioCache.delete(cacheKey);
+                neteaseResolvedAudioCache.set(cacheKey, cached);
                 return {
                     ...cached.value,
                     audioInfo: cached.value.audioInfo ? { ...cached.value.audioInfo } : null,
                     candidates: [...cached.value.candidates]
                 };
             }
+            if (cached) neteaseResolvedAudioCache.delete(cacheKey);
 
             const apiUrl = buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
             const json = await cachedFetchJson(apiUrl, options, ttl);
@@ -1825,13 +1850,14 @@ SOFTWARE.
 
             if (candidates.length) {
                 neteaseResolvedAudioCache.set(cacheKey, {
-                    ts: now,
+                    ts: Date.now(),
                     value: {
                         ...result,
                         audioInfo: result.audioInfo ? { ...result.audioInfo } : null,
                         candidates: [...result.candidates]
                     }
                 });
+                pruneNeteaseResolvedAudioCache();
             }
 
             return result;
@@ -2007,6 +2033,8 @@ SOFTWARE.
         let loopAnalysisWorker = null;
         let loopAnalysisWorkerUrl = null;
         let loopAnalysisWorkerAudioId = null;
+        const LOOP_ANALYSIS_IDLE_MS = 60_000;
+        let loopAnalysisIdleTimer = null;
         let loopAnalysisJobId = 0;
         const loopAnalysisPendingJobs = new Map();
         const loopAnalysisBufferIds = new WeakMap();
@@ -2016,10 +2044,12 @@ SOFTWARE.
         let playbackState = { status: 'idle', startTime: 0, pauseTime: 0, isPlaying: false, duration: 0, error: '' };
         let playlist = [], curIdx = -1, playMode = 0;
         let lyrics = [], isSyncedLyrics = true;
+        let activeLyricIndex = -1, lyricCursorTime = -Infinity;
         let neteaseSearchEnabled = false; // 网易云歌词搜索开关，默认关闭
         let loopState = { active: false, start: 0, end: 0, source: null };
         let particles = [];
         let currentAbortController = null; // 用于取消之前的网络请求
+        let playbackMetadataController = null;
         const AUDIO_FILE_EXTENSIONS = new Set(['mp3', 'flac', 'wav', 'm4a', 'ogg']);
         const COMPANION_FILE_EXTENSIONS = new Set(['sli', 'lrc']);
         let companionRegistry = { sli: new Map(), lrc: new Map() };
@@ -2035,6 +2065,9 @@ SOFTWARE.
 
         function beginPlaybackAction() {
             cancelPreviewTimer();
+            cancelProgressDrag();
+            playbackMetadataController?.abort();
+            playbackMetadataController = null;
             window._playActionTokenSeed = (window._playActionTokenSeed || 0) + 1;
             window._currentPlayActionToken = window._playActionTokenSeed;
             return window._currentPlayActionToken;
@@ -2042,6 +2075,8 @@ SOFTWARE.
 
         function resetTrackLyrics() {
             lyrics = [];
+            activeLyricIndex = -1;
+            lyricCursorTime = -Infinity;
             isSyncedLyrics = true;
             originalLyricsText = translatedLyricsText = romanLyricsText = '';
             originalLyricsArr = [];
@@ -2085,7 +2120,7 @@ SOFTWARE.
         let nextPreloadCookie = '';
         let nextPreloadAuthGeneration = -1;
         let nextPreloadKind = 'none'; // local / netease / netease-url
-        let nextPreloadStatus = 'idle'; // idle / loading / ready / url-ready / failed
+        let nextPreloadStatus = 'idle'; // idle / loading / ready / url-ready / skipped / failed
         let nextPreloadRecoveryBudget = null;
 
         function getPlaylistTrackSongId(track) {
@@ -2160,6 +2195,12 @@ SOFTWARE.
             return slowNetwork || lowMemory || compactViewport
                 ? NETEASE_PREFETCH_MAX_BYTES_MOBILE
                 : NETEASE_PREFETCH_MAX_BYTES_DESKTOP;
+        }
+
+        async function readLocalAudioForPrefetch(file) {
+            const maxBytes = getNeteasePrefetchLimitBytes();
+            if (file.size > maxBytes) return { kind: 'skipped', sizeHint: file.size, maxBytes };
+            return { kind: 'raw', ab: await file.arrayBuffer(), audioUrl: '', audioInfo: null };
         }
 
         function getNeteaseTrackSizeHint(track) {
@@ -2367,9 +2408,10 @@ SOFTWARE.
             try {
                 const db = await openIdb();
                 return await new Promise((res, rej) => {
-                    const r = db.transaction(storeName, 'readwrite').objectStore(storeName).put(value, key);
-                    r.onsuccess = () => res(true);
-                    r.onerror = () => rej(r.error);
+                    const tx = db.transaction(storeName, 'readwrite');
+                    tx.oncomplete = () => res(true);
+                    tx.onabort = tx.onerror = () => rej(tx.error || new Error('IndexedDB write failed'));
+                    tx.objectStore(storeName).put(value, key);
                 });
             } catch (e) { return false; }
         }
@@ -2545,7 +2587,10 @@ SOFTWARE.
                     signal?.removeEventListener('abort', onAbort);
                     record.consumers = Math.max(0, record.consumers - 1);
                     handler(value);
-                    if (!record.settled && record.consumers === 0) record.controller.abort();
+                    if (!record.settled && record.consumers === 0) {
+                        if (jsonInFlight.get(record.key) === record) jsonInFlight.delete(record.key);
+                        record.controller.abort();
+                    }
                 };
                 const onAbort = () => finish(reject, createAbortError());
                 signal?.addEventListener('abort', onAbort, { once: true });
@@ -2574,6 +2619,7 @@ SOFTWARE.
                 signal,
                 ...fetchOptions
             } = options;
+            if (signal?.aborted) throw createAbortError();
             const cache = describeJsonCache(url, cacheScope);
             const now = Date.now();
             let entry = null;
@@ -2585,20 +2631,23 @@ SOFTWARE.
             } else if (!forceRefresh && cache.scope === 'account') {
                 entry = accountJsonCache.get(cache.key) || null;
             }
+            if (signal?.aborted) throw createAbortError();
             if (entry?.ts && (now - entry.ts) < ttl && isJsonResponseCacheable(entry.data, cachePredicate)) {
                 if (cache.scope === 'public') touchJsonMemoryEntry(publicJsonMemoryCache, cache.key, entry);
                 else if (cache.scope === 'account') touchJsonMemoryEntry(accountJsonCache, cache.key, entry);
                 return entry.data;
             }
             if (entry) await invalidateJsonCache(url, cacheScope);
+            if (signal?.aborted) throw createAbortError();
 
             const inFlightKey = cache.scope === 'none' ? `json-none|${url}` : cache.key;
             const existing = jsonInFlight.get(inFlightKey);
-            if (existing) return subscribeJsonRequest(existing, signal);
+            if (existing && !existing.controller.signal.aborted) return subscribeJsonRequest(existing, signal);
 
             const controller = new AbortController();
-            const record = { controller, consumers: 0, settled: false, promise: null };
-            record.promise = (async () => {
+            const record = { key: inFlightKey, controller, consumers: 0, settled: false, promise: null };
+            record.promise = Promise.resolve().then(async () => {
+                if (controller.signal.aborted) throw createAbortError();
                 const requestOptions = { ...fetchOptions, signal: controller.signal };
                 const resp = useQueue
                     ? await qFetch(url, { ...requestOptions, priority })
@@ -2609,6 +2658,7 @@ SOFTWARE.
                     throw error;
                 }
                 const data = await resp.json();
+                if (controller.signal.aborted) throw createAbortError();
                 if (!isJsonResponseCacheable(data, cachePredicate)) return data;
                 const nextEntry = { ts: Date.now(), data };
                 if (cache.scope === 'public') {
@@ -2619,7 +2669,7 @@ SOFTWARE.
                     touchJsonMemoryEntry(accountJsonCache, cache.key, nextEntry);
                 }
                 return data;
-            })().finally(() => {
+            }).finally(() => {
                 record.settled = true;
                 if (jsonInFlight.get(inFlightKey) === record) jsonInFlight.delete(inFlightKey);
             });
@@ -3040,7 +3090,7 @@ SOFTWARE.
                     && nextTrack.netease
                     && nextPreloadKind === 'netease-url'
                     && (nextPreloadStatus === 'url-loading' || nextPreloadStatus === 'url-ready');
-                if (sameTarget && (prefetchInProgress || hasPreloaded)) return;
+                if (sameTarget && (prefetchInProgress || hasPreloaded || nextPreloadStatus === 'skipped')) return;
                 if (!sameTarget || nextPreloadStatus === 'failed') cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
                 if (!reuseUrlPrewarm && nextSongUrlPrewarmController) {
                     try { nextSongUrlPrewarmController.abort(); } catch (_) {}
@@ -3093,9 +3143,9 @@ SOFTWARE.
 
                 const work = nextTrack.file
                     ? (async () => {
-                        const ab = await nextTrack.file.arrayBuffer();
+                        const result = await readLocalAudioForPrefetch(nextTrack.file);
                         if (controller.aborted || !isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, 0, '', -1)) throw createStalePreloadError();
-                        return { kind: 'raw', ab, audioUrl: '', audioInfo: null };
+                        return result;
                     })()
                     : fetchNeteaseAudioForPrefetch(snapshot, controller);
                 nextSongFetchPromise = work;
@@ -3111,11 +3161,11 @@ SOFTWARE.
                     nextSongRawData = result.kind === 'raw' ? result.ab : null;
                     hasPreloaded = result.kind === 'raw' && !!result.ab;
                     nextPreloadKind = nextTrack.file ? 'local' : (result.kind === 'raw' ? 'netease' : 'netease-url');
-                    nextPreloadStatus = hasPreloaded ? 'ready' : 'url-ready';
+                    nextPreloadStatus = result.kind === 'skipped' ? 'skipped' : (hasPreloaded ? 'ready' : 'url-ready');
                     if (hasPreloaded) {
                         log(`Preloaded ${nextTrack.file ? 'local file' : 'Netease audio'}: ${nextTrack.name}`, 'success');
                     } else {
-                        log(`Skipped full Netease preload for ${nextTrack.name}: ${(result.sizeHint / 1024 / 1024).toFixed(1)}MB exceeds ${(result.maxBytes / 1024 / 1024).toFixed(0)}MB limit`, 'info');
+                        log(`Skipped full ${nextTrack.file ? 'local' : 'Netease'} preload for ${nextTrack.name}: ${(result.sizeHint / 1024 / 1024).toFixed(1)}MB exceeds ${(result.maxBytes / 1024 / 1024).toFixed(0)}MB limit`, 'info');
                     }
                 }).catch(error => {
                     if (error?.name !== 'AbortError' && !error?.stale) log(`Next-song preload failed: ${error?.message || error}`, 'warn');
@@ -3150,6 +3200,88 @@ SOFTWARE.
             // Analyze UI
             anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMode: document.getElementById('ana-mode'), anaRun: document.getElementById('ana-run'), anaMsg: document.getElementById('ana-msg')
         };
+        const floatingPanels = new Map([
+            ['playlist-sidebar', 'toggle-list', 400], ['loop-panel', 'toggle-loop-panel', 300],
+            ['analyze-panel', 'toggle-analyze', 300], ['vol-popup', 'vol-btn', 300],
+            ['advanced-menu', 'toggle-advanced', 200]
+        ].map(([id, triggerId, duration]) => {
+            const panel = document.getElementById(id);
+            panel.hidden = true;
+            panel.inert = true;
+            panel.setAttribute('aria-hidden', 'true');
+            document.getElementById(triggerId)?.setAttribute('aria-expanded', 'false');
+            return [id, { panel, triggerId, duration, open: false, timer: 0, frame: 0, finish: null }];
+        }));
+        document.getElementById('playlist-fab-group').hidden = true;
+
+        function setFloatingPanel(id, open) {
+            const state = floatingPanels.get(id);
+            if (!state) return false;
+            const { panel, triggerId, duration } = state;
+            open = Boolean(open);
+            clearTimeout(state.timer);
+            cancelAnimationFrame(state.frame);
+            state.timer = state.frame = 0;
+            if (state.finish) panel.removeEventListener('transitionend', state.finish);
+            state.finish = null;
+            state.open = open;
+            const setInteractive = node => {
+                const saved = modalController.inertState.find(entry => entry[0] === node);
+                if (saved) saved[1] = !open;
+                node.inert = saved ? true : !open;
+            };
+            setInteractive(panel);
+            panel.setAttribute('aria-hidden', String(!open));
+            document.getElementById(triggerId)?.setAttribute('aria-expanded', String(open));
+            const fab = id === 'playlist-sidebar' ? document.getElementById('playlist-fab-group') : null;
+            if (fab) setInteractive(fab);
+            if (open) {
+                const wasHidden = panel.hidden;
+                panel.hidden = false;
+                if (fab) fab.hidden = false;
+                if (wasHidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    // Establish the closed pose before starting the entry transition.
+                    void panel.offsetWidth;
+                    state.frame = requestAnimationFrame(() => {
+                        state.frame = 0;
+                        if (state.open) {
+                            panel.classList.add('show');
+                            if (id === 'playlist-sidebar') observePlaylistCovers();
+                        }
+                    });
+                } else panel.classList.add('show');
+                if (id === 'playlist-sidebar' && panel.classList.contains('show')) observePlaylistCovers();
+            } else {
+                if (panel.contains(document.activeElement) || fab?.contains(document.activeElement)) {
+                    const trigger = document.getElementById(triggerId);
+                    if (trigger?.getClientRects().length) trigger.focus({ preventScroll: true });
+                    else document.getElementById('toggle-advanced')?.focus({ preventScroll: true });
+                }
+                panel.classList.remove('show');
+                const finish = event => {
+                    if (event && (event.target !== panel || event.propertyName !== 'transform')) return;
+                    if (state.open) return;
+                    clearTimeout(state.timer);
+                    state.timer = 0;
+                    panel.hidden = true;
+                    if (fab) fab.hidden = true;
+                    panel.removeEventListener('transitionend', finish);
+                    state.finish = null;
+                };
+                if (panel.hidden || window.matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
+                else {
+                    state.finish = finish;
+                    panel.addEventListener('transitionend', finish);
+                    // Detached elements and background tabs may not deliver transitionend.
+                    state.timer = setTimeout(finish, duration + 80);
+                }
+            }
+            return open;
+        }
+
+        function toggleFloatingPanel(id) {
+            return setFloatingPanel(id, !floatingPanels.get(id)?.open);
+        }
         // 下载 UI 元素
         const downloadBtn = document.getElementById('download-btn');
         const downloadBtnMobile = document.getElementById('download-btn-mobile');
@@ -3363,6 +3495,26 @@ SOFTWARE.
             }
         }
 
+        function createLyricTimeLookup(lines) {
+            const indexed = (lines || []).map((line, index) => ({ line, index }))
+                .filter(item => Number.isFinite(item.line.t)).sort((a, b) => a.line.t - b.line.t || a.index - b.index);
+            return time => {
+                let low = 0, high = indexed.length;
+                while (low < high) {
+                    const mid = (low + high) >>> 1;
+                    if (indexed[mid].line.t < time - 0.05) low = mid + 1;
+                    else high = mid;
+                }
+                let match = null;
+                // Preserve the original first-match rule, including unsorted or duplicate timestamps.
+                for (let i = low; i < indexed.length && indexed[i].line.t <= time + 0.05; i++) {
+                    const item = indexed[i];
+                    if (Math.abs(item.line.t - time) < 0.05 && (!match || item.index < match.index)) match = item;
+                }
+                return match?.line;
+            };
+        }
+
         // 渲染函数（在切换显示模式时复用）
         function renderLyricsFromArrays(source) {
             const hasSynced = originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0);
@@ -3374,16 +3526,22 @@ SOFTWARE.
             const times = Array.from(timeSet).map(t=>parseFloat(t)).sort((a,b)=>a-b);
             // 构建主 lyrics 数组（用于高亮与滚动）
             lyrics = [];
+            activeLyricIndex = -1;
+            lyricCursorTime = -Infinity;
             _lastActiveLyric = null;
             el.lyricBox.style.transform = 'translateY(0)';
             el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
 
             if(hasSynced && times.length) {
                 const frag = document.createDocumentFragment();
+                const findOriginal = createLyricTimeLookup(originalLyricsArr);
+                const findTranslation = createLyricTimeLookup(translatedLyricsArr);
+                const findRoman = createLyricTimeLookup(romanLyricsArr);
+                const findYrc = createLyricTimeLookup(yrcData);
                 times.forEach(t => {
-                    const orig = originalLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
-                    const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
-                    const roman = romanLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                    const orig = findOriginal(t);
+                    const trans = findTranslation(t);
+                    const roman = findRoman(t);
 
                     const otext = orig ? orig.txt : (trans ? trans.txt : (roman ? roman.txt : ''));
                     const ttext = trans ? trans.txt : '';
@@ -3397,7 +3555,7 @@ SOFTWARE.
                     container.onclick = () => startAudio(t);
 
                     // === YRC 逐字渲染分支 ===
-                    const yrcLine = yrcData && yrcData.find(l => Math.abs(l.t - t) < 0.05);
+                    const yrcLine = findYrc(t);
                     if (yrcLine && yrcLine.words.length > 0) {
                         // 找到对应逐字数据：用 span 包裹每个字
                         const odiv = document.createElement('div');
@@ -3492,10 +3650,11 @@ SOFTWARE.
                     
                     if (lyricDisplayMode !== 'original') {
                         const targetArr = lyricDisplayMode === 'both' ? translatedLyricsArr : romanLyricsArr;
+                        const findExtra = createLyricTimeLookup(targetArr);
                         lines.forEach(lineEl => {
                             const t = parseFloat(lineEl.dataset.time || -1);
                             if (isNaN(t) || t < 0) return;
-                            const sub = targetArr.find(x => Math.abs(x.t - t) < 0.05);
+                            const sub = findExtra(t);
                             if (sub && sub.txt) {
                                 const sdiv = document.createElement('div');
                                 sdiv.className = 'lyric-translation';
@@ -3524,6 +3683,13 @@ SOFTWARE.
             { key: 'hires', label: 'Hi-Res' }
         ];
         let downloadProbeToken = 0;
+        let downloadProbeController = null;
+
+        function cancelDownloadProbes() {
+            downloadProbeToken++;
+            downloadProbeController?.abort();
+            downloadProbeController = null;
+        }
 
         function extractNeteaseQualityDetail(payload, level) {
             const roots = [payload?.data, payload?.result, payload].filter(Boolean);
@@ -3557,7 +3723,7 @@ SOFTWARE.
         }
 
         function closeDownloadModal() {
-            downloadProbeToken++;
+            cancelDownloadProbes();
             modalController.close(downloadModal);
             downloadListEl.innerHTML = '';
         }
@@ -3594,16 +3760,24 @@ SOFTWARE.
 
             downloadListEl.innerHTML = '';
             const cookieParam = neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(neteaseCookie))}` : '';
+            cancelDownloadProbes();
+            const probeController = new AbortController();
+            downloadProbeController = probeController;
+            const probeSignal = probeController.signal;
             const probeToken = ++downloadProbeToken;
+            const probeAuth = captureAuthSnapshot();
+            const probeIsCurrent = () => probeToken === downloadProbeToken && !probeSignal.aborted && isAuthSnapshotCurrent(probeAuth);
+            const probeOptions = { useQueue: true, signal: probeSignal, priority: 'normal' };
             const qualityDetailPromise = cachedFetchJson(
                 buildApiUrl(`/song/music/detail?id=${songId}${cookieParam}`),
-                { useQueue: true },
+                probeOptions,
                 300_000
             ).catch(error => {
                 if (error?.name !== 'AbortError') log(`歌曲音质详情读取失败: ${error?.message || error}`, 'warn');
                 return null;
             });
 
+            const probeJobs = [];
             for (const q of QUALITY_LEVELS) {
                 const item = document.createElement('div');
                 item.className = 'quality-item';
@@ -3620,12 +3794,12 @@ SOFTWARE.
                 item.appendChild(right);
                 downloadListEl.appendChild(item);
 
-                (async function(it, level){
+                probeJobs.push(() => (async function(it, level){
                     try {
                         const metaEl = it.querySelector('.quality-meta');
                         const rightArea = it.querySelector('.quality-action');
                         const detailPayload = await qualityDetailPromise;
-                        if (probeToken !== downloadProbeToken) return;
+                        if (!probeIsCurrent()) return;
                         const detail = extractNeteaseQualityDetail(detailPayload, level);
                         const detailText = formatNeteaseQualityDetail(detail);
                         if (detailText) metaEl.textContent = `${detailText} · 检测下载链接…`;
@@ -3636,11 +3810,13 @@ SOFTWARE.
                         
                         // 1. 优先尝试官方客户端下载接口；如果只有试听或没有链接，再交给 match 兜底。
                         try {
-                            const downloadJson = await cachedFetchJson(buildApiUrl(`/song/download/url/v1?id=${songId}&level=${level}${cookieParam}`), { useQueue: true }, 30_000);
+                            const downloadJson = await cachedFetchJson(buildApiUrl(`/song/download/url/v1?id=${songId}&level=${level}${cookieParam}`), probeOptions, 30_000);
+                            if (!probeIsCurrent()) return;
                             if (downloadJson?.data?.url && !isNeteaseTrialOnly(downloadJson.data)) {
                                 data = downloadJson.data;
                             }
                         } catch(e) {
+                            if (e?.name === 'AbortError' || !probeIsCurrent()) return;
                             // 接口拉取失败
                         }
 
@@ -3648,7 +3824,8 @@ SOFTWARE.
                         if (!data || !data.url) {
                             useMatchForVip = true;
                             try {
-                                const matchResult = await fetchNeteaseMatchAudio(songId, cookieParam, { useQueue: true }, 30_000, getNeteaseMatchStrategy(level));
+                                const matchResult = await fetchNeteaseMatchAudio(songId, cookieParam, probeOptions, 30_000, getNeteaseMatchStrategy(level));
+                                if (!probeIsCurrent()) return;
                                 if (matchResult.audioUrl) {
                                     const matchUrl = matchResult.audioUrl;
                                     let matchExt = inferAudioTypeFromUrl(matchUrl);
@@ -3663,10 +3840,12 @@ SOFTWARE.
                                     };
                                 }
                             } catch(e) {
+                                if (e?.name === 'AbortError' || !probeIsCurrent()) return;
                                 // match 接口也获取失败
                             }
                         }
                         
+                        if (!probeIsCurrent()) return;
                         // === 判断是否成功获取链接 ===
                         // 判断请求是否成功且有数据
                         if (data && data.url) {
@@ -3772,14 +3951,21 @@ SOFTWARE.
                             rightArea.appendChild(noBtn);
                         }
                     } catch (e) {
+                        if (e?.name === 'AbortError' || !probeIsCurrent()) return;
                         it.classList.add('disabled');
                         const metaEl = it.querySelector('.quality-meta'); if (metaEl) metaEl.textContent = 'Err';
                         const rightArea = it.querySelector('.quality-action'); rightArea.innerHTML = '';
                     }
-                })(item, q.key);
+                })(item, q.key));
             }
+            const runProbes = async () => {
+                while (probeIsCurrent() && probeJobs.length) await probeJobs.shift()();
+            };
+            await Promise.all([runProbes(), runProbes()]);
+            if (downloadProbeController === probeController) downloadProbeController = null;
         };
         const colorThief = new ColorThief();
+        const themeColorCanvas = document.createElement('canvas');
         const canvasCtx = el.canvas.getContext('2d');
 
         // --- 核心：自动循环匹配算法 (相位窗口 + 接缝评分) ---
@@ -3927,7 +4113,24 @@ SOFTWARE.
             `;
         }
 
+        function clearLoopAnalysisIdleTimer() {
+            if (loopAnalysisIdleTimer !== null) clearTimeout(loopAnalysisIdleTimer);
+            loopAnalysisIdleTimer = null;
+        }
+
+        function scheduleLoopAnalysisIdleRelease() {
+            clearLoopAnalysisIdleTimer();
+            if (!loopAnalysisWorker || loopAnalysisPendingJobs.size) return;
+            const worker = loopAnalysisWorker;
+            loopAnalysisIdleTimer = setTimeout(() => {
+                loopAnalysisIdleTimer = null;
+                if (loopAnalysisWorker !== worker || loopAnalysisPendingJobs.size) return;
+                resetLoopAnalysisWorkerAudio();
+            }, LOOP_ANALYSIS_IDLE_MS);
+        }
+
         function failLoopAnalysisWorker(error) {
+            clearLoopAnalysisIdleTimer();
             const pending = [...loopAnalysisPendingJobs.values()];
             loopAnalysisPendingJobs.clear();
             pending.forEach(job => job.reject(error));
@@ -3958,13 +4161,14 @@ SOFTWARE.
             const blob = new Blob([buildLoopAnalysisWorkerSource()], { type: 'text/javascript' });
             loopAnalysisWorkerUrl = URL.createObjectURL(blob);
             loopAnalysisWorker = new Worker(loopAnalysisWorkerUrl);
+            const worker = loopAnalysisWorker;
 
-            loopAnalysisWorker.onmessage = (event) => {
+            worker.onmessage = (event) => {
+                if (loopAnalysisWorker !== worker) return;
                 const message = event.data || {};
                 const job = loopAnalysisPendingJobs.get(message.jobId);
                 if (!job) return;
                 loopAnalysisPendingJobs.delete(message.jobId);
-                if (message.audioId) loopAnalysisWorkerAudioId = message.audioId;
 
                 if (message.ok) {
                     job.resolve(message.result);
@@ -3973,9 +4177,11 @@ SOFTWARE.
                     error.analysisError = true;
                     job.reject(error);
                 }
+                scheduleLoopAnalysisIdleRelease();
             };
 
-            loopAnalysisWorker.onerror = (event) => {
+            worker.onerror = (event) => {
+                if (loopAnalysisWorker !== worker) return;
                 const message = event?.message || 'Loop analysis worker failed';
                 const error = new Error(message);
                 error.workerError = true;
@@ -3985,8 +4191,22 @@ SOFTWARE.
             return loopAnalysisWorker;
         }
 
+        function createLoopAnalysisTransferData(buffer) {
+            const chan0 = buffer.getChannelData(0);
+            // Never transfer a playback channel: transfer only this independent array.
+            const data = new Float32Array(chan0.length);
+            if (buffer.numberOfChannels === 1) {
+                data.set(chan0);
+            } else {
+                const chan1 = buffer.getChannelData(1);
+                for (let i = 0; i < chan0.length; i++) data[i] = (chan0[i] + chan1[i]) * 0.5;
+            }
+            return data;
+        }
+
         function runLoopAnalysisInWorker(buffer, timeA, timeB, mode = 'balanced') {
             const worker = getLoopAnalysisWorker();
+            clearLoopAnalysisIdleTimer();
             const audioId = getLoopAnalysisAudioId(buffer);
             const jobId = ++loopAnalysisJobId;
             const message = {
@@ -4001,9 +4221,7 @@ SOFTWARE.
             const transfer = [];
 
             if (loopAnalysisWorkerAudioId !== audioId) {
-                const mono = getMonoAnalysisData(buffer);
-                const data = new Float32Array(mono.length);
-                data.set(mono);
+                const data = createLoopAnalysisTransferData(buffer);
                 message.dataBuffer = data.buffer;
                 transfer.push(data.buffer);
             }
@@ -4845,8 +5063,14 @@ SOFTWARE.
             } catch (error) {
                 if (error?.cancelled) throw error;
                 if (error?.analysisError) throw error;
+                failLoopAnalysisWorker(error);
                 log(`Loop analysis worker unavailable, using main thread fallback: ${error.message}`, 'warn');
-                return findBestMatchByMode(buffer, timeA, timeB, mode);
+                try {
+                    return findBestMatchByMode(buffer, timeA, timeB, mode);
+                } finally {
+                    monoAnalysisCache.delete(buffer);
+                    downsampleAnalysisCache.delete(buffer);
+                }
             }
         }
 
@@ -5396,22 +5620,27 @@ SOFTWARE.
             el.title.textContent = track.name;
             ensurePlaylistRenderedAndActive();
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
+            const audioUnlockPromise = unlockAudioContext('local-track');
             if (!track.file && track.fileHandle && typeof track.fileHandle.getFile === 'function') {
                 try {
-                    const permission = typeof track.fileHandle.queryPermission === 'function'
-                        ? await track.fileHandle.queryPermission({ mode: 'read' }) : 'prompt';
+                    const handle = track.fileHandle;
+                    let permission = 'prompt';
+                    // Request in the click's call stack, before any permission query or audio-unlock wait.
+                    if (typeof handle.requestPermission === 'function' && navigator.userActivation?.isActive) {
+                        permission = await handle.requestPermission({ mode: 'read' });
+                    } else if (typeof handle.queryPermission === 'function') {
+                        permission = await handle.queryPermission({ mode: 'read' });
+                    }
                     if (!isCurrent()) return;
                     let file = null;
-                    if (permission === 'granted' || typeof track.fileHandle.requestPermission !== 'function') {
-                        file = await track.fileHandle.getFile();
-                    } else if (await track.fileHandle.requestPermission({ mode: 'read' }) === 'granted') {
-                        if (!isCurrent()) return;
-                        file = await track.fileHandle.getFile();
+                    if (permission === 'granted' || typeof handle.requestPermission !== 'function') {
+                        file = await handle.getFile();
                     }
                     if (!isCurrent()) return;
                     track.file = file;
                     if (track.file) {
                         track.needsFile = false;
+                        refreshPlaylistItem(i);
                         if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave();
                     }
                 } catch (error) {
@@ -5422,8 +5651,18 @@ SOFTWARE.
             if (!isCurrent()) return;
             if (!track.file) {
                 const label = track.asset?.relativePath || track.name || '本地文件';
-                setPlaybackStatus('error', { error: `请重新选择本地文件：${label}` });
-                showImportSummary(`本地文件未恢复，请重新导入：${label}`, true);
+                const message = track.fileHandle
+                    ? `本地文件需要授权，请点击播放并允许访问：${label}`
+                    : `本地文件未恢复，请重新导入：${label}`;
+                setPlaybackStatus('error', { error: message });
+                el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">${escapeHtml(message)}</div>`;
+                showImportSummary(message, true);
+                return;
+            }
+            const unlocked = await audioUnlockPromise;
+            if (!isCurrent()) return;
+            if (!unlocked) {
+                setPlaybackStatus('error', { error: '浏览器阻止了音频播放' });
                 return;
             }
             prefetchAttempted = false; // 新增：无论怎么切歌，先重置预加载状态
@@ -5445,7 +5684,7 @@ SOFTWARE.
 
             setMainMusicEntityLinks(null);
             el.title.textContent = track.name; el.artist.textContent = "Loading...";
-            el.img.style.opacity = 0; el.img.src = '';
+            el.img.style.opacity = 0; setMainCover();
             el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
             log(`Track: ${track.name}`);
 
@@ -5591,12 +5830,88 @@ SOFTWARE.
             }
         }
 
+        let mainCoverObjectUrl = null;
+        let mainCoverMimeType = '';
+        let mainCoverGeneration = 0;
+        let mainCoverSource = null;
+        const mainCoverTrackIds = new WeakMap();
+        let mainCoverTrackId = 0;
+        let coverResizeTimer = 0;
+
+        function coverDisplaySize() {
+            const edge = (Math.max(el.img.clientWidth, el.img.clientHeight) || 280) * (window.devicePixelRatio || 1);
+            return [512, 768, 1024, 1536, 2048].find(size => size >= edge) || 2048;
+        }
+
+        function coverDisplayUrl(src, size = coverDisplaySize()) {
+            if (!src) return '';
+            try {
+                const url = new URL(src, location.href);
+                if (/^https?:$/.test(url.protocol) && /(^|\.)music\.126\.net$/i.test(url.hostname)
+                    && !/\.(?:gif|apng|webp)$/i.test(url.pathname)) {
+                    url.searchParams.set('param', `${size}y${size}`);
+                    return url.href;
+                }
+            } catch (_) {}
+            return src;
+        }
+
+        function commitMainCover(src, { onLoad = null, objectUrl = false, mimeType = '' } = {}, generation = mainCoverGeneration) {
+            if (generation !== mainCoverGeneration) {
+                if (objectUrl) URL.revokeObjectURL(src);
+                return;
+            }
+            const previousUrl = mainCoverObjectUrl;
+            mainCoverObjectUrl = objectUrl ? src : null;
+            mainCoverMimeType = mimeType;
+            el.img.onload = () => {
+                if (generation !== mainCoverGeneration || el.img.getAttribute('src') !== src) return;
+                if (onLoad) onLoad();
+                try { updateMediaSession(); } catch (_) {}
+            };
+            if (src) el.img.src = src;
+            else el.img.removeAttribute('src');
+            // Move every current consumer off the previous URL before revoking it.
+            updateMusicMiniPlayer();
+            try { updateMediaSession(); } catch (_) {}
+            if (previousUrl && previousUrl !== mainCoverObjectUrl) URL.revokeObjectURL(previousUrl);
+        }
+
+        function setMainCover(src = '', { onLoad = null, objectUrl = false, mimeType = '' } = {}) {
+            const generation = ++mainCoverGeneration;
+            const track = playlist[curIdx];
+            mainCoverTrackId = 0;
+            if (src && track && typeof track === 'object') {
+                if (!mainCoverTrackIds.has(track)) mainCoverTrackIds.set(track, generation);
+                mainCoverTrackId = mainCoverTrackIds.get(track);
+            }
+            mainCoverSource = src && !objectUrl ? { src, onLoad, size: coverDisplaySize() } : null;
+            commitMainCover(objectUrl ? src : coverDisplayUrl(src), { onLoad, objectUrl, mimeType }, generation);
+        }
+
+        function scheduleCoverResize() {
+            clearTimeout(coverResizeTimer);
+            coverResizeTimer = setTimeout(() => {
+                const source = mainCoverSource;
+                const size = coverDisplaySize();
+                if (!source || source.size === size) return;
+                source.size = size;
+                const src = coverDisplayUrl(source.src, size);
+                if (src === el.img.getAttribute('src')) return;
+                const generation = ++mainCoverGeneration;
+                commitMainCover(src, { onLoad: source.onLoad }, generation);
+            }, 180);
+        }
+        window.addEventListener('resize', scheduleCoverResize);
+        if (typeof ResizeObserver === 'function') new ResizeObserver(scheduleCoverResize).observe(el.coverWrap);
+
         function updateMediaSession() {
             if ('mediaSession' in navigator) {
+                const artworkSrc = el.img.getAttribute('src');
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: el.title.textContent,
                     artist: el.artist.textContent,
-                    artwork: [ { src: el.img.src, sizes: '512x512', type: 'image/png' } ]
+                    artwork: artworkSrc ? [{ src: el.img.src, sizes: el.img.complete && el.img.naturalWidth ? `${el.img.naturalWidth}x${el.img.naturalHeight}` : 'any', ...(mainCoverMimeType ? { type: mainCoverMimeType } : {}) }] : []
                 });
                 navigator.mediaSession.setActionHandler('play', () => el.playBtn.click());
                 navigator.mediaSession.setActionHandler('pause', () => el.playBtn.click());
@@ -5623,13 +5938,12 @@ SOFTWARE.
                 const data = common.picture.data;
                 const format = common.picture.format;
                 if(data && format) {
-                    let base64 = "";
-                    for(let j=0; j<data.length; j++) base64 += String.fromCharCode(data[j]);
-                    el.img.src = `data:${format};base64,${window.btoa(base64)}`;
-                    el.img.onload = () => {
+                    const bytes = ArrayBuffer.isView(data) ? data : new Uint8Array(data);
+                    const url = URL.createObjectURL(new Blob([bytes], { type: format }));
+                    setMainCover(url, { objectUrl: true, mimeType: format, onLoad: () => {
                         if (!isCurrent()) return;
-                        el.img.style.opacity = 1; updateTheme(el.img); updateMediaSession();
-                    }
+                        el.img.style.opacity = 1; updateTheme(el.img);
+                    } });
                 }
             } else { updateTheme(null); }
 
@@ -6023,13 +6337,27 @@ SOFTWARE.
         }
 
         // 刷新当前高亮行并将其居中（可被外部调用以立即更新）
-        let _lastActiveLyric = null; 
+        let _lastActiveLyric = null;
+        function findActiveLyricIndex(now, force = false) {
+            if (!lyrics.length) return -1;
+            if (force || activeLyricIndex < 0 || now < lyricCursorTime || now - lyricCursorTime > 1) {
+                let low = 0, high = lyrics.length;
+                while (low < high) {
+                    const mid = (low + high) >>> 1;
+                    if (lyrics[mid].t <= now) low = mid + 1;
+                    else high = mid;
+                }
+                activeLyricIndex = Math.max(0, low - 1);
+            } else {
+                while (activeLyricIndex + 1 < lyrics.length && lyrics[activeLyricIndex + 1].t <= now) activeLyricIndex++;
+            }
+            lyricCursorTime = now;
+            return activeLyricIndex;
+        }
         function refreshLyricHighlightAndCenter(force = false) {
             if(!isSyncedLyrics || !lyrics || !lyrics.length) return;
             const now = getCurrentTime();
-            let idx = lyrics.findIndex(l => l.t > now) - 1;
-            if(idx < 0) idx = lyrics.length - 1;
-            if(now < lyrics[0]?.t) idx = 0;
+            const idx = findActiveLyricIndex(now, force);
             const activeLine = el.lyricBox.children[idx + 1];
             if(!activeLine) return;
             
@@ -6073,7 +6401,7 @@ SOFTWARE.
 
             const parentHeight = el.lyricBox.parentNode.offsetHeight || (window.innerHeight * 0.5);
             const offset = activeLine.offsetTop - parentHeight/2 + activeLine.offsetHeight/2;
-            el.lyricBox.style.transform = `translateY(-${offset}px)`;
+            el.lyricBox.style.transform = `translateY(${-offset}px)`;
         }
 
         let _lastTimeStr = "";
@@ -6094,6 +6422,19 @@ SOFTWARE.
 
         function visualEffectIsActive() {
             return !document.hidden && !reducedMotionMedia.matches && el.effectSel.value !== 'none';
+        }
+
+        function syncVisualCanvasSize() {
+            if (!el.canvas) return;
+            const active = visualEffectIsActive();
+            if (el.canvas.hidden === active) el.canvas.hidden = !active;
+            const width = active ? Math.max(1, window.innerWidth) : 1;
+            const height = active ? Math.max(1, window.innerHeight) : 1;
+            if (el.canvas.width === width && el.canvas.height === height) return;
+            // Resizing clears the backing surface; restore before the next draw.
+            el.canvas.width = width;
+            el.canvas.height = height;
+            canvasNeedsClear = true;
         }
 
         function clearVisualCanvasOnce() {
@@ -6125,6 +6466,7 @@ SOFTWARE.
         function renderFrame(timestamp) {
             renderFrameId = 0;
             window.__auroraPerf.rafCount++;
+            syncVisualCanvasSize();
             const effectActive = visualEffectIsActive();
             if (!effectActive) clearVisualCanvasOnce();
             const shouldUpdatePlayback = playbackState.isPlaying || lastBasicRenderAt === 0;
@@ -6164,14 +6506,17 @@ SOFTWARE.
         }
 
         el.effectSel.addEventListener('change', () => {
+            syncVisualCanvasSize();
             canvasNeedsClear = true;
             scheduleRender(true);
         });
         reducedMotionMedia.addEventListener?.('change', () => {
+            syncVisualCanvasSize();
             canvasNeedsClear = true;
             scheduleRender(true);
         });
         document.addEventListener('visibilitychange', () => {
+            syncVisualCanvasSize();
             if (document.hidden) {
                 if (renderFrameId) cancelAnimationFrame(renderFrameId);
                 if (renderTimerId) clearTimeout(renderTimerId);
@@ -6190,6 +6535,12 @@ SOFTWARE.
                 playbackState.pauseTime = getCurrentTime();
                 stopAudio('paused');
             } else {
+                if (!audioBuffer && playlist.length > 0) {
+                    const index = curIdx >= 0 && curIdx < playlist.length ? curIdx : 0;
+                    // Loading owns audio unlock; local-file permission must start without an earlier await.
+                    await playTrackFromPlaylist(index);
+                    return;
+                }
                 const unlocked = await unlockAudioContext('play-button');
                 if (!unlocked) {
                     setPlaybackStatus('error', { error: '浏览器阻止了音频播放' });
@@ -6197,13 +6548,6 @@ SOFTWARE.
                 }
                 if (audioBuffer) {
                     startAudio(playbackState.pauseTime);
-                } else {
-                    // 如果没有已解码音频，尝试从当前索引加载并播放（例如恢复后的列表）
-                    if (typeof curIdx === 'number' && curIdx >= 0 && curIdx < playlist.length) {
-                        playTrackFromPlaylist(curIdx);
-                    } else if (playlist.length > 0) {
-                        playTrackFromPlaylist(0);
-                    }
                 }
             }
         };
@@ -6212,6 +6556,16 @@ SOFTWARE.
         let isDraggingProgress = false;
         let wasPlayingBeforeDrag = false;
         let progressDragPointerId = null;
+        let progressDragSnapshot = null;
+
+        function cancelProgressDrag() {
+            if (!isDraggingProgress) return;
+            isDraggingProgress = false;
+            const pointerId = progressDragPointerId;
+            progressDragPointerId = null;
+            progressDragSnapshot = null;
+            try { el.progBg.releasePointerCapture(pointerId); } catch (_) {}
+        }
         
         function handleProgressSeek(e) {
             if(!playbackState.duration) return;
@@ -6226,11 +6580,13 @@ SOFTWARE.
         
         el.progBg.addEventListener('pointerdown', e => {
             if(!playbackState.duration) return;
+            if (isDraggingProgress) return;
             if (e.button !== undefined && e.button !== 0) return;
             cancelPreviewTimer();
             isDraggingProgress = true;
             progressDragPointerId = e.pointerId;
             wasPlayingBeforeDrag = playbackState.isPlaying;
+            progressDragSnapshot = { token: window._currentPlayActionToken, buffer: audioBuffer, track: playlist[curIdx] };
             try { el.progBg.setPointerCapture(e.pointerId); } catch (_) {}
             if(wasPlayingBeforeDrag) stopAudio('paused');
             playbackState.pauseTime = handleProgressSeek(e);
@@ -6239,15 +6595,21 @@ SOFTWARE.
 
         el.progBg.addEventListener('pointermove', e => {
             if(!isDraggingProgress || e.pointerId !== progressDragPointerId) return;
+            if (progressDragSnapshot?.token !== window._currentPlayActionToken
+                || progressDragSnapshot?.buffer !== audioBuffer || progressDragSnapshot?.track !== playlist[curIdx]) {
+                cancelProgressDrag();
+                return;
+            }
             playbackState.pauseTime = handleProgressSeek(e);
             e.preventDefault();
         });
 
         function finishProgressDrag(e) {
             if(!isDraggingProgress || e.pointerId !== progressDragPointerId) return;
-            isDraggingProgress = false;
-            try { el.progBg.releasePointerCapture(progressDragPointerId); } catch (_) {}
-            progressDragPointerId = null;
+            const snapshot = progressDragSnapshot;
+            cancelProgressDrag();
+            if (!snapshot || snapshot.token !== window._currentPlayActionToken
+                || snapshot.buffer !== audioBuffer || snapshot.track !== playlist[curIdx]) return;
             if(wasPlayingBeforeDrag) {
                 startAudio(playbackState.pauseTime);
             } else setPlaybackStatus('paused');
@@ -6255,12 +6617,18 @@ SOFTWARE.
 
         el.progBg.addEventListener('pointerup', finishProgressDrag);
         el.progBg.addEventListener('pointercancel', finishProgressDrag);
+        el.progBg.addEventListener('lostpointercapture', finishProgressDrag);
 
         el.volBtn.onclick = () => {
-            const expanded = el.volPopup.classList.toggle('show');
-            el.volBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            clearTimeout(window.volTimer);
+            toggleFloatingPanel('vol-popup');
         };
         el.volRange.oninput = () => { gainNode.gain.value = el.volRange.value; };
+        function showKeyboardVolume() {
+            setFloatingPanel('vol-popup', true);
+            clearTimeout(window.volTimer);
+            window.volTimer = setTimeout(() => setFloatingPanel('vol-popup', false), 2000);
+        }
 
         document.addEventListener('keydown', (e) => {
             const target = e.target instanceof Element ? e.target : null;
@@ -6268,8 +6636,8 @@ SOFTWARE.
             if(e.code === 'Space') { e.preventDefault(); el.playBtn.click(); }
             else if (e.code === 'ArrowLeft') { if (audioBuffer) { const t = Math.max(0, getCurrentTime() - 5); if (playbackState.isPlaying) startAudio(t); else { playbackState.pauseTime = t; updateUI(t); } } }
             else if (e.code === 'ArrowRight') { if (audioBuffer) { const t = Math.min(playbackState.duration, getCurrentTime() + 5); if (playbackState.isPlaying) startAudio(t); else { playbackState.pauseTime = t; updateUI(t); } } }
-            else if (e.code === 'ArrowUp') { e.preventDefault(); el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); el.volBtn.setAttribute('aria-expanded', 'true'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => { el.volPopup.classList.remove('show'); el.volBtn.setAttribute('aria-expanded', 'false'); }, 2000); }
-            else if (e.code === 'ArrowDown') { e.preventDefault(); el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05); gainNode.gain.value = el.volRange.value; el.volPopup.classList.add('show'); el.volBtn.setAttribute('aria-expanded', 'true'); clearTimeout(window.volTimer); window.volTimer = setTimeout(() => { el.volPopup.classList.remove('show'); el.volBtn.setAttribute('aria-expanded', 'false'); }, 2000); }
+            else if (e.code === 'ArrowUp') { e.preventDefault(); el.volRange.value = Math.min(1, parseFloat(el.volRange.value) + 0.05); gainNode.gain.value = el.volRange.value; showKeyboardVolume(); }
+            else if (e.code === 'ArrowDown') { e.preventDefault(); el.volRange.value = Math.max(0, parseFloat(el.volRange.value) - 0.05); gainNode.gain.value = el.volRange.value; showKeyboardVolume(); }
         });
         function updateUI(t) { el.currTime.textContent = fmtTime(t); setPlaybackProgress(t / playbackState.duration); }
 
@@ -6814,12 +7182,20 @@ SOFTWARE.
             });
             schedulePlaylistCoverPump(0);
         }
+        let activePlaylistRow = null;
         function updatePlaylistActiveItem() {
-            const items = el.plContainer.querySelectorAll('.pl-item');
-            items.forEach((node, idx) => {
-                node.classList.toggle('active', idx === curIdx);
-                node.setAttribute('aria-current', idx === curIdx ? 'true' : 'false');
-            });
+            const nextRow = el.plContainer.children[curIdx] || null;
+            if (activePlaylistRow !== nextRow) {
+                if (activePlaylistRow) {
+                    activePlaylistRow.classList.remove('active');
+                    activePlaylistRow.setAttribute('aria-current', 'false');
+                }
+                if (nextRow) {
+                    nextRow.classList.add('active');
+                    nextRow.setAttribute('aria-current', 'true');
+                }
+                activePlaylistRow = nextRow;
+            }
             if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave();
         }
 
@@ -6829,7 +7205,7 @@ SOFTWARE.
                 const marker = document.createElement('span');
                 marker.className = 'pl-item-companion warn';
                 marker.textContent = '!';
-                marker.title = '本地文件未恢复，请重新选择或导入文件';
+                marker.title = track.fileHandle ? '点击播放以授权读取本地文件' : '本地文件未恢复，请重新选择或导入文件';
                 marker.setAttribute('aria-label', marker.title);
                 row.appendChild(marker);
                 return;
@@ -6845,11 +7221,14 @@ SOFTWARE.
         }
 
         function refreshPlaylistItem(index) {
+            schedulePlaylistTrackSave(index);
             const row = el.plContainer.children[index];
             const track = playlist[index];
             if (!row || !track) return;
 
-            row.setAttribute('aria-label', track.needsFile ? `第 ${index + 1} 首：${track.name}，需要重新选择本地文件` : `播放第 ${index + 1} 首：${track.name}`);
+            row.setAttribute('aria-label', track.needsFile
+                ? (track.fileHandle ? `授权并播放第 ${index + 1} 首：${track.name}` : `第 ${index + 1} 首：${track.name}，需要重新选择本地文件`)
+                : `播放第 ${index + 1} 首：${track.name}`);
             const titleEl = row.querySelector('.pl-item-title');
             if (titleEl) {
                 const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
@@ -6875,6 +7254,7 @@ SOFTWARE.
             const d = document.createElement('button');
             d.type = 'button';
             d.className = 'pl-item';
+            d.setAttribute('aria-current', 'false');
             const indexEl = document.createElement('span');
             indexEl.className = 'pl-item-index';
             indexEl.textContent = String(index + 1);
@@ -6902,7 +7282,9 @@ SOFTWARE.
                 }
                 playTrackFromPlaylist(index);
             };
-            d.setAttribute('aria-label', track.needsFile ? `第 ${index + 1} 首：${track.name}，需要重新选择本地文件` : `播放第 ${index + 1} 首：${track.name}`);
+            d.setAttribute('aria-label', track.needsFile
+                ? (track.fileHandle ? `授权并播放第 ${index + 1} 首：${track.name}` : `第 ${index + 1} 首：${track.name}，需要重新选择本地文件`)
+                : `播放第 ${index + 1} 首：${track.name}`);
             const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
             titleEl.textContent = `${icon}${track.name}`;
             return d;
@@ -6920,6 +7302,7 @@ SOFTWARE.
             observePlaylistCovers();
             cancelOrphanedPlaylistCoverResources();
             trimPlaylistCoverResourceCache();
+            schedulePlaylistStateSave(true);
         }
 
         function renderPlaylist() {
@@ -6928,9 +7311,10 @@ SOFTWARE.
                 el.plContainer.querySelectorAll('.pl-item-cover').forEach(img => playlistCoverObserver.unobserve(img));
             }
             el.plContainer.innerHTML = '';
+            activePlaylistRow = null;
             playlistCoverQueue = [];
             appendPlaylistRows(0, true);
-            if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave();
+            if (typeof schedulePlaylistStateSave === 'function') schedulePlaylistStateSave(true);
         }
         function scrollPlaylistToCurrent() {
             if (!el.plSidebar || !playlist || playlist.length === 0 || curIdx < 0) return;
@@ -6944,22 +7328,39 @@ SOFTWARE.
         }
         function updateTheme(img) {
             let c1 = "#e0c3fc", c2 = "#8ec5fc";
-            if(img) { try { const rgb = colorThief.getColor(img); c1 = `rgb(${Math.floor((rgb[0]+255)/2)},${Math.floor((rgb[1]+255)/2)},${Math.floor((rgb[2]+255)/2)})`; c2 = `rgb(${Math.floor((rgb[0]+200)/2)},${Math.floor((rgb[1]+220)/2)},${Math.floor((rgb[2]+255)/2)})`; } catch(e){} }
+            if(img) {
+                try {
+                    const width = img.naturalWidth, height = img.naturalHeight;
+                    if (!width || !height) throw new Error('Cover not loaded');
+                    const scale = Math.min(1, 96 / Math.max(width, height));
+                    themeColorCanvas.width = Math.max(1, Math.round(width * scale));
+                    themeColorCanvas.height = Math.max(1, Math.round(height * scale));
+                    // ColorThief 2.4 expects image dimensions, but drawImage also accepts a canvas.
+                    themeColorCanvas.naturalWidth = themeColorCanvas.width;
+                    themeColorCanvas.naturalHeight = themeColorCanvas.height;
+                    themeColorCanvas.getContext('2d').drawImage(img, 0, 0, themeColorCanvas.width, themeColorCanvas.height);
+                    const rgb = colorThief.getColor(themeColorCanvas);
+                    c1 = `rgb(${Math.floor((rgb[0]+255)/2)},${Math.floor((rgb[1]+255)/2)},${Math.floor((rgb[2]+255)/2)})`;
+                    c2 = `rgb(${Math.floor((rgb[0]+200)/2)},${Math.floor((rgb[1]+220)/2)},${Math.floor((rgb[2]+255)/2)})`;
+                } catch(e) {
+                } finally {
+                    themeColorCanvas.width = themeColorCanvas.height = 1;
+                }
+            }
             document.body.style.setProperty('--bg-1', c1); document.body.style.setProperty('--bg-2', c2);
         }
         let freqData = null;
         window.addEventListener('resize', () => {
             if(el.canvas) {
-                el.canvas.width = window.innerWidth;
-                el.canvas.height = window.innerHeight;
-                canvasNeedsClear = true;
+                syncVisualCanvasSize();
                 scheduleRender(true);
             }
         });
         if(el.canvas) {
-            el.canvas.width = window.innerWidth; el.canvas.height = window.innerHeight;
+            syncVisualCanvasSize();
         }
         function renderVisuals() {
+            syncVisualCanvasSize();
             const mode = el.effectSel.value;
             const w = el.canvas.width, h = el.canvas.height;
             if (mode === 'none' || reducedMotionMedia.matches || document.hidden) {
@@ -7013,32 +7414,21 @@ SOFTWARE.
             }
         }
 
-        document.getElementById('toggle-list').onclick = event => {
-            const sidebar = document.getElementById('playlist-sidebar');
-            const isShown = sidebar.classList.toggle('show');
-            event.currentTarget.setAttribute('aria-expanded', isShown ? 'true' : 'false');
-            if (isShown) observePlaylistCovers();
-        };
+        document.getElementById('toggle-list').onclick = () => toggleFloatingPanel('playlist-sidebar');
         if (el.plScrollCurrent) el.plScrollCurrent.onclick = scrollPlaylistToCurrent;
         if (el.plScrollTop) el.plScrollTop.onclick = scrollPlaylistToTop;
-        document.getElementById('toggle-loop-panel').onclick = event => {
-            const shown = document.getElementById('loop-panel').classList.toggle('show');
-            event.currentTarget.setAttribute('aria-expanded', shown ? 'true' : 'false');
-        };
-        document.getElementById('toggle-analyze').onclick = event => {
-            const shown = document.getElementById('analyze-panel').classList.toggle('show');
-            event.currentTarget.setAttribute('aria-expanded', shown ? 'true' : 'false');
-        };
+        document.getElementById('toggle-loop-panel').onclick = () => toggleFloatingPanel('loop-panel');
+        document.getElementById('toggle-analyze').onclick = () => toggleFloatingPanel('analyze-panel');
         document.addEventListener('click', event => {
             const closeButton = event.target.closest('.panel-float .panel-close');
             if (!closeButton) return;
             const panel = closeButton.closest('.panel-float');
-            const toggleId = panel?.id === 'loop-panel' ? 'toggle-loop-panel' : (panel?.id === 'analyze-panel' ? 'toggle-analyze' : '');
-            if (toggleId) document.getElementById(toggleId)?.setAttribute('aria-expanded', 'false');
+            if (panel) setFloatingPanel(panel.id, false);
         });
         document.getElementById('toggle-debug').onclick = () => {
             const dbg = document.getElementById('debug-console');
             dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
+            scheduleDebugScroll();
         };
         
         // 网易云歌词开关
@@ -7221,14 +7611,7 @@ SOFTWARE.
             const sameArtistEntity = previousRoute?.kind === 'artist'
                 && route.kind === 'artist'
                 && Number(previousRoute.id) === Number(route.id);
-            if (window.neteaseQrAbortController) {
-                window.neteaseQrAbortController.abort();
-                window.neteaseQrAbortController = null;
-            }
-            if (qrCheckTimer) {
-                clearInterval(qrCheckTimer);
-                qrCheckTimer = null;
-            }
+            cancelQRCodeSession();
             const preserveSameArtistRequests = sameArtistEntity && previousRoute?.kind === 'artist' && route.kind === 'artist';
             if (!preserveSameArtistRequests) abortMusicNavigationRequests();
             const controller = new AbortController();
@@ -7322,7 +7705,7 @@ SOFTWARE.
             const state = { ...(history.state || {}), auroraMusic: musicState };
             if (replace) history.replaceState(state, '', url);
             else history.pushState(state, '', url);
-            renderMusicRoute(parseMusicRoute(hash), 0);
+            renderMusicRoute(parseMusicRoute(hash), options.restoreScroll || 0);
         }
 
         function openMusicBrowser() {
@@ -7348,8 +7731,7 @@ SOFTWARE.
             saveMusicScrollState();
             try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
             abortMusicNavigationRequests();
-            if (window.neteaseQrAbortController) window.neteaseQrAbortController.abort();
-            if (qrCheckTimer) clearInterval(qrCheckTimer);
+            cancelQRCodeSession();
             modalController.close(neteasePanel);
             if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
                 const state = ensureMusicHistoryState();
@@ -7369,6 +7751,7 @@ SOFTWARE.
             const route = parseMusicRoute();
             if (!route) {
                 abortMusicNavigationRequests();
+                cancelQRCodeSession();
                 modalController.close(neteasePanel, false);
                 document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
                 musicBrowserState.renderedHash = window.location.hash;
@@ -7414,6 +7797,25 @@ SOFTWARE.
         let neteaseUser = null;
         let neteaseCookie = localStorage.getItem('netease_cookie') || '';
         let qrCheckTimer = null;
+        let qrLoginSession = null;
+
+        function cancelQRCodeSession(clearReturn = true) {
+            const session = qrLoginSession;
+            qrLoginSession = null;
+            session?.controller.abort();
+            clearTimeout(session?.timer);
+            clearTimeout(session?.returnTimer);
+            clearTimeout(qrCheckTimer);
+            qrCheckTimer = null;
+            window.neteaseQrAbortController = null;
+            if (clearReturn) musicBrowserState.authReturnHash = '';
+        }
+
+        function isQRCodeSessionCurrent(session) {
+            return qrLoginSession === session && !session.controller.signal.aborted
+                && currentMusicNavigationIs(session.navToken, session.hash)
+                && neteasePanel.classList.contains('show') && isAuthSnapshotCurrent(session.authSnapshot);
+        }
         let myPlaylistsCache = null; // 我的歌单缓存
         let myPlaylistsData = [];
         let myPlaylistsLoading = false;
@@ -7436,6 +7838,7 @@ SOFTWARE.
 
         function advanceAuthGeneration() {
             authGeneration++;
+            cancelDownloadProbes();
             cancelPlaylistLoad('auth-changed');
             abortAccountRequests();
             try { cancelNextPreload(); } catch (_) {}
@@ -7614,75 +8017,88 @@ SOFTWARE.
         
         // 生成二维码
         async function generateQRCode() {
-                        // 二维码相关请求AbortController
-                        if (window.neteaseQrAbortController) {
-                            window.neteaseQrAbortController.abort();
-                        }
-                        window.neteaseQrAbortController = new AbortController();
-                        const qrSignal = window.neteaseQrAbortController.signal;
+            cancelQRCodeSession(false);
+            const session = {
+                controller: new AbortController(), timer: null, returnTimer: null, completed: false,
+                navToken: musicBrowserState.navToken, hash: window.location.hash,
+                authSnapshot: captureAuthSnapshot(),
+                returnHash: musicBrowserState.authReturnHash || window.location.hash,
+                returnScroll: neteaseBrowserScroll.scrollTop
+            };
+            qrLoginSession = session;
+            window.neteaseQrAbortController = session.controller;
+            const qrSignal = session.controller.signal;
             const imgWrap = document.getElementById('qrcode-img-wrap');
             const status = document.getElementById('qrcode-status');
             imgWrap.innerHTML = '<div class="netease-loading">生成二维码中...</div>';
             status.textContent = '等待扫描...';
             status.className = 'qrcode-status waiting';
-            
-            // 清除旧的定时器
-            if (qrCheckTimer) clearInterval(qrCheckTimer);
-            
+
             try {
-                // 获取二维码key
                 const keyResp = await fetch(buildApiUrl(`/login/qr/key?timestamp=${Date.now()}`), { signal: qrSignal });
                 if (!keyResp.ok) throw new Error('无法获取二维码');
                 const keyJson = await keyResp.json();
+                if (!isQRCodeSessionCurrent(session)) return;
                 if (!keyJson.data?.unikey) throw new Error('无法获取二维码key');
                 const qrKey = keyJson.data.unikey;
-                // 获取二维码图片
                 const imgResp = await fetch(buildApiUrl(`/login/qr/create?key=${qrKey}&qrimg=true&timestamp=${Date.now()}`), { signal: qrSignal });
                 if (!imgResp.ok) throw new Error('无法生成二维码图片');
                 const imgJson = await imgResp.json();
+                if (!isQRCodeSessionCurrent(session)) return;
                 if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
                 imgWrap.innerHTML = `<img src="${escapeHtml(toHttps(imgJson.data.qrimg))}" alt="QR Code">`;
-                // 轮询检查扫码状态
-                qrCheckTimer = setInterval(async () => {
+                const schedulePoll = () => {
+                    session.timer = setTimeout(poll, 2000);
+                    qrCheckTimer = session.timer;
+                };
+                const poll = async () => {
                     try {
-                        if (qrSignal.aborted) return;
-                        const checkResp = await fetch(buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`), { signal: qrSignal });
-                        if (!checkResp.ok) return;
-                        const checkJson = await checkResp.json();
-                        if (checkJson.code === 800) {
+                        if (!isQRCodeSessionCurrent(session) || session.completed) return;
+                        const response = await fetch(buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`), { signal: qrSignal });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const json = await response.json();
+                        if (!isQRCodeSessionCurrent(session) || session.completed) return;
+                        if (json.code === 800) {
+                            session.completed = true;
                             status.textContent = '二维码已过期，请刷新';
                             status.className = 'qrcode-status expired';
-                            clearInterval(qrCheckTimer);
-                        } else if (checkJson.code === 801) {
+                        } else if (json.code === 801) {
                             status.textContent = '等待扫描...';
                             status.className = 'qrcode-status waiting';
-                        } else if (checkJson.code === 802) {
+                        } else if (json.code === 802) {
                             status.textContent = '已扫描，请在手机上确认登录';
                             status.className = 'qrcode-status scanned';
-                        } else if (checkJson.code === 803) {
+                        } else if (json.code === 803) {
+                            session.completed = true;
+                            qrCheckTimer = null;
                             status.textContent = '登录成功！';
                             status.className = 'qrcode-status success';
-                            clearInterval(qrCheckTimer);
-                            qrCheckTimer = null;
-                            // 保存干净的 cookie（只保留核心凭证）
-                            const nextCookie = cleanCookie(checkJson.cookie || '');
+                            const nextCookie = cleanCookie(json.cookie || '');
                             advanceAuthGeneration();
                             neteaseCookie = nextCookie;
+                            session.authSnapshot = captureAuthSnapshot();
                             localStorage.setItem('netease_cookie', neteaseCookie);
-                            // 获取用户信息
                             await checkLoginStatus();
-                            setTimeout(() => {
-                                const returnRoute = parseMusicRoute(musicBrowserState.authReturnHash || window.location.hash)
-                                    || { kind: 'search', q: '', type: 'all', page: 1 };
+                            if (!isQRCodeSessionCurrent(session)) return;
+                            session.returnTimer = setTimeout(() => {
+                                if (!isQRCodeSessionCurrent(session)) return;
+                                const parsed = parseMusicRoute(session.returnHash);
+                                const route = parsed && parsed.kind !== 'invalid' ? parsed
+                                    : { kind: 'search', q: '', type: 'all', page: 1 };
                                 musicBrowserState.authReturnHash = '';
-                                renderMusicRoute(returnRoute, 0);
+                                navigateMusic(route, { replace: true, restoreScroll: session.returnScroll });
                             }, 1000);
                         }
-                    } catch (e) {}
-                }, 2000);
-            } catch (e) {
-                imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + escapeHtml(e.message) + '</div>';
-                log('QR generate error: ' + e.message, 'error');
+                    } catch (error) {
+                        if (error?.name === 'AbortError') return;
+                    }
+                    if (isQRCodeSessionCurrent(session) && !session.completed) schedulePoll();
+                };
+                schedulePoll();
+            } catch (error) {
+                if (!isQRCodeSessionCurrent(session) || error?.name === 'AbortError') return;
+                imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + escapeHtml(error.message) + '</div>';
+                log('QR generate error: ' + error.message, 'error');
             }
         }
         
@@ -7693,14 +8109,7 @@ SOFTWARE.
         window.neteaseLogout = async function() {
             neteaseCookie = '';
             advanceAuthGeneration();
-            if (window.neteaseQrAbortController) {
-                window.neteaseQrAbortController.abort();
-                window.neteaseQrAbortController = null;
-            }
-            if (qrCheckTimer) {
-                clearInterval(qrCheckTimer);
-                qrCheckTimer = null;
-            }
+            cancelQRCodeSession();
             neteaseUser = null;
             neteaseVipType = 0;
             localStorage.removeItem('netease_cookie');
@@ -8817,13 +9226,17 @@ SOFTWARE.
             const mini = document.getElementById('music-mini-player');
             const track = playlist[curIdx];
             if (!mini || !track) {
-                if (mini) mini.classList.remove('show');
+                if (mini) {
+                    mini.classList.remove('show');
+                    document.getElementById('music-mini-cover')?.removeAttribute('src');
+                }
                 return;
             }
             const song = track.netease && track.songData ? normalizeMusicSong(track.songData) : null;
             const title = song?.name || el.title.textContent || track.name || '未命名歌曲';
             const artists = song?.artists?.map(artist => artist.name).join(', ') || el.artist.textContent || '';
-            const cover = song?.picUrl || el.img.src || MUSIC_FALLBACK_COVER;
+            const currentCover = mainCoverTrackId && mainCoverTrackIds.get(track) === mainCoverTrackId ? el.img.getAttribute('src') : '';
+            const cover = currentCover || coverDisplayUrl(song?.picUrl || MUSIC_FALLBACK_COVER);
             document.getElementById('music-mini-title').textContent = title;
             document.getElementById('music-mini-artists').textContent = artists;
             document.getElementById('music-mini-cover').src = cover;
@@ -8845,6 +9258,39 @@ SOFTWARE.
             const id = positiveMusicInteger(event.currentTarget.dataset.musicArtistId);
             if (id) navigateMusic({ kind: 'artist', id, view: 'overview', page: 1 });
         };
+
+        async function supplementPlayingSongDetail(songId, token, onDetail) {
+            const controller = new AbortController();
+            playbackMetadataController?.abort();
+            playbackMetadataController = controller;
+            try {
+                const json = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}`), {
+                    useQueue: true, signal: controller.signal, priority: 'normal'
+                }, 60_000);
+                if (controller.signal.aborted || !isPlaybackActionCurrent(token)) return;
+                const detail = json?.songs?.[0];
+                if (!detail) return;
+                onDetail(detail);
+                applyNeteaseSongDetailToPlaylist(detail);
+                el.title.textContent = detail.name || el.title.textContent;
+                setMainMusicEntityLinks(detail);
+                if (window._currentPlaying?.songId === songId) window._currentPlaying.songData = detail;
+                const cover = toHttps(detail.album?.picUrl || detail.al?.picUrl || '');
+                if (cover) {
+                    setMainCover(cover, { onLoad: () => {
+                        if (!isPlaybackActionCurrent(token)) return;
+                        el.img.style.opacity = 1;
+                        updateTheme(el.img);
+                    } });
+                }
+                updateMediaSession();
+                updateMusicMiniPlayer();
+            } catch (error) {
+                if (error?.name !== 'AbortError' && isPlaybackActionCurrent(token)) log(`歌曲详情补全失败: ${error?.message || error}`, 'warn');
+            } finally {
+                if (playbackMetadataController === controller) playbackMetadataController = null;
+            }
+        }
 
         // 播放网易云歌曲
         async function playNeteaseSong(song, existingPlayToken = null) {
@@ -8889,32 +9335,16 @@ SOFTWARE.
                 return;
             }
 
-            // 如果没有封面，先尝试从缓存或队列获取歌曲详情
-            if (!cover) {
-                try {
-                    const detailJson = await cachedFetchJson(buildApiUrl(`/song/detail?ids=${songId}`), { useQueue: true }, 60_000);
-                    if (!isPlaybackActionCurrent(myPlayToken)) return;
-                    if (detailJson?.songs?.[0]) {
-                        const detail = detailJson.songs[0];
-                        song = detail;
-                        songName = detail.name || songName;
-                        cover = toHttps(detail.album?.picUrl || detail.al?.picUrl || '');
-                        artists = (detail.artists || detail.ar || []).map(a => a.name).join(', ');
-                        applyNeteaseSongDetailToPlaylist(detail);
-                    }
-                } catch (e) {}
-            }
-
             // 更新UI
             el.title.textContent = songName;
             setMainMusicEntityLinks(song);
             if (cover) {
-                el.img.src = cover;
-                el.img.onload = () => {
+                setMainCover(cover, { onLoad: () => {
                     if (!isPlaybackActionCurrent(myPlayToken)) return;
                     el.img.style.opacity = 1; updateTheme(el.img);
-                };
+                } });
             } else {
+                setMainCover();
                 el.img.style.opacity = 0;
                 updateTheme(null);
             }
@@ -8930,6 +9360,7 @@ SOFTWARE.
             const controller = new AbortController();
             currentAbortController = controller;
             const signal = controller.signal;
+            if (!cover) supplementPlayingSongDetail(songId, myPlayToken, detail => { song = detail; });
             const recoveryBudget = preloadMatchesCurrent && nextPreloadRecoveryBudget
                 ? nextPreloadRecoveryBudget : { urlRefreshUsed: false, stallRecoveryUsed: false };
             try {
@@ -9595,7 +10026,7 @@ SOFTWARE.
             curIdx = -1;
             renderPlaylist();
             closeMusicBrowser();
-            document.getElementById('playlist-sidebar').classList.add('show');
+            setFloatingPanel('playlist-sidebar', true);
             observePlaylistCovers();
             
             updatePlaylistImportButton(data);
@@ -9627,7 +10058,7 @@ SOFTWARE.
                 el.title.textContent = pendingSong.name;
                 setMainMusicEntityLinks(pendingSong.songData);
                 if (pendingSong.picUrl) {
-                    el.img.src = `${pendingSong.picUrl}?param=500y500`;
+                    setMainCover(pendingSong.picUrl);
                     el.img.style.opacity = 1;
                 }
                 updateMusicMiniPlayer();
@@ -9653,6 +10084,7 @@ SOFTWARE.
                         if (!isPlaybackActionCurrent(selectionToken, track)) return;
                         if (json?.songs?.[0]) {
                             track.songData = json.songs[0];
+                            schedulePlaylistTrackSave(i);
                             await playNeteaseSong(track.songData, selectionToken);
                             return;
                         }
@@ -9759,7 +10191,7 @@ SOFTWARE.
             advancedBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                advancedMenu.classList.toggle('show');
+                toggleFloatingPanel('advanced-menu');
             });
             
             // 点击菜单项
@@ -9768,17 +10200,16 @@ SOFTWARE.
                     e.preventDefault();
                     e.stopPropagation();
                     const action = this.dataset.action;
-                    advancedMenu.classList.remove('show');
+                    setFloatingPanel('advanced-menu', false);
                     
                     if (action === 'debug') {
                         const dbg = document.getElementById('debug-console');
                         dbg.style.display = (dbg.style.display === 'none' || dbg.style.display === '') ? 'block' : 'none';
+                        scheduleDebugScroll();
                     } else if (action === 'analyze') {
-                        const shown = document.getElementById('analyze-panel').classList.toggle('show');
-                        document.getElementById('toggle-analyze').setAttribute('aria-expanded', shown ? 'true' : 'false');
+                        toggleFloatingPanel('analyze-panel');
                     } else if (action === 'loop') {
-                        const shown = document.getElementById('loop-panel').classList.toggle('show');
-                        document.getElementById('toggle-loop-panel').setAttribute('aria-expanded', shown ? 'true' : 'false');
+                        toggleFloatingPanel('loop-panel');
                     } else if (action === 'netease-lyrics') {
                         // 切换云词开关
                         neteaseSearchEnabled = !neteaseSearchEnabled;
@@ -9807,11 +10238,12 @@ SOFTWARE.
                             const lines = el.lyricBox.querySelectorAll('.lyric-line');
                             if (lines && lines.length && (originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0))) {
                                 if (lyricDisplayMode === 'both') {
+                                    const findTranslation = createLyricTimeLookup(translatedLyricsArr);
                                     lines.forEach(lineEl => {
                                         if (lineEl.querySelector('.lyric-translation')) return;
                                         const t = parseFloat(lineEl.dataset.time || -1);
                                         if (isNaN(t) || t < 0) return;
-                                        const trans = translatedLyricsArr.find(x => Math.abs(x.t - t) < 0.05);
+                                        const trans = findTranslation(t);
                                         if (trans && trans.txt) {
                                             const tdiv = document.createElement('div');
                                             tdiv.className = 'lyric-translation';
@@ -9835,7 +10267,7 @@ SOFTWARE.
             // 点击其他地方关闭菜单
             document.addEventListener('click', function(e) {
                 if (!advancedBtn.contains(e.target) && !advancedMenu.contains(e.target)) {
-                    advancedMenu.classList.remove('show');
+                    if (floatingPanels.get('advanced-menu').open) setFloatingPanel('advanced-menu', false);
                 }
             });
         } else {
@@ -9853,11 +10285,33 @@ SOFTWARE.
         // ========== 结构化播放列表持久化 ==========
         const PLAYER_STATE_KEY = 'current-playlist';
         const PLAYER_SNAPSHOT_KEY = 'aurora_playlist_snapshot_v3';
+        const PLAYER_SELECTION_KEY = 'current-playlist-selection';
+        const PLAYER_SELECTION_SNAPSHOT_KEY = 'aurora_playlist_selection_v1';
         const PLAYER_STATE_SCHEMA = 3;
         let playlistStateSaveTimer = null;
         let playlistStateRevision = 0;
         let playlistStatePending = null;
         let playlistStateWriting = false;
+        let playlistStructureDirty = true;
+        let playlistPersistenceQueue = null;
+        let playlistPersistenceId = '';
+        let playlistCachedState = null;
+        let playlistCachedSource = '';
+        let playlistIdbRevision = 0;
+        let playlistCompactRevision = 0;
+        let playlistLastSelection = null;
+        let playlistSelectionIdbRevision = 0;
+        let playlistSelectionCompactRevision = 0;
+
+        function schedulePlaylistTrackSave(index) {
+            const previous = playlistPersistenceQueue === playlist ? playlistCachedState?.tracks[index] : null;
+            const track = playlist[index];
+            if (!track) return;
+            const next = serializePlaylistTrack(track);
+            const unchanged = previous && previous.handle === next.handle
+                && JSON.stringify({ ...previous, handle: undefined }) === JSON.stringify({ ...next, handle: undefined });
+            schedulePlaylistStateSave(!unchanged);
+        }
 
         function normalizePersistedArtist(artist = {}) {
             return { id: positiveMusicInteger(artist.id, 0), name: String(artist.name || '') };
@@ -9886,8 +10340,8 @@ SOFTWARE.
                 name: String(track.name || file?.name || asset.name || '本地文件'),
                 relativePath: String(asset.relativePath || file?.webkitRelativePath || file?.name || track.name || ''),
                 pathKey: String(track.sourceKey || asset.pathKey || ''),
-                size: Number(file?.size || asset.file?.size || 0),
-                lastModified: Number(file?.lastModified || asset.file?.lastModified || 0),
+                size: Number(file?.size ?? asset.size ?? 0),
+                lastModified: Number(file?.lastModified ?? asset.lastModified ?? 0),
                 handle: track.fileHandle || asset.handle || null
             };
         }
@@ -9911,20 +10365,33 @@ SOFTWARE.
 
         function buildPlaylistState() {
             if (!Array.isArray(playlist) || !playlist.length) return null;
+            const source = getPersistedPlaylistSource();
+            const sourceKey = JSON.stringify(source);
+            if (playlistPersistenceQueue !== playlist) {
+                playlistPersistenceQueue = playlist;
+                playlistPersistenceId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+                playlistStructureDirty = true;
+            }
+            if (!playlistStructureDirty && playlistCachedState?.tracks.length === playlist.length && sourceKey === playlistCachedSource) return playlistCachedState;
             playlistStateRevision = Math.max(playlistStateRevision + 1, Date.now());
-            return {
+            playlistCachedState = {
                 schema: PLAYER_STATE_SCHEMA,
+                listId: playlistPersistenceId,
                 revision: playlistStateRevision,
                 savedAt: Date.now(),
                 selectedIndex: Math.max(0, Math.min(playlist.length - 1, Number(curIdx) || 0)),
-                source: getPersistedPlaylistSource(),
+                source,
                 tracks: playlist.map(serializePlaylistTrack)
             };
+            playlistCachedSource = sourceKey;
+            playlistStructureDirty = false;
+            return playlistCachedState;
         }
 
         function createCompactPlaylistState(state) {
             return {
                 schema: state.schema,
+                listId: state.listId,
                 revision: state.revision,
                 savedAt: state.savedAt,
                 selectedIndex: state.selectedIndex,
@@ -9947,9 +10414,43 @@ SOFTWARE.
             }
         }
 
-        async function persistPlaylistState(state) {
-            let ok = await idbSet(PLAYER_STATE_KEY, state, IDB_PLAYER_STORE);
+        async function readPlaylistIdbState() {
+            try {
+                const db = await openIdb();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_PLAYER_STORE, 'readonly');
+                    const store = tx.objectStore(IDB_PLAYER_STORE);
+                    const stateRequest = store.get(PLAYER_STATE_KEY);
+                    const selectionRequest = store.get(PLAYER_SELECTION_KEY);
+                    tx.oncomplete = () => resolve({ state: stateRequest.result, selection: selectionRequest.result });
+                    tx.onabort = tx.onerror = () => reject(tx.error || new Error('Playlist read failed'));
+                });
+            } catch (_) { return { state: null, selection: null }; }
+        }
+
+        async function writePlaylistTransaction(state, selection) {
+            try {
+                const db = await openIdb();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_PLAYER_STORE, 'readwrite');
+                    tx.oncomplete = () => resolve(true);
+                    tx.onabort = tx.onerror = () => reject(tx.error || new Error('Playlist transaction failed'));
+                    const store = tx.objectStore(IDB_PLAYER_STORE);
+                    try {
+                        if (state) store.put(state, PLAYER_STATE_KEY);
+                        store.put(selection, PLAYER_SELECTION_KEY);
+                    } catch (error) {
+                        tx.abort();
+                        reject(error);
+                    }
+                });
+            } catch (_) { return false; }
+        }
+
+        async function persistPlaylistState(state, selection) {
+            let ok = await writePlaylistTransaction(state, selection);
             if (ok) return true;
+            if (!state) return false;
             const withoutHandles = {
                 ...state,
                 tracks: state.tracks.map(track => {
@@ -9958,7 +10459,7 @@ SOFTWARE.
                     return copy;
                 })
             };
-            ok = await idbSet(PLAYER_STATE_KEY, withoutHandles, IDB_PLAYER_STORE);
+            ok = await writePlaylistTransaction(withoutHandles, selection);
             if (!ok) console.warn('IndexedDB playlist persistence unavailable; compact snapshot remains available');
             return ok;
         }
@@ -9968,9 +10469,15 @@ SOFTWARE.
             playlistStateWriting = true;
             (async () => {
                 while (playlistStatePending) {
-                    const nextState = playlistStatePending;
+                    const pending = playlistStatePending;
                     playlistStatePending = null;
-                    try { await persistPlaylistState(nextState); }
+                    try {
+                        const full = playlistIdbRevision === pending.state.revision ? null : pending.state;
+                        if (await persistPlaylistState(full, pending.selection)) {
+                            playlistIdbRevision = pending.state.revision;
+                            playlistSelectionIdbRevision = pending.selection.revision;
+                        }
+                    }
                     catch (error) { console.warn('saveCurrentPlaylist error', error); }
                 }
                 playlistStateWriting = false;
@@ -9980,13 +10487,26 @@ SOFTWARE.
         function saveCurrentPlaylist() {
             const state = buildPlaylistState();
             if (!state) return Promise.resolve(false);
-            writeCompactPlaylistState(state);
-            playlistStatePending = state;
+            const selectedIndex = Math.max(0, Math.min(playlist.length - 1, Number(curIdx) || 0));
+            if (playlistLastSelection?.listId === state.listId && playlistLastSelection.contentRevision === state.revision
+                && playlistLastSelection.selectedIndex === selectedIndex && playlistCompactRevision === state.revision
+                && playlistIdbRevision === state.revision && playlistSelectionIdbRevision === playlistLastSelection.revision
+                && playlistSelectionCompactRevision === playlistLastSelection.revision) return Promise.resolve(true);
+            playlistStateRevision = Math.max(playlistStateRevision + 1, Date.now());
+            const selection = { listId: state.listId, contentRevision: state.revision, revision: playlistStateRevision, selectedIndex };
+            if (playlistCompactRevision !== state.revision && writeCompactPlaylistState(state)) playlistCompactRevision = state.revision;
+            try {
+                localStorage.setItem(PLAYER_SELECTION_SNAPSHOT_KEY, JSON.stringify(selection));
+                playlistSelectionCompactRevision = selection.revision;
+            } catch (error) { console.warn('Playlist selection snapshot failed:', error); }
+            playlistLastSelection = selection;
+            playlistStatePending = { state, selection };
             drainPlaylistStateWrites();
             return Promise.resolve(true);
         }
 
-        function schedulePlaylistStateSave() {
+        function schedulePlaylistStateSave(contentChanged = false) {
+            if (contentChanged) playlistStructureDirty = true;
             clearTimeout(playlistStateSaveTimer);
             playlistStateSaveTimer = setTimeout(() => saveCurrentPlaylist(), 120);
         }
@@ -10000,6 +10520,20 @@ SOFTWARE.
                 console.warn('Compact playlist restore failed:', error);
                 return null;
             }
+        }
+
+        function readCompactPlaylistSelection() {
+            try { return JSON.parse(localStorage.getItem(PLAYER_SELECTION_SNAPSHOT_KEY) || 'null'); }
+            catch (_) { return null; }
+        }
+
+        function pickPlaylistSelectedIndex(state, ...selections) {
+            const valid = selections.filter(selection => state.listId && selection?.listId === state.listId
+                && selection.contentRevision === state.revision && Number.isSafeInteger(selection.revision)
+                && selection.revision >= state.revision && Number.isSafeInteger(selection.selectedIndex)
+                && selection.selectedIndex >= 0 && selection.selectedIndex < state.tracks.length)
+                .sort((a, b) => b.revision - a.revision);
+            return valid[0]?.selectedIndex ?? state.selectedIndex;
         }
 
         function normalizePersistedPlaylistState(state) {
@@ -10040,9 +10574,44 @@ SOFTWARE.
             return normalized;
         }
 
+        function getPersistedLocalTrackIdentity(track) {
+            if (track?.type !== 'local') return null;
+            if (track.size == null || track.lastModified == null) return null;
+            const path = normalizeImportKey(track.relativePath || '');
+            const size = Number(track.size);
+            const lastModified = Number(track.lastModified);
+            if (!path || !Number.isSafeInteger(size) || size < 0
+                || !Number.isSafeInteger(lastModified) || lastModified < 0) return null;
+            return JSON.stringify([path, size, lastModified]);
+        }
+
         function pickNewestPlaylistState(...states) {
-            return states.map(normalizePersistedPlaylistState).filter(Boolean)
-                .sort((a, b) => Number(b.revision || b.savedAt || 0) - Number(a.revision || a.savedAt || 0))[0] || null;
+            const candidates = states.map(normalizePersistedPlaylistState).filter(Boolean)
+                .sort((a, b) => Number(b.revision || b.savedAt || 0) - Number(a.revision || a.savedAt || 0));
+            if (!candidates.length) return null;
+            const newest = candidates[0];
+            // Compact snapshots omit handles; borrow only uniquely matching file identities from older IDB state.
+            const donors = candidates.slice(1).map(state => {
+                const byIdentity = new Map();
+                state.tracks.forEach(track => {
+                    const key = getPersistedLocalTrackIdentity(track);
+                    if (key) byIdentity.set(key, byIdentity.has(key) ? null : track);
+                });
+                return byIdentity;
+            });
+            return {
+                ...newest,
+                tracks: newest.tracks.map(track => {
+                    if (track.type !== 'local' || track.handle) return track;
+                    const key = getPersistedLocalTrackIdentity(track);
+                    if (!key) return track;
+                    for (const donor of donors) {
+                        const handle = donor.get(key)?.handle;
+                        if (typeof handle?.getFile === 'function') return { ...track, handle };
+                    }
+                    return track;
+                })
+            };
         }
 
         function inferLegacyTitle(item) {
@@ -10091,16 +10660,18 @@ SOFTWARE.
 
         async function restoreSavedPlaylist() {
             try {
-                const idbState = await idbGet(PLAYER_STATE_KEY, IDB_PLAYER_STORE);
+                const { state: idbState, selection: idbSelection } = await readPlaylistIdbState();
                 const compactState = readCompactPlaylistState();
                 const state = pickNewestPlaylistState(idbState, compactState) || await migrateLegacyPlaylistState();
                 if (playlist.length || state?.schema !== PLAYER_STATE_SCHEMA || !Array.isArray(state.tracks) || !state.tracks.length) return;
+                const compactSelection = readCompactPlaylistSelection();
+                state.selectedIndex = pickPlaylistSelectedIndex(state, idbSelection, compactSelection);
+                playlistStateRevision = Math.max(playlistStateRevision, Number(state.revision) || 0,
+                    Number(idbSelection?.revision) || 0, Number(compactSelection?.revision) || 0);
                 const needsStateUpgrade = !!state._upgraded;
                 if (needsStateUpgrade) {
                     delete state._upgraded;
                     writeCompactPlaylistState(state);
-                    playlistStatePending = state;
-                    drainPlaylistStateWrites();
                 }
                 playlist = state.tracks.map(item => {
                     if (item.type === 'local') {
@@ -10111,7 +10682,7 @@ SOFTWARE.
                             fileHandle: item.handle || null,
                             needsFile: true,
                             sourceKey: normalizeImportKey(relativePath),
-                            asset: { ...createImportPathFields(relativePath, String(item.name || '')), id: `asset-${importAssetSequence++}`, file: null, handle: item.handle || null, kind: 'audio' },
+                            asset: { ...createImportPathFields(relativePath, String(item.name || '')), id: `asset-${importAssetSequence++}`, file: null, handle: item.handle || null, kind: 'audio', size: Number(item.size || 0), lastModified: Number(item.lastModified || 0) },
                             lrcFile: null,
                             sliFile: null,
                             lrcStatus: 'none',
@@ -10128,6 +10699,8 @@ SOFTWARE.
                 });
                 activePlaylistQueueToken = null;
                 playlistPendingAdvance = false;
+                playlistPersistenceQueue = playlist;
+                playlistPersistenceId = state.listId || window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
                 curIdx = Math.max(0, Math.min(playlist.length - 1, Number(state.selectedIndex) || 0));
                 renderPlaylist();
                 const currentTrack = playlist[curIdx];
@@ -10137,9 +10710,8 @@ SOFTWARE.
                     setArtistTag(currentTrack.songData.ar.map(artist => artist.name).join(', ') || '网易云');
                     const cover = toHttps(currentTrack.songData.al.picUrl);
                     if (cover) {
-                        el.img.src = cover + '?param=500y500';
+                        setMainCover(cover, { onLoad: () => updateTheme(el.img) });
                         el.img.style.opacity = 1;
-                        el.img.onload = () => updateTheme(el.img);
                     }
                 } else {
                     el.title.textContent = currentTrack.name;
@@ -10149,7 +10721,8 @@ SOFTWARE.
                 setPlaybackStatus('idle');
                 updateMusicMiniPlayer();
                 const needsFile = playlist.filter(track => track.needsFile).length;
-                log(`Restored ${playlist.length} songs from history${needsFile ? `; ${needsFile} local files need re-selection` : ''}`, needsFile ? 'warn' : 'success');
+                const needsSelection = playlist.filter(track => track.needsFile && !track.fileHandle).length;
+                log(`Restored ${playlist.length} songs from history${needsFile ? `; ${needsFile - needsSelection} local handles available, ${needsSelection} files need re-selection` : ''}`, needsFile ? 'warn' : 'success');
             } catch (error) {
                 console.warn('Failed to restore playlist:', error);
             }
