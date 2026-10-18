@@ -2,14 +2,14 @@
 
 **当前版本：v0.0.7**
 
-**在线体验**：[https://minori0721-test-1.aurora-player.pages.dev/](https://minori0721-test-1.aurora-player.pages.dev/)
+**在线体验**：[https://music.moerika.com/](https://music.moerika.com/)
 或：[https://player.minori0721.dpdns.org/](https://player.minori0721.dpdns.org/)
 
 > 基于 Web Audio API 的单文件音乐播放器，支持本地音频、A/B 与 SLI 循环，以及网易云音乐搜索、浏览和播放。
 
 ## ✨ 项目简介
 
-**Aurora Player** 是一个纯前端音乐播放器。开发源码按职责放在 `src/`，构建后仍然只发布一个 `index.html`，包含样式、播放器代码和两个固定版本的前端库。音频通过浏览器的 `AudioContext` 解码，再使用 `AudioBuffer` 播放。
+**Aurora Player** 是一个纯前端音乐播放器。开发源码按职责放在 `src/`，构建后只发布一个 `index.html`，包含样式、播放器代码和两个固定版本的前端库。音频通过浏览器的 `AudioContext` 解码，再使用 `AudioBuffer` 播放。
 
 本地模式可用于播放游戏 BGM、设置循环点和读取配套歌词；网易云模式提供搜索、歌曲/专辑/歌手浏览、歌单导入与播放。本地播放不需要在线 API，网易云功能和下载代理则依赖另外部署的后端服务。
 
