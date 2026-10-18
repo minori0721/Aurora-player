@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<!-- aurora:license -->
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Player</title>
+    <link rel="icon" href="data:,">
+
+<!-- aurora:vendors --><!-- jsmediatags 3.9.5 -->
+<!-- color-thief 2.4.0 -->
+    <!-- aurora:config -->
+    <!-- 动态添加 Preconnect/DNS prefetch，使用可修改的 window.API_BASE_URL -->
+    <!-- aurora:preferences -->
+
+    <!-- aurora:styles -->
+</head>
+<body id="body">
+
+    <div id="debug-console"><div>> Debugger Ready.</div></div>
+    <canvas id="visual-canvas"></canvas>
+    <div class="drag-mask"><h1 id="drag-mask-title">投喂音乐</h1><p id="drag-mask-detail">MP3 / FLAC / OGG / SLI</p></div>
+    <div id="import-summary" class="import-summary" role="status" aria-live="polite"></div>
+
+    <!-- 下载模态窗口（隐藏，点击下载按钮弹出） -->
+    <div id="download-modal" class="download-modal" style="display:none;" aria-hidden="true">
+        <div class="download-panel" role="dialog" aria-modal="true" aria-labelledby="download-title" tabindex="-1">
+            <div class="download-header">
+                <span id="download-title">下载音质</span>
+                <button class="panel-close" id="download-close" aria-label="关闭下载窗口">&times;</button>
+            </div>
+            <div id="download-track-info" style="margin:8px 0;color:var(--text-sub);font-size:0.95rem"></div>
+            <div id="download-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+            <div style="text-align:right"><button class="glass-btn" id="download-cancel">关闭</button></div>
+        </div>
+    </div>
+
+    <!-- 网易云内容浏览器 -->
+    <div class="netease-panel" id="netease-panel" aria-hidden="true">
+        <div class="netease-content" role="dialog" aria-modal="true" aria-labelledby="netease-page-title" tabindex="-1">
+            <div class="netease-header">
+                <div class="netease-header-main">
+                    <div class="netease-nav-controls" aria-label="浏览历史">
+                        <button class="netease-nav-btn" id="netease-nav-back" title="返回" aria-label="返回">&#8592;</button>
+                        <button class="netease-nav-btn" id="netease-nav-forward" title="前进" aria-label="前进">&#8594;</button>
+                    </div>
+                    <h3 class="netease-page-title" id="netease-page-title">网易云音乐</h3>
+                </div>
+                <button class="netease-close" id="netease-close" title="关闭" aria-label="关闭网易云面板">&times;</button>
+            </div>
+
+            <div class="netease-browser-scroll" id="netease-browser-scroll">
+                <div class="netease-account-row">
+                    <div id="netease-user-bar" class="netease-user-bar" style="display:none">
+                        <img class="netease-avatar" id="netease-avatar" src="" alt="用户头像">
+                        <div class="netease-user-info">
+                            <div class="netease-nickname" id="netease-nickname">用户名</div>
+                            <small class="netease-user-id" id="netease-user-id">ID: </small>
+                            <span class="netease-user-type normal" id="netease-user-type">普通用户</span>
+                        </div>
+                        <button class="netease-logout-btn" data-action="logout">退出</button>
+                    </div>
+                    <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
+                        <label for="netease-quality-select">音质</label>
+                        <select id="netease-quality-select" class="netease-quality-select">
+                            <option value="standard">标准 (128kbps)</option>
+                            <option value="higher">较高 (192kbps)</option>
+                            <option value="exhigh">极高 (320kbps)</option>
+                            <option value="lossless">无损 (FLAC)</option>
+                            <option value="hires">Hi-Res</option>
+                        </select>
+                    </div>
+                    <button id="netease-login-btn" class="netease-login-btn" data-action="login">扫码登录网易云账号</button>
+                </div>
+
+                <div class="netease-tabs" role="tablist" aria-label="云音乐功能">
+                    <button class="netease-tab active" data-tab="search" data-route="search" role="tab">搜索</button>
+                    <button class="netease-tab" data-tab="playlist" data-route="playlists/import" role="tab">导入歌单</button>
+                    <button class="netease-tab" data-tab="mylist" data-route="playlists/mine" role="tab">我的歌单</button>
+                </div>
+
+                <div class="netease-tab-content" id="tab-search">
+                    <div class="netease-search-box">
+                        <input type="search" class="netease-input" id="netease-search-input" placeholder="搜索歌曲、专辑或歌手" aria-label="搜索关键词" autocomplete="off">
+                        <button class="netease-search-btn" id="netease-search-btn">搜索</button>
+                    </div>
+                    <div class="netease-search-kinds" id="netease-search-kinds" role="tablist" aria-label="搜索分类">
+                        <button class="netease-kind-btn active" data-kind="all" role="tab">综合</button>
+                        <button class="netease-kind-btn" data-kind="song" role="tab">歌曲</button>
+                        <button class="netease-kind-btn" data-kind="album" role="tab">专辑</button>
+                        <button class="netease-kind-btn" data-kind="artist" role="tab">歌手</button>
+                    </div>
+                    <div class="netease-results" id="netease-search-results" aria-live="polite">
+                        <div class="netease-empty">输入关键词开始搜索</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-playlist" style="display:none">
+                    <div class="netease-search-box">
+                        <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或 ID" aria-label="歌单链接或ID">
+                        <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
+                    </div>
+                    <div id="netease-playlist-preview"></div>
+                    <div class="netease-results" id="netease-playlist-results">
+                        <div class="netease-empty">支持网易云歌单链接或数字 ID</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-mylist" style="display:none">
+                    <div id="mylist-content" class="netease-results">
+                        <div class="netease-empty">请先登录网易云账号</div>
+                    </div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-entity" style="display:none">
+                    <div id="netease-browser-view" aria-live="polite"></div>
+                </div>
+
+                <div class="netease-tab-content" id="tab-qrlogin" style="display:none">
+                    <div class="qrcode-container">
+                        <div id="qrcode-img-wrap"><div class="netease-loading">生成二维码中...</div></div>
+                        <div class="qrcode-tip">请使用网易云音乐 APP 扫描二维码登录</div>
+                        <div class="qrcode-status waiting" id="qrcode-status">等待扫描...</div>
+                        <button class="glass-btn" style="margin-top:15px" data-action="refresh-qr">刷新二维码</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="music-mini-player" id="music-mini-player">
+                <button class="music-mini-main" id="music-mini-main" aria-label="返回正在播放">
+                    <img class="music-mini-cover" id="music-mini-cover" src="" alt="当前歌曲封面">
+                    <span class="music-mini-info">
+                        <span class="music-mini-title" id="music-mini-title">未在播放</span>
+                        <span class="music-mini-artists" id="music-mini-artists"></span>
+                    </span>
+                </button>
+                <div class="music-mini-controls">
+                    <button class="music-mini-btn" id="music-mini-artist" title="打开歌手" aria-label="打开歌手" style="display:none">&#9678;</button>
+                    <button class="music-mini-btn" id="music-mini-play" title="播放或暂停" aria-label="播放或暂停">&#9654;</button>
+                    <button class="music-mini-btn" id="music-mini-next" title="下一首" aria-label="下一首">&#9197;</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="top-bar">
+        <div class="tool-group">
+            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
+            <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
+            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板" aria-expanded="false">☁️ <span class="btn-text">云音乐</span></button>
+            <!-- 移动端下载按钮，放在云音乐右侧 -->
+            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载">⬇️</button>
+            <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词" aria-label="云词开关" aria-pressed="false">📝 <span class="btn-text">云词</span></button>
+            <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
+                <option value="none">✨ 无特效</option>
+                <option value="snow">❄️ 凛冬飞雪</option>
+                <option value="bars">📊 律动频谱</option>
+                <option value="waves">🌊 极光波浪</option>
+            </select>
+            <button id="toggle-debug" class="glass-btn desktop-only" aria-label="打开调试控制台">🐞 Debug</button>
+        </div>
+        <div class="tool-group">
+            <button id="toggle-analyze" class="glass-btn desktop-only" aria-label="打开智能分析" aria-expanded="false">🔍 智能分析</button>
+            <button id="toggle-loop-panel" class="glass-btn desktop-only" aria-label="打开循环设定" aria-expanded="false">🔁 循环设定</button>
+            <button id="toggle-list" class="glass-btn" aria-label="打开播放列表" aria-expanded="false">📜 <span class="btn-text">列表</span></button>
+            <!-- 移动端高级菜单 -->
+            <div class="advanced-menu-container mobile-only">
+                <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
+                <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
+                    <button class="advanced-menu-item" data-action="debug">🐞 Debug</button>
+                    <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
+                    <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
+                    <button class="advanced-menu-item" data-action="netease-lyrics">📝 云词开关</button>
+                    <button class="advanced-menu-item" data-action="lyric-toggle">🈂️ 切换歌词翻译</button>
+                    <button class="advanced-menu-item" data-action="effects">✨ 视觉特效</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-float" id="analyze-panel" hidden inert aria-hidden="true">
+        <h4 class="panel-title">Loop Analyzer (智能对齐分析)<button class="panel-close" aria-label="关闭智能分析">&times;</button></h4>
+        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+            不知道在哪里设置循环点？试试智能分析！<br>
+            1. 粗略设置 A/B 点 (前后误差<2s)<br>
+            2. 点击“开始匹配”会自动寻找最佳接缝哦！
+        </div>
+        <div class="panel-row">
+            <span>Rough Start (A)</span>
+            <input type="number" id="ana-start" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略起点 A">
+        </div>
+        <div class="panel-row">
+            <span>Rough End (B)</span>
+            <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略终点 B">
+        </div>
+        <div class="panel-row">
+            <span>匹配算法</span>
+            <select id="ana-mode" class="panel-input" aria-label="智能分析匹配算法" style="width:130px;">
+                <option value="balanced" selected>均衡推荐</option>
+                <option value="fast">速度优先</option>
+                <option value="full">准确优先</option>
+            </select>
+        </div>
+
+        <div class="analyze-btn-group">
+            <button class="glass-btn" data-action="capture" data-point="a">📍 定位 A</button>
+            <button class="glass-btn" data-action="capture" data-point="b">📍 定位 B</button>
+        </div>
+        <div class="analyze-btn-group">
+            <button class="glass-btn" data-action="preview" data-point="a">🔊 试听 A</button>
+            <button class="glass-btn" data-action="preview" data-point="b">🔊 试听 B</button>
+        </div>
+
+        <button class="glass-btn big-btn" id="ana-run" data-action="analyze" style="margin-top:10px;">✨ 开始精确匹配</button>
+        <button class="glass-btn big-btn" data-action="export-sli" style="margin-top:8px; background:#27ae60;">💾 导出 .sli 文件</button>
+        <div id="ana-msg" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
+    </div>
+
+    <div class="loop-panel panel-float" id="loop-panel" hidden inert aria-hidden="true">
+        <h4 class="panel-title">Loop Controller<button class="panel-close" aria-label="关闭循环设定">&times;</button></h4>
+        <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable" aria-label="开启循环"></div>
+        <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100" aria-label="循环基准采样率"></div>
+        <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0" aria-label="循环起点 A"></div>
+        <div class="panel-row"><span>End (B)</span><input type="number" id="loop-end" class="panel-input" step="0.001" value="0" aria-label="循环终点 B"></div>
+        <div style="display:flex; gap:10px; margin-top:5px;">
+            <button class="glass-btn" style="flex:1; justify-content:center;" data-action="set-loop" data-point="a">Set A</button>
+            <button class="glass-btn" style="flex:1; justify-content:center;" data-action="set-loop" data-point="b">Set B</button>
+        </div>
+        <div id="loop-msg" style="font-size:0.7rem; color:green; height:15px; text-align:right;"></div>
+    </div>
+
+    <div class="playlist-sidebar" id="playlist-sidebar" hidden inert aria-hidden="true">
+        <h3 style="margin-top:0;">PLAYLIST</h3>
+        <div id="pl-container"></div>
+    </div>
+    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions" hidden inert>
+        <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放" aria-label="定位到当前播放">🎯</button>
+        <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部" aria-label="回到列表顶部">⬆️</button>
+    </div>
+
+    <div class="main-container">
+        <div class="left-panel">
+            <div class="cover-wrapper" id="cover-wrap">
+                <div class="default-disc"></div>
+                <img src="" class="album-img" id="album-img" crossorigin="anonymous" alt="专辑封面">
+                <div class="loading-tip" id="loading-tip">Decoding Audio...</div>
+            </div>
+            <div class="progress-section">
+                <div class="time-display">
+                    <span id="curr-time">00:00</span>
+                    <span id="loop-status" style="color:#e74c3c; display:none; font-weight:bold; font-size:0.8rem">∞ SEAMLESS</span>
+                    <span id="total-time">00:00</span>
+                </div>
+                <div class="progress-bar-bg" id="prog-bg" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="buffer-line" id="buffer-line"></div>
+                    <div class="progress-line" id="prog-line"></div>
+                    <div class="loop-marker" id="marker-a" data-label="A"></div>
+                    <div class="loop-marker" id="marker-b" data-label="B"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="track-header">
+                <div class="track-title" id="track-title">Aurora Player</div>
+                <div class="track-artist" id="track-artist">System Ready</div>
+            </div>
+            <div class="lyrics-box" id="lyrics-box">
+                <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+            </div>
+            <div class="controls-row">
+                <button class="btn" id="mode-btn" aria-label="播放模式：列表循环"><svg id="icon-list-loop" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><svg id="icon-random" style="display:none" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg><svg id="icon-single" style="display:none" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg></button>
+                <button class="btn" id="prev-btn" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
+                <button class="btn btn-play" id="play-btn" aria-label="播放"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+                <button class="btn" id="next-btn" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
+                <div class="vol-container">
+                    <div class="vol-popup" id="vol-popup" hidden inert aria-hidden="true"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
+                    <button class="btn" id="vol-btn" title="音量" aria-label="打开音量控制" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
+                </div>
+                <button class="btn desktop-only" id="download-btn" title="下载" aria-label="下载" style="margin-left:8px"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+                <button class="btn desktop-only" id="lyric-toggle-btn" title="切换歌词显示(原文/原+译)" style="margin-left:8px; opacity:0.45"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM4 12h16v2H4zM4 18h16v2H4z"/></svg></button>
+            </div>
+        </div>
+        <footer class="project-footer" aria-label="项目版本与源码">
+            <span class="project-version">v{{VERSION}}</span>
+            <span class="project-footer-separator" aria-hidden="true">&middot;</span>
+            <a class="project-github-link" href="https://github.com/minori0721/Aurora-player" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Aurora-player 源码仓库">
+                <svg class="project-github-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.5v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5A11.3 11.3 0 0 0 12 .7Z"/></svg>
+                <span>GitHub</span>
+            </a>
+        </footer>
+    </div>
+
+    <!-- aurora:app -->
+</body>
+</html>

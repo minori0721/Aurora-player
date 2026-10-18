@@ -1,0 +1,144 @@
+/* ========== 移动端响应式 ========== */
+@media screen and (max-width: 900px) {
+    html, body {
+        overflow-x: hidden;
+        overflow-y: auto;
+        height: auto;
+        min-height: 100vh;
+        max-width: 100vw;
+    }
+
+    .main-container {
+        width: 100%; height: auto;
+        grid-template-columns: 1fr; gap: 15px;
+        padding: 70px 15px calc(12px + env(safe-area-inset-bottom)) 15px;
+        box-sizing: border-box;
+    }
+
+    .left-panel { order: 1; }
+    .right-panel { order: 2; }
+    .project-footer {
+        position: static; grid-column: 1; order: 3; transform: none;
+        justify-self: center; min-height: 44px;
+    }
+    .project-github-link { min-height: 44px; padding: 0 6px; }
+
+    .cover-wrapper {
+        width: min(55vw, 250px);
+        max-width: 100%;
+        margin: 0 auto 15px auto;
+        transform: none; /* 移动端/竖屏清除横屏的往上偏移 */
+    }
+
+    .progress-section { padding: 0; }
+
+    .track-header { text-align: center; padding: 0 10px; }
+    .track-title { font-size: 1.5rem; word-break: break-word; }
+    .track-artist { font-size: 0.95rem; }
+
+    .lyrics-box {
+        height: 180px; padding: 0 10px;
+        mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+    }
+    .lyric-line { font-size: 0.9rem; margin: 8px 0; text-align: center; transform-origin: center center; }
+    .lyrics-scroll { text-align: center; }
+
+    .controls-row { justify-content: center; gap: 12px; padding: 10px 0; }
+    .btn { width: 44px; height: 44px; }
+    .btn svg { width: 16px; height: 16px; }
+    .btn-play { width: 56px; height: 56px; }
+
+    /* 顶部工具栏 - 移动端重新布局 */
+    .top-bar {
+        top: 8px; left: 8px; right: 8px;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 5px;
+        overflow: visible;
+    }
+    .tool-group {
+        gap: 5px;
+        flex-wrap: nowrap;
+        overflow: visible;
+    }
+    .tool-group::-webkit-scrollbar { display: none; }
+    .glass-btn {
+        min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.7rem;
+        border-radius: 999px; box-sizing: border-box;
+        flex-shrink: 0; justify-content: center;
+    }
+    .top-bar #btn-import,
+    .top-bar #toggle-advanced {
+        min-width: 60px; padding-left: 10px; padding-right: 10px;
+    }
+    .top-bar #toggle-netease-panel,
+    .top-bar #download-btn-mobile,
+    .top-bar #toggle-list {
+        width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%;
+    }
+    /* 移动端隐藏部分按钮文字，只显示图标 */
+    .glass-btn .btn-text { display: none; }
+
+    /* 面板 */
+    .panel-float {
+        position: fixed;
+        top: auto; bottom: 0; left: 0; right: 0;
+        width: 100%; max-width: 100%;
+        border-radius: 20px 20px 0 0;
+        max-height: 70vh; overflow-y: auto;
+        transform: translateY(100%);
+        box-sizing: border-box;
+    }
+    .panel-float.show { transform: translateY(0); }
+
+    /* 移动端显示关闭按钮 */
+    .panel-close { display: block; }
+
+    #analyze-panel {
+        position: fixed;
+        top: auto; bottom: 0; left: 0; right: 0;
+        width: 100%;
+    }
+    #analyze-panel:not(.show) { transform: translateY(100%); }
+
+    .playlist-sidebar {
+        width: 100%; max-width: 100%;
+        padding: 60px 15px 15px 15px;
+        box-sizing: border-box;
+    }
+
+    #debug-console {
+        position: fixed;
+        width: calc(100% - 20px); left: 10px; right: 10px;
+        top: auto; bottom: 10px; max-height: 120px;
+    }
+
+    .vol-popup { bottom: 50px; }
+    .vol-popup.show { bottom: 55px; }
+
+    /* 拖拽遮罩 */
+    .drag-mask h1 { font-size: 1.5rem; }
+    .drag-mask p { font-size: 0.9rem; }
+
+    /* 移动端：显示高级按钮，隐藏原来的三个 */
+    .mobile-only { display: flex; }
+    .advanced-menu-container.mobile-only { display: block; }
+    .desktop-only { display: none !important; }
+    .advanced-menu { right: 0; left: auto; }
+}
+
+/* 超小屏幕 */
+@media screen and (max-width: 400px) {
+    .main-container { padding: 60px 10px calc(12px + env(safe-area-inset-bottom)) 10px; }
+    .cover-wrapper { width: min(60vw, 220px); max-width: 100%; }
+    .track-title { font-size: 1.3rem; }
+    .glass-btn { padding: 0 8px; font-size: 0.65rem; }
+    .top-bar #btn-import,
+    .top-bar #toggle-advanced { min-width: 56px; padding-left: 8px; padding-right: 8px; }
+    .controls-row { gap: 10px; }
+    .btn { width: 44px; height: 44px; }
+    .btn-play { width: 52px; height: 52px; }
+    .lyrics-box { height: 150px; }
+}

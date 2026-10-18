@@ -1,6 +1,6 @@
 # 🎵 Aurora Player (极光播放器)
 
-**当前版本：v0.0.6**
+**当前版本：v0.0.7**
 
 **在线体验**：[https://minori0721-test-1.aurora-player.pages.dev/](https://minori0721-test-1.aurora-player.pages.dev/)
 或：[https://player.minori0721.dpdns.org/](https://player.minori0721.dpdns.org/)
@@ -9,22 +9,23 @@
 
 ## ✨ 项目简介
 
-**Aurora Player** 是一个纯前端音乐播放器，主要代码和两个前端库都包含在 `index.html` 中。音频通过浏览器的 `AudioContext` 解码，再使用 `AudioBuffer` 播放。
+**Aurora Player** 是一个纯前端音乐播放器。开发源码按职责放在 `src/`，构建后仍然只发布一个 `index.html`，包含样式、播放器代码和两个固定版本的前端库。音频通过浏览器的 `AudioContext` 解码，再使用 `AudioBuffer` 播放。
 
 本地模式可用于播放游戏 BGM、设置循环点和读取配套歌词；网易云模式提供搜索、歌曲/专辑/歌手浏览、歌单导入与播放。本地播放不需要在线 API，网易云功能和下载代理则依赖另外部署的后端服务。
 
 ## 最近更新
 
-### v0.0.6
+### v0.0.7
 
-本版本主要修复播放控制、歌词和导入时的异步状态问题，完整记录见 [changelog.md](changelog.md)：
+本版本将开发源码按职责拆分，发布时仍构建为单个 HTML，并完善自动检查和部署流程，完整记录见 [changelog.md](changelog.md)：
 
-* 加载期间可暂停和继续，暂停保留当前下载；下载完成后等待继续播放再开始解码。已经开始的解码完成后保持暂停。
-* 本地歌词按配套 LRC、内嵌歌词、在线搜索的顺序选择，补充文件和迟到结果会检查当前曲目及任务状态。
-* 下载目标、智能分析结果和补充 SLI/LRC 的异步处理增加归属检查，避免旧任务覆盖当前操作。
-* 歌单加载结束后，允许按原顺序导入已成功取得的歌曲，跳过缺失项。
+* 播放、预取、歌单导入、歌词、网易云、存储和界面各自维护模块，通过显式接口协作。
+* 循环分析 Worker 使用独立构建入口，与主线程复用同一份算法，仍内嵌到发布文件中。
+* 增加自动检查、回归测试、本地开发服务和版本标签触发的单文件 Release 工作流。
+* 增加 GitHub Pages 自动部署，以及 Cloudflare Workers、Pages 和 Vercel 的部署配置与说明。
+* API 与下载代理地址支持构建期变量，版本号统一由 package.json 写入页脚。
 
-测试覆盖内联脚本语法、加载暂停与继续等函数回归、歌单缺失项处理、SLI 解析、文档链接及版本一致性。
+测试覆盖源码与内联脚本、单文件构建、模拟播放状态、SLI/LRC/YRC、路由、缓存与列表恢复、Worker 一致性，以及两首 BGM 的算法迁移对照。
 
 ## 🚀 核心功能
 
@@ -180,11 +181,37 @@ Aurora 通过 `api-enhanced` 的 HTTP 接口完成在线功能，其中账号相
 
 ### 1. 静态页面托管
 
-上传单个 `index.html` 至 GitHub Pages、Vercel 或 Cloudflare Pages 即可。播放器所需的两个固定版本前端库已经内嵌，不需要额外上传 CDN 资源。
+发布版本可从 [Releases](https://github.com/minori0721/Aurora-player/releases) 下载 `index.html`，直接打开或上传到静态主机。播放器所需的两个固定版本前端库已经内嵌，不需要额外上传 JS、CSS 或 Worker 文件。
+
+从源码部署时，使用 Node.js 22 或 24，在仓库目录运行：
+
+```sh
+npm ci
+npm run build
+```
+
+产物为 `dist/index.html`。`dist/` 不提交到 Git，日常修改 `src/`，不要手动修改构建产物。
+
+以下方式都支持从 GitHub 仓库构建。连接 Cloudflare 或 Vercel 时选择包含当前源码的部署分支，根目录保持仓库根目录，不要选 `src/` 或 `dist/`。
+
+| 平台 | 首次设置 |
+| --- | --- |
+| [Cloudflare Workers（新项目推荐）](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/) | 构建命令填 `npm run build`，部署命令保持 `npx wrangler deploy`；项目名称使用 `aurora-player`，发布目录由 `wrangler.json` 读取 |
+| [Vercel（Other）](https://vercel.com/docs/project-configuration/vercel-json) | 安装、构建和输出目录由 `vercel.json` 读取，无需手动覆盖 |
+| [Cloudflare Pages（已有项目可继续使用）](https://developers.cloudflare.com/pages/configuration/build-configuration/) | 框架选 `None`，构建命令填 `npm run build`，输出目录填 `dist` |
+| [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) | 仓库 `Settings → Pages → Build and deployment → Source` 选择 `GitHub Actions`，使用已提供的 `pages.yml`，不要再创建一份模板工作流 |
+
+Cloudflare Workers 只托管 `dist/` 静态文件，不需要编写后端 Worker。`wrangler.json` 中的名称应与平台项目名一致；使用其他项目名时同步修改该字段。首次连接后的推送由平台自动构建部署，无需重复填写参数。
+
+Cloudflare 的 `.node-version` 已指定 Node.js 22；已有项目若手动设置了版本，请确认没有覆盖为旧版本。Wrangler 本地部署会先执行配置中的构建命令，但 **Workers Builds 不执行这项自定义构建配置**，所以面板的构建命令不能留空。Vercel 建议使用 Node.js 22 或 24。其他静态主机只需发布 `dist/` 内容，不需要 Node.js 运行服务。
+
+GitHub Pages 工作流跟随 `minori0721-test-1` 分支，安装依赖并通过检查、测试和构建后，只上传 `dist/`，不发布源码或 `node_modules/`；也可在 Actions 中手动运行，其他分支和 PR 不触发站点部署。换用其他发布分支时，同步修改 `.github/workflows/pages.yml` 的 `push.branches` 和 `jobs.build.if`；若 `github-pages` 环境设置了分支限制，也需允许该分支。站点使用 Hash 路由与内联资源，部署到 `/Aurora-player/` 这样的仓库子路径不需要另外配置资源前缀。
+
+已有 Pages 站点要先切换为 `GitHub Actions` 发布来源，再推送这次结构调整；继续发布分支根目录无法构建新的播放器。若要更换公开 API 地址，在仓库 `Settings → Secrets and variables → Actions → Variables` 添加 `API_BASE_URL`、`DOWNLOAD_PROXY_URL`；不设置时使用默认地址。修改变量后重新运行 Pages 工作流即可，不需要个人 Token。网页部署与下方的版本 Release 工作流互不替代。
 
 ### 2. 后端 API 配置 (重要)
 
-HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
+推荐在部署平台设置构建期环境变量，或调整 `scripts/config.mjs` 的默认值后重新构建。下载的单文件也保留了头部配置，可按部署环境直接修改：
 
 ```html
 <script>
@@ -200,12 +227,12 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 * **API_BASE_URL**: 使用兼容 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/) 的 API 服务；本项目使用的 Fork 为 [minori0721/api-enhanced](https://github.com/minori0721/api-enhanced)。
 * **DOWNLOAD_PROXY_URL**: 需要一个简单的 Cloudflare Worker 或 Nginx 反代，用于处理跨域和 Referer 头，以便浏览器能触发文件下载。
 
-如果部署平台支持构建期环境变量，也可以不直接改业务代码，而是在平台里配置后由构建步骤注入到这两个变量：
+构建脚本会读取以下两个环境变量并注入到生成的 HTML，无需再添加替换脚本：
 
 * `API_BASE_URL`: 网易云音乐 API 地址。
 * `DOWNLOAD_PROXY_URL`: 下载代理 Worker / 反代地址。
 
-注意：Aurora Player 是纯前端静态页面，浏览器运行时不能直接读取服务器环境变量；环境变量需要在部署平台的构建流程里替换进 `index.html`，或通过平台提供的静态变量注入能力生成最终页面。
+注意：这是构建期配置，修改后需要重新部署；Cloudflare Workers 要填在构建变量中，只设置运行时 Variables / Secrets 不会改变页面。浏览器运行时不能读取平台环境变量。两个地址都会出现在公开的 HTML 中，不能填入 Cookie、Token 或其他密钥。构建脚本不会将其他环境变量打包进页面。
 
 ### 3. 后端部署平台
 
@@ -219,6 +246,26 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 
 其他平台：[Hugging Face](https://huggingface.co/)；~~[Zeabur](https://zeabur.com/)~~（zeabur的serverless函数已经挂掉啦！）。
 
+## 开发与版本发布
+
+`npm run dev` 启动仅监听 `127.0.0.1` 的开发服务，默认端口为 `8765`，端口被占用时自动换用后续端口。修改 `src/` 后自动重新构建，刷新页面查看；修改构建脚本或环境变量需重启开发服务，按 Ctrl+C 关闭。
+
+源码仓库不再维护根目录的 `index.html`，本地直接打开改用 `dist/index.html`。浏览器存储按来源隔离，更换文件路径、域名或开发服务端口后，恢复记录可能不同；构建不会清理浏览器中的旧数据。
+
+```sh
+npm run check
+npm test
+npm run build
+```
+
+模块边界与修改入口见 [源码结构说明](docs/architecture.md)。
+
+版本号以 `package.json` 为准，构建时自动写入页脚。升级时可用 `npm version patch --no-git-tag-version` 同步更新版本号与锁文件，再为 `changelog.md` 添加对应版本记录。
+
+普通分支推送和 PR 运行检查；推送与版本号一致的 `vX.Y.Z` 标签后，Release 工作流重新检查、测试、构建，并发布一个带 `index.html` 附件的 GitHub Release，说明取自该版本 changelog。已发布版本不覆盖，失败留下的草稿可以重跑继续完成；工作流使用 GitHub 自动提供的令牌，不需要上传个人 SSH 私钥。
+
+Cloudflare/Vercel 原生 Git 部署跟随选定分支，不是跟随 Release。它们与 Release 使用同一构建入口，但环境变量不同时，产物中的 API 配置也会不同。本仓库不自动创建或修改平台项目。
+
 ## 🔧 技术栈
 
 * **Core**: HTML5, CSS3, ES6+ JavaScript
@@ -230,7 +277,8 @@ HTML 文件头部包含全局配置变量，请根据你的部署环境修改：
 * `color-thief 2.4.0`: 图片颜色提取，源码与许可证已内嵌
 
 
-* **主要实现**（均位于 `index.html`，不是独立模块或额外依赖）：
+* **开发构建**：esbuild 与 Node.js 组装脚本，仅在开发和部署构建时使用，不增加播放器运行时依赖。
+* **主要实现**（源码按职责拆分，发布时内嵌到同一个 HTML）：
 * **FLAC 标签读取**：从已读取的 ArrayBuffer 提取标签与封面，不负责 FLAC 音频解码。
 * **歌词显示**：LRC/YRC 解析、时间定位及 CSS 逐字高亮。
 * **循环分析**：波形匹配、接缝评分、候选精修与 Worker 调度。

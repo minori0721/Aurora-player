@@ -1,0 +1,71 @@
+/* 下载模态样式 */
+.download-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 10000; }
+.download-modal.show { display: flex; }
+.download-panel { width: 420px; max-width: 92%; background: var(--glass-strong); border: 1px solid var(--border); padding: 16px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.download-header { display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:1rem; margin-bottom:6px }
+.download-panel .panel-close { display:inline-block; background:none; border:none; font-size:1.4rem; cursor:pointer; color:var(--text-sub) }
+.quality-item { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:8px; background: rgba(255,255,255,0.6); }
+.quality-item > div:first-child { flex: 1 1 auto; min-width: 0; }
+.quality-action button { padding:6px 10px; }
+.quality-item.disabled { opacity:0.45; pointer-events:none; filter:grayscale(0.4); }
+.quality-meta { color:var(--text-sub); font-size:0.9rem }
+.quality-action { min-width:90px; display:flex; gap:8px; justify-content:flex-end }
+
+@media (prefers-reduced-motion: reduce) {
+    body { animation: none !important; background-position: 50% 50%; }
+    .cover-wrapper.playing .default-disc, .yrc-char { animation: none !important; }
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}
+
+/* 高级菜单 */
+.advanced-menu-container { position: relative; }
+.advanced-menu {
+    position: absolute; top: 45px; right: 0;
+    background: var(--glass-strong); backdrop-filter: blur(20px);
+    border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    min-width: 140px; padding: 8px 0;
+    opacity: 0; pointer-events: none; transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 9999;
+}
+.advanced-menu.show { opacity: 1; pointer-events: all; transform: translateY(0); }
+.advanced-menu-item {
+    display: block; width: 100%; padding: 10px 15px;
+    background: none; border: none; text-align: left;
+    font-size: 0.85rem; color: var(--text-main); cursor: pointer;
+    transition: background 0.15s;
+}
+.advanced-menu-item:hover { background: rgba(0,0,0,0.05); }
+.advanced-menu-item:active { background: rgba(0,0,0,0.1); }
+
+/* 桌面端隐藏高级按钮 */
+.mobile-only { display: none; }
+.desktop-only { display: flex; }
+
+@media screen and (min-width: 901px) {
+    .main-container { grid-template-columns: clamp(320px, 38vw, 450px) minmax(0, 1fr); }
+    .controls-row { gap: clamp(4px, calc((100% - 370px) / 6), 25px); }
+    .controls-row > .desktop-only { margin-left: 0 !important; }
+    /* Shrink both axes together; fixed heights previously flattened the buttons. */
+    .controls-row .btn { flex: 0 1 50px; width: 50px; min-width: 44px; height: auto; aspect-ratio: 1; }
+    .controls-row .btn-play { flex-basis: 70px; width: 70px; min-width: 58px; }
+    .controls-row .vol-container { flex: 0 1 50px; min-width: 44px; }
+    .controls-row .vol-container .btn { flex: 0 0 auto; width: 100%; min-width: 0; }
+}
+
+@media screen and (min-width: 901px) {
+    .panel-float, .playlist-sidebar {
+        transform-origin: top right; opacity: 0; visibility: hidden; pointer-events: none;
+    }
+    .panel-float {
+        transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.2s ease, visibility 0s linear 0.3s;
+    }
+    .playlist-sidebar {
+        transition: transform 0.4s ease, opacity 0.22s ease, visibility 0s linear 0.4s;
+    }
+    .panel-float:not(.show), #analyze-panel:not(.show), .playlist-sidebar:not(.show) { transform: scale(0.98); }
+    .panel-float.show, .playlist-sidebar.show {
+        transform: scale(1); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+    }
+}

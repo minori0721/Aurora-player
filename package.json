@@ -1,0 +1,21 @@
+{
+  "name": "aurora-player",
+  "version": "0.0.7",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "dev": "node scripts/dev.mjs"
+  },
+  "devDependencies": {
+    "acorn": "8.19.0",
+    "esbuild": "0.28.2",
+    "eslint-scope": "9.1.2"
+  }
+}
