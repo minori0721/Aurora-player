@@ -1,4 +1,6 @@
 import { fmtTime } from '../shared/text.js';
+import { buildCoverTheme, DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS } from './theme.js';
+import { coverThemeKey, createThemeCache } from './theme-cache.js';
 
 export function createRender({
     dom: domService,
@@ -12,6 +14,9 @@ export function createRender({
     const colorThief = new ColorThief();
 
     const themeColorCanvas = document.createElement('canvas');
+    const themeCache = createThemeCache();
+    const noCoverTheme = { base: DEFAULT_THEME_BASE, colors: DEFAULT_THEME_COLORS };
+    let lastTheme = null;
 
     const canvasCtx = domService.el.canvas.getContext('2d');
 
@@ -122,27 +127,36 @@ export function createRender({
     }
 
     function updateTheme(img) {
-        let c1 = "#e0c3fc", c2 = "#8ec5fc";
+        let theme = noCoverTheme;
         if(img) {
             try {
                 const width = img.naturalWidth, height = img.naturalHeight;
                 if (!width || !height) throw new Error('Cover not loaded');
-                const scale = Math.min(1, 96 / Math.max(width, height));
-                themeColorCanvas.width = Math.max(1, Math.round(width * scale));
-                themeColorCanvas.height = Math.max(1, Math.round(height * scale));
-                // ColorThief 2.4 expects image dimensions, but drawImage also accepts a canvas.
-                themeColorCanvas.naturalWidth = themeColorCanvas.width;
-                themeColorCanvas.naturalHeight = themeColorCanvas.height;
-                themeColorCanvas.getContext('2d').drawImage(img, 0, 0, themeColorCanvas.width, themeColorCanvas.height);
-                const rgb = colorThief.getColor(themeColorCanvas);
-                c1 = `rgb(${Math.floor((rgb[0]+255)/2)},${Math.floor((rgb[1]+255)/2)},${Math.floor((rgb[2]+255)/2)})`;
-                c2 = `rgb(${Math.floor((rgb[0]+200)/2)},${Math.floor((rgb[1]+220)/2)},${Math.floor((rgb[2]+255)/2)})`;
+                const key = coverThemeKey(img.currentSrc || img.src);
+                theme = themeCache.get(key);
+                if (!theme) {
+                    const scale = Math.min(1, 96 / Math.max(width, height));
+                    themeColorCanvas.width = Math.max(1, Math.round(width * scale));
+                    themeColorCanvas.height = Math.max(1, Math.round(height * scale));
+                    // ColorThief 2.4 expects image dimensions, but drawImage also accepts a canvas.
+                    themeColorCanvas.naturalWidth = themeColorCanvas.width;
+                    themeColorCanvas.naturalHeight = themeColorCanvas.height;
+                    const context = themeColorCanvas.getContext('2d', { willReadFrequently: true });
+                    context.drawImage(img, 0, 0, themeColorCanvas.width, themeColorCanvas.height);
+                    const pixels = context.getImageData(0, 0, themeColorCanvas.width, themeColorCanvas.height).data;
+                    theme = themeCache.set(key, buildCoverTheme(pixels, colorThief.getPalette(themeColorCanvas, 8, 1)));
+                }
             } catch(e) {
+                theme = noCoverTheme;
+                console.warn('Cover theme extraction failed:', e?.name || 'Error');
             } finally {
                 themeColorCanvas.width = themeColorCanvas.height = 1;
             }
         }
-        document.body.style.setProperty('--bg-1', c1); document.body.style.setProperty('--bg-2', c2);
+        if (theme === lastTheme) return;
+        lastTheme = theme;
+        theme.colors.forEach((color, index) => document.body.style.setProperty(`--bg-${index + 1}`, color));
+        document.body.style.setProperty('--bg-base', theme.base);
     }
 
     let freqData = null;

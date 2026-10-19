@@ -1,6 +1,8 @@
 
 :root {
     --bg-1: #e0c3fc; --bg-2: #8ec5fc;
+    --bg-3: #a2d9ff; --bg-4: #dcd6f7;
+    --bg-base: #f5f7fa;
     --text-main: #2c3e50; --text-sub: rgba(44, 62, 80, 0.6);
     --glass: rgba(255, 255, 255, 0.25);
     --glass-strong: rgba(255, 255, 255, 0.95);
@@ -14,13 +16,13 @@ html { overflow-x: hidden; }
 
 body {
     margin: 0; height: 100vh;
-    background-color: #f5f7fa;
+    background-color: var(--bg-base);
     /* 液态流体背景 */
     background-image:
         radial-gradient(circle at 15% 55%, var(--bg-1), transparent 45%),
         radial-gradient(circle at 85% 15%, var(--bg-2), transparent 45%),
-        radial-gradient(circle at 50% 50%, #a2d9ff, transparent 60%),
-        radial-gradient(circle at 80% 80%, #dcd6f7, transparent 40%);
+        radial-gradient(circle at 50% 50%, var(--bg-3), transparent 60%),
+        radial-gradient(circle at 80% 80%, var(--bg-4), transparent 40%);
     background-size: 200% 200%;
     animation: liquidBg 20s ease-in-out infinite alternate;
     color: var(--text-main); font-family: 'Segoe UI', sans-serif;
