@@ -1,17 +1,12 @@
 import { cleanCookie } from '../shared/text.js';
-import { getNeteaseSongDurationMs } from '../lyrics/matching.js';
-import { normalizeMusicSong } from '../netease/models.js';
 
 export function createPrefetch({
-    api: apiService,
     auth: authService,
-    cache: cacheService,
-    content: contentService,
     debug: debugService,
     playback: playbackService,
-    playlistView: playlistViewService,
     queue: queueService,
     resolver: resolverService,
+    songDetails: songDetailsService,
     transfer: transferService
 } = {}) {
     const LOCAL_PREFETCH_TRIGGER_SEC = 10;
@@ -35,22 +30,8 @@ export function createPrefetch({
 
     let nextSongUrlPrewarmPromise = null;
 
-    let neteaseDetailPrefetchController = null;
-
-    let neteaseDetailPrefetchQueue = null;
-
-    let neteaseDetailPrefetchSignature = '';
-
-    const neteaseDetailPrefetchedIds = new Set();
-
     function resetNeteaseDetailPrefetchState() {
-        if (neteaseDetailPrefetchController) {
-            try { neteaseDetailPrefetchController.abort(); } catch (_) {}
-        }
-        neteaseDetailPrefetchController = null;
-        neteaseDetailPrefetchQueue = null;
-        neteaseDetailPrefetchSignature = '';
-        neteaseDetailPrefetchedIds.clear();
+        songDetailsService?.reset();
     }
 
     // ---- 下一首预加载相关 ----
@@ -277,7 +258,7 @@ export function createPrefetch({
             try { nextSongFetchPromise = null; } catch (e) {}
             try { nextSongPreloadMeta = null; } catch (e) {}
             nextPreloadRecoveryBudget = null;
-            if (resetDetails) resetNeteaseDetailPrefetchState();
+            if (resetDetails) songDetailsService?.cancelPrefetch();
         }
         if (!silent) debugService.log('Next-song preload cancelled');
     }
@@ -294,105 +275,12 @@ export function createPrefetch({
         return queueService.curIdx + 1 >= queueService.playlist.length ? 0 : queueService.curIdx + 1;
     }
 
-    function getUpcomingNeteasePlaylistIds(limit = 5) {
-        if (!queueService.playlist || queueService.playlist.length === 0 || queueService.curIdx < 0 || queueService.playMode === 2) return [];
-        const ids = [];
-        const seen = new Set();
-        const addIndex = index => {
-            const track = queueService.playlist[index];
-            const id = Number(track?.songId || track?.songData?.id || 0);
-            if (!track?.netease || !Number.isSafeInteger(id) || id <= 0 || seen.has(id)) return;
-            const songData = track.songData || {};
-            const hasCompleteDetail = Array.isArray(songData.ar || songData.artists)
-                && (songData.al || songData.album)
-                && getNeteaseSongDurationMs(songData) > 0;
-            if (hasCompleteDetail) return;
-            seen.add(id);
-            ids.push(id);
-        };
-
-        if (queueService.playMode === 1) {
-            addIndex(nextPreloadIndex);
-            const candidates = Array.from({ length: queueService.playlist.length }, (_, index) => index)
-                .filter(index => index !== queueService.curIdx && index !== nextPreloadIndex);
-            for (let i = candidates.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-            }
-            candidates.forEach(addIndex);
-        } else {
-            for (let offset = 1; offset < queueService.playlist.length && ids.length < limit; offset++) {
-                addIndex((queueService.curIdx + offset) % queueService.playlist.length);
-            }
-        }
-        return ids.slice(0, Math.max(1, limit));
-    }
-
     function applyNeteaseSongDetailToPlaylist(song, queueRef = queueService.playlist) {
-        const songId = Number(song?.id || 0);
-        if (!songId || !Array.isArray(queueRef)) return [];
-        const normalized = normalizeMusicSong(song);
-        const nextName = `${normalized.name}${normalized.artists.length ? ` - ${normalized.artists.map(artist => artist.name).join(', ')}` : ''}`;
-        const updatedIndexes = [];
-        queueRef.forEach((track, index) => {
-            const trackId = Number(track?.songId || track?.songData?.id || 0);
-            if (!track || trackId !== songId) return;
-            track.songData = normalized.songData;
-            track.name = nextName;
-            updatedIndexes.push(index);
-        });
-        if (queueRef === queueService.playlist) updatedIndexes.forEach(index => playlistViewService.refreshPlaylistItem(index));
-        return updatedIndexes;
+        return songDetailsService.applyToPlaylist([song], queueRef);
     }
 
-    function prefetchUpcomingNeteaseDetails(limit = 5) {
-        const queueRef = queueService.playlist;
-        const ids = getUpcomingNeteasePlaylistIds(limit);
-        if (!queueRef || !ids.length) return;
-
-        if (neteaseDetailPrefetchQueue !== queueRef) {
-            resetNeteaseDetailPrefetchState();
-            neteaseDetailPrefetchQueue = queueRef;
-        }
-
-        const missingIds = ids.filter(id => !neteaseDetailPrefetchedIds.has(id));
-        if (!missingIds.length) return;
-        const signature = missingIds.join(',');
-        if (neteaseDetailPrefetchController && neteaseDetailPrefetchSignature === signature) return;
-        if (neteaseDetailPrefetchController) {
-            try { neteaseDetailPrefetchController.abort(); } catch (_) {}
-        }
-
-        const controller = new AbortController();
-        neteaseDetailPrefetchController = controller;
-        neteaseDetailPrefetchSignature = signature;
-        const cookieParam = authService.neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(authService.neteaseCookie))}` : '';
-        cacheService.cachedFetchJson(
-            apiService.buildApiUrl(`/song/detail?ids=${encodeURIComponent(missingIds.join(','))}${cookieParam}`),
-            { signal: controller.signal, useQueue: true },
-            300_000
-        ).then(json => {
-            if (controller.signal.aborted || queueRef !== queueService.playlist) return;
-            const songs = Array.isArray(json?.songs) ? json.songs : [];
-            const songsById = new Map(songs.map(song => [Number(song?.id), song]));
-            missingIds.forEach(id => {
-                const song = songsById.get(id);
-                if (!song) return;
-                applyNeteaseSongDetailToPlaylist(song, queueRef);
-                neteaseDetailPrefetchedIds.add(id);
-            });
-            if (queueRef === queueService.playlist) {
-                contentService.updateMusicMiniPlayer();
-            }
-            debugService.log(`预取后续歌曲详情 ${songs.length}/${missingIds.length} 首`, 'success');
-        }).catch(error => {
-            if (error?.name !== 'AbortError') debugService.log(`批量预取歌曲详情失败: ${error?.message || error}`, 'warn');
-        }).finally(() => {
-            if (neteaseDetailPrefetchController === controller) {
-                neteaseDetailPrefetchController = null;
-                neteaseDetailPrefetchSignature = '';
-            }
-        });
+    function prefetchUpcomingNeteaseDetails() {
+        songDetailsService?.refresh();
     }
 
     function prewarmNextNeteaseSongUrl() {

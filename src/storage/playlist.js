@@ -15,8 +15,7 @@ export function createPersistence({
     onlinePlaylist: onlinePlaylistService,
     playback: playbackService,
     playlistView: playlistViewService,
-    queue: queueService,
-    render: renderService
+    queue: queueService
 } = {}) {
     // ========== 结构化播放列表持久化 ==========
     const PLAYER_STATE_KEY = 'current-playlist';
@@ -348,7 +347,7 @@ export function createPersistence({
                 lyricsService.setArtistTag(currentTrack.songData.ar.map(artist => artist.name).join(', ') || '网易云');
                 const cover = toHttps(currentTrack.songData.al.picUrl);
                 if (cover) {
-                    coversService.setMainCover(cover, { onLoad: () => renderService.updateTheme(domService.el.img) });
+                    coversService.setMainCover(cover);
                     domService.el.img.style.opacity = 1;
                 }
             } else {

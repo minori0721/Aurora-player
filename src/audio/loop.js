@@ -3,6 +3,7 @@ export function createLoop({
     dom: domService,
     lyrics: lyricsService,
     playback: playbackService,
+    prefetch: prefetchService,
     playlistView: playlistViewService,
     queue: queueService
 } = {}) {
@@ -103,6 +104,7 @@ export function createLoop({
             domService.el.loopMsg.textContent = '循环区间无效';
             updateLoopMarkers();
             if(previousLoop && playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
+            prefetchService.prefetchUpcomingNeteaseDetails?.();
             return false;
         }
         domService.el.loopStart.value = s.toFixed(3); domService.el.loopEnd.value = e.toFixed(3);
@@ -110,6 +112,7 @@ export function createLoop({
         domService.el.loopMsg.textContent = '';
         updateLoopMarkers();
         if(playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
+        prefetchService.prefetchUpcomingNeteaseDetails?.();
         return true;
     }
 
@@ -152,6 +155,8 @@ export function createLoop({
                     loopState.source = null;
                     if(wasActive && playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
                     updateLoopMarkers();
+                    prefetchService.prewarmNextNeteaseSongUrl?.();
+                    prefetchService.prefetchUpcomingNeteaseDetails?.();
                 }
             });
         }

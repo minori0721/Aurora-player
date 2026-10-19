@@ -1,8 +1,6 @@
 import { normalizeMusicSong } from '../netease/models.js';
 
 export function createQueue({
-    api: apiService,
-    cache: cacheService,
     content: contentService,
     covers: coversService,
     debug: debugService,
@@ -14,7 +12,8 @@ export function createQueue({
     persistence: persistenceService,
     playback: playbackService,
     playlistView: playlistViewService,
-    prefetch: prefetchService
+    prefetch: prefetchService,
+    songDetails: songDetailsService
 } = {}) {
     let playlist = [], curIdx = -1, playMode = 0;
 
@@ -96,15 +95,21 @@ export function createQueue({
         curIdx = i;
         playlistViewService.ensurePlaylistRenderedAndActive();
 
+        let coverKnown = false;
         if (track.netease && track.songData) {
             const pendingSong = normalizeMusicSong(track.songData);
             domService.el.title.textContent = pendingSong.name;
             contentService.setMainMusicEntityLinks(pendingSong.songData);
             if (pendingSong.picUrl) {
+                coverKnown = true;
                 coversService.setMainCover(pendingSong.picUrl);
                 domService.el.img.style.opacity = 1;
             }
             contentService.updateMusicMiniPlayer();
+        }
+        if (track.netease && !coverKnown) {
+            domService.el.img.style.opacity = 0;
+            coversService.setMainCover('', { pending: true });
         }
 
         if (track.netease) {
@@ -113,24 +118,35 @@ export function createQueue({
             playbackService.stopAudio('loading');
             playbackService.audioBuffer = null;
             playbackService.resetPlaybackTimeline();
+            prefetchService.prefetchUpcomingNeteaseDetails?.();
             try {
                 const unlocked = await playbackService.unlockAudioContext('netease-playlist');
                 if (!playbackService.isPlaybackActionCurrent(selectionToken, track)) return;
                 if (!unlocked && playbackService.playbackWantsPlay && playbackService.transportVersion === unlockVersion) {
+                    if (!coverKnown) coversService.setMainCover();
                     playbackService.setPlaybackStatus('error', { error: '浏览器阻止了音频播放' });
                     return;
                 }
                 if (!track.songData) {
                     domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取歌曲信息...</div>';
-                    const json = await cacheService.cachedFetchJson(apiService.buildApiUrl(`/song/detail?ids=${track.songId}`), { useQueue: true }, 60_000);
+                    const controller = new AbortController();
+                    playbackService.currentAbortController = controller;
+                    let detail;
+                    try {
+                        detail = await songDetailsService.getSongDetail(Number(track.songId), { signal: controller.signal });
+                    } finally {
+                        if (playbackService.currentAbortController === controller) playbackService.currentAbortController = null;
+                    }
                     if (!playbackService.isPlaybackActionCurrent(selectionToken, track)) return;
-                    if (!json?.songs?.[0]) throw new Error('未找到歌曲信息');
-                    track.songData = json.songs[0];
+                    if (!detail) throw new Error('未找到歌曲信息');
+                    track.songData = detail;
                     persistenceService.schedulePlaylistTrackSave(i);
                 }
                 await onlinePlaybackService.playNeteaseSong(track.songData, selectionToken);
             } catch (e) {
                 if (!playbackService.isPlaybackActionCurrent(selectionToken, track)) return;
+                if (e?.name === 'AbortError') return;
+                if (!coverKnown) coversService.setMainCover();
                 playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
                 debugService.log('Error: ' + e.message, 'error');
             } finally {
@@ -139,6 +155,7 @@ export function createQueue({
         } else {
             // 本地文件
             await localPlaybackService.playTrack(i, selectionToken);
+            if (playbackService.isPlaybackActionCurrent(selectionToken, track)) prefetchService.prefetchUpcomingNeteaseDetails?.();
         }
     }
 
@@ -160,6 +177,8 @@ export function createQueue({
         if(playbackService.audioBuffer && playbackService.playbackState.isPlaying && !hasCustomLoop && singleLoopModeChanged) {
             playbackService.startAudio(currentTime);
         }
+        if (playlist[curIdx]?.netease && playMode !== 2) prefetchService.prewarmNextNeteaseSongUrl();
+        prefetchService.prefetchUpcomingNeteaseDetails?.();
     }
 
     let initialized = false;

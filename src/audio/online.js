@@ -4,9 +4,7 @@ import { getNeteaseSongArtists } from '../lyrics/matching.js';
 
 export function createOnlinePlayback({
     analysis: analysisService,
-    api: apiService,
     auth: authService,
-    cache: cacheService,
     content: contentService,
     covers: coversService,
     debug: debugService,
@@ -19,20 +17,18 @@ export function createOnlinePlayback({
     playlistView: playlistViewService,
     prefetch: prefetchService,
     queue: queueService,
-    render: renderService,
+    songDetails: songDetailsService,
     resolver: resolverService,
     transfer: transferService
 } = {}) {
     async function supplementPlayingSongDetail(songId, token, onDetail) {
         const controller = new AbortController();
+        let coverRequested = false;
         playbackService.playbackMetadataController?.abort();
         playbackService.playbackMetadataController = controller;
         try {
-            const json = await cacheService.cachedFetchJson(apiService.buildApiUrl(`/song/detail?ids=${songId}`), {
-                useQueue: true, signal: controller.signal, priority: 'normal'
-            }, 60_000);
+            const detail = await songDetailsService.getSongDetail(songId, { signal: controller.signal, priority: 'normal' });
             if (controller.signal.aborted || !playbackService.isPlaybackActionCurrent(token)) return;
-            const detail = json?.songs?.[0];
             if (!detail) return;
             onDetail(detail);
             prefetchService.applyNeteaseSongDetailToPlaylist(detail);
@@ -41,10 +37,10 @@ export function createOnlinePlayback({
             if (downloadService._currentPlaying?.songId === songId) downloadService._currentPlaying.songData = detail;
             const cover = toHttps(detail.album?.picUrl || detail.al?.picUrl || '');
             if (cover) {
+                coverRequested = true;
                 coversService.setMainCover(cover, { onLoad: () => {
                     if (!playbackService.isPlaybackActionCurrent(token)) return;
                     domService.el.img.style.opacity = 1;
-                    renderService.updateTheme(domService.el.img);
                 } });
             }
             metadataService.updateMediaSession();
@@ -52,6 +48,8 @@ export function createOnlinePlayback({
         } catch (error) {
             if (error?.name !== 'AbortError' && playbackService.isPlaybackActionCurrent(token)) debugService.log(`歌曲详情补全失败: ${error?.message || error}`, 'warn');
         } finally {
+            if (!coverRequested && !controller.signal.aborted && playbackService.isPlaybackActionCurrent(token)
+                && playbackService.playbackMetadataController === controller) coversService.setMainCover();
             if (playbackService.playbackMetadataController === controller) playbackService.playbackMetadataController = null;
         }
     }
@@ -91,9 +89,20 @@ export function createOnlinePlayback({
 
         debugService.log(`Playing: ${songName} - ${artists}`);
 
+        if (cover) {
+            coversService.setMainCover(cover, { onLoad: () => {
+                if (!playbackService.isPlaybackActionCurrent(myPlayToken)) return;
+                domService.el.img.style.opacity = 1;
+            } });
+        } else {
+            domService.el.img.style.opacity = 0;
+            coversService.setMainCover('', { pending: true });
+        }
+
         const audioUnlocked = await audioUnlockPromise;
         if (!playbackService.isPlaybackActionCurrent(myPlayToken)) return;
         if (!audioUnlocked && playbackService.playbackWantsPlay && playbackService.transportVersion === unlockVersion) {
+            if (!cover) coversService.setMainCover();
             playbackService.setPlaybackStatus('error', { error: '浏览器阻止了音频播放' });
             playbackService.releasePlaybackLoad(load);
             return;
@@ -102,17 +111,6 @@ export function createOnlinePlayback({
         // 更新UI
         domService.el.title.textContent = songName;
         contentService.setMainMusicEntityLinks(song);
-        if (cover) {
-            coversService.setMainCover(cover, { onLoad: () => {
-                if (!playbackService.isPlaybackActionCurrent(myPlayToken)) return;
-                domService.el.img.style.opacity = 1; renderService.updateTheme(domService.el.img);
-            } });
-        } else {
-            coversService.setMainCover();
-            domService.el.img.style.opacity = 0;
-            renderService.updateTheme(null);
-        }
-
         domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取音频...</div>';
         const controller = new AbortController();
         playbackService.currentAbortController = controller;
@@ -183,7 +181,8 @@ export function createOnlinePlayback({
 
 
                         if (queueService.playlist[queueService.curIdx]) {
-                            queueService.playlist[queueService.curIdx].songData = song;
+                            const track = queueService.playlist[queueService.curIdx];
+                            if (!songDetailsService.isReady(track.songData)) track.songData = song;
                             playlistViewService.refreshPlaylistItem(queueService.curIdx);
                         }
                         playlistViewService.ensurePlaylistRenderedAndActive();
@@ -195,8 +194,8 @@ export function createOnlinePlayback({
 
                         // 批量预取后续详情，但仍只预热下一首音频 URL。
                         try {
-                            prefetchService.prefetchUpcomingNeteaseDetails(5);
                             prefetchService.prewarmNextNeteaseSongUrl();
+                            prefetchService.prefetchUpcomingNeteaseDetails();
                         } catch (_) {}
 
                         return;
@@ -306,7 +305,8 @@ export function createOnlinePlayback({
 
             // 更新当前播放项的 songData（不覆盖整个播放列表）
             if (queueService.playlist[queueService.curIdx]) {
-                queueService.playlist[queueService.curIdx].songData = song;
+                const track = queueService.playlist[queueService.curIdx];
+                if (!songDetailsService.isReady(track.songData)) track.songData = song;
             }
             playlistViewService.refreshPlaylistItem(queueService.curIdx);
             playlistViewService.ensurePlaylistRenderedAndActive();
@@ -319,8 +319,8 @@ export function createOnlinePlayback({
 
                 // 批量预取后续详情，但仍只预热下一首音频 URL。
                 try {
-                    prefetchService.prefetchUpcomingNeteaseDetails(5);
                     prefetchService.prewarmNextNeteaseSongUrl();
+                    prefetchService.prefetchUpcomingNeteaseDetails();
                 } catch (_) {}
 
         } catch (e) {

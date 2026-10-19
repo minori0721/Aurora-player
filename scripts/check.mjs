@@ -40,7 +40,7 @@ export async function checkSource() {
         const unresolved = scope.globalScope.through.filter(ref => !globals.has(ref.identifier.name));
         if (unresolved.length) throw new Error(`${path.relative(ROOT, file)}: unresolved ${unresolved.map(ref => `${ref.identifier.name}:${ref.identifier.loc.start.line}`).join(', ')}`);
         const imports = ast.body.filter(node => node.type === 'ImportDeclaration').map(node => node.source.value);
-        if (imports.some(name => !name.startsWith('.') && name !== 'aurora:loop-worker')) throw new Error(`Unexpected runtime dependency in ${file}`);
+        if (imports.some(name => !name.startsWith('.') && !['aurora:loop-worker', 'aurora:background-worker'].includes(name))) throw new Error(`Unexpected runtime dependency in ${file}`);
         graph.set(file, imports.filter(name => name.startsWith('.')).map(name => path.resolve(path.dirname(file), name)));
         for (const statement of ast.body) {
             const factory = statement.type === 'ExportNamedDeclaration' ? statement.declaration : null;

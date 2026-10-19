@@ -4,8 +4,7 @@ export function createMetadata({
     covers: coversService,
     dom: domService,
     lyrics: lyricsService,
-    playback: playbackService,
-    render: renderService
+    playback: playbackService
 } = {}) {
     function updateMediaSession() {
         if ('mediaSession' in navigator) {
@@ -36,7 +35,7 @@ export function createMetadata({
             // 其他格式 - 稍后在解码完成后根据格式显示合适信息
             pendingQualityInfo = { size: common.fileSize, ext: common.fileExt };
         }
-        if(common.picture && typeof common.picture === 'object') {
+        if(common.picture && typeof common.picture === 'object' && common.picture.data && common.picture.format) {
             const data = common.picture.data;
             const format = common.picture.format;
             if(data && format) {
@@ -44,10 +43,10 @@ export function createMetadata({
                 const url = URL.createObjectURL(new Blob([bytes], { type: format }));
                 coversService.setMainCover(url, { objectUrl: true, mimeType: format, onLoad: () => {
                     if (!isCurrent()) return;
-                    domService.el.img.style.opacity = 1; renderService.updateTheme(domService.el.img);
+                    domService.el.img.style.opacity = 1;
                 } });
             }
-        } else { renderService.updateTheme(null); }
+        } else { coversService.setMainCover(); }
 
         if (lyricSession) lyricsService.applyLocalLyricMetadata(lyricSession, common, source);
         else {

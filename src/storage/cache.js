@@ -1,12 +1,29 @@
 import { describeJsonCache, isJsonResponseCacheable } from './cache-policy.js';
 
+const REQUEST_PRIORITY_ORDER = ['interactive', 'normal', 'idle'];
+
+export function createRequestPriority(initial = 'normal') {
+    let value = REQUEST_PRIORITY_ORDER.includes(initial) ? initial : 'normal';
+    const listeners = new Set();
+    return {
+        get value() { return value; },
+        promote(next) {
+            if (!REQUEST_PRIORITY_ORDER.includes(next) || REQUEST_PRIORITY_ORDER.indexOf(next) >= REQUEST_PRIORITY_ORDER.indexOf(value)) return;
+            value = next;
+            listeners.forEach(listener => listener(value));
+        },
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        }
+    };
+}
+
 export function createCache({
     transfer: transferService
 } = {}) {
     // --- 请求队列与缓存工具 ---
     // 当前交互优先于普通后台任务，预取最多占用一个并发槽。
-    const REQUEST_PRIORITY_ORDER = ['interactive', 'normal', 'idle'];
-
     const requestQueues = { interactive: [], normal: [], idle: [] };
 
     let requestActive = 0;
@@ -57,14 +74,15 @@ export function createCache({
     }
 
     function qFetch(url, options = {}) {
-        const { priority: requestedPriority = 'normal', ...fetchOptions } = options;
-        const priority = REQUEST_PRIORITY_ORDER.includes(requestedPriority) ? requestedPriority : 'normal';
+        const { priority: requestedPriority = 'normal', requestPriority = null, ...fetchOptions } = options;
+        const priority = requestPriority?.value || (REQUEST_PRIORITY_ORDER.includes(requestedPriority) ? requestedPriority : 'normal');
         const signal = fetchOptions.signal;
         return new Promise((resolve, reject) => {
             if (signal?.aborted) {
                 reject(transferService.createAbortError());
                 return;
             }
+            let unsubscribe = () => {};
             const task = {
                 priority,
                 signal,
@@ -73,7 +91,7 @@ export function createCache({
                 fn: () => fetch(url, fetchOptions),
                 resolve,
                 reject,
-                cleanup: () => signal?.removeEventListener('abort', onAbort)
+                cleanup: () => { signal?.removeEventListener('abort', onAbort); unsubscribe(); }
             };
             const onAbort = () => {
                 if (task.started || task.finished) return;
@@ -83,6 +101,15 @@ export function createCache({
                 _processQueue();
             };
             signal?.addEventListener('abort', onAbort, { once: true });
+            unsubscribe = requestPriority?.subscribe(next => {
+                if (task.started || task.finished || task.priority === next) return;
+                const previous = requestQueues[task.priority];
+                const index = previous.indexOf(task);
+                if (index >= 0) previous.splice(index, 1);
+                task.priority = next;
+                requestQueues[next].push(task);
+                _processQueue();
+            }) || unsubscribe;
             requestQueues[priority].push(task);
             _processQueue();
         });
@@ -321,6 +348,7 @@ export function createCache({
             useQueue = true,
             cacheScope = 'auto',
             priority = 'normal',
+            requestPriority = null,
             forceRefresh = false,
             cachePredicate = null,
             signal,
@@ -349,15 +377,20 @@ export function createCache({
 
         const inFlightKey = cache.scope === 'none' ? `json-none|${url}` : cache.key;
         const existing = jsonInFlight.get(inFlightKey);
-        if (existing && !existing.controller.signal.aborted) return subscribeJsonRequest(existing, signal);
+        if (existing && !existing.controller.signal.aborted) {
+            existing.priority.promote(requestPriority?.value || priority);
+            const unsubscribe = requestPriority?.subscribe(next => existing.priority.promote(next));
+            return subscribeJsonRequest(existing, signal).finally(() => unsubscribe?.());
+        }
 
         const controller = new AbortController();
-        const record = { key: inFlightKey, controller, consumers: 0, settled: false, promise: null };
+        const record = { key: inFlightKey, controller, consumers: 0, settled: false, promise: null,
+            priority: requestPriority || createRequestPriority(priority) };
         record.promise = Promise.resolve().then(async () => {
             if (controller.signal.aborted) throw transferService.createAbortError();
             const requestOptions = { ...fetchOptions, signal: controller.signal };
             const resp = useQueue
-                ? await qFetch(url, { ...requestOptions, priority })
+                ? await qFetch(url, { ...requestOptions, requestPriority: record.priority })
                 : await fetch(url, requestOptions);
             if (!resp.ok) {
                 const error = new Error(`HTTP ${resp.status}`);

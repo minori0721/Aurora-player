@@ -15,10 +15,13 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/playlist/` | 播放队列、目录导入、伴随文件配对、播放列表显示 |
 | `src/lyrics/` | LRC/YRC/JSON 解析、来源优先级、在线匹配和歌词显示 |
 | `src/netease/` | API、登录、内容浏览、路由、歌单分页、下载 |
+| `src/netease/song-details.js` | 歌曲详情前瞻、按 ID 共享请求、优先级提升与账号隔离 |
 | `src/analysis/algorithms.js` | 三档循环匹配算法，不依赖页面或播放控制器 |
 | `src/analysis/worker.js`、`controller.js` | Worker 消息处理、任务生命周期、分析面板 |
 | `src/storage/` | 请求缓存、IndexedDB、播放列表持久化与数据迁移 |
 | `src/ui/`、`src/styles/` | 页面元素、弹层、控件、封面、渲染调度与样式 |
+| `src/ui/background-field.js` | `64×64` 空间采样、半径 3 的加权模糊、色调映射与 WebGL 网格 |
+| `src/ui/background.js`、`background-thread.js`、`background-worker.js` | 背景绘制调度、主线程桥接、独立 Worker 与静态降级 |
 | `src/vendor/` | 现有库的固定源码与原许可证，不在构建时下载 CDN 版本 |
 | `scripts/`、`tests/` | 构建、配置注入、检查、开发服务、发布及测试 |
 
@@ -34,7 +37,9 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 
 ## 单文件构建
 
-`scripts/build.mjs` 先独立打包 Worker，再通过虚拟模块 `aurora:loop-worker` 将其作为字符串注入主程序。运行时通过 Blob 创建 Worker，不请求旁边的脚本；主线程回退也导入同一份算法。不要恢复 `Function.toString()` 拼接，也不要添加需要额外 chunk 的运行时动态导入。
+`scripts/build.mjs` 先分别打包循环分析和背景 Worker，再通过虚拟模块 `aurora:loop-worker`、`aurora:background-worker` 将其作为字符串注入主程序。运行时通过 Blob 创建 Worker，不请求旁边的脚本；循环分析的主线程回退也导入同一份算法，背景 Worker 或离屏 WebGL 不可用时使用静态渐变。不要恢复 `Function.toString()` 拼接，也不要添加需要额外 chunk 的运行时动态导入。
+
+歌曲详情由 `song-details.js` 统一调度，最多检查后续 5 个位置，连续已就绪位置不超过 2 个时补齐；按歌曲 ID 共享前台与后台任务，并保留账号代数、队列身份、超时及订阅取消检查。该调度只读取元数据，完整音频预取仍由 `audio/prefetch.js` 单独管理。
 
 样式按原有顺序合并，第三方库作为独立内联脚本保留原有全局加载行为和许可证，最后内联主程序。构建只读取 `API_BASE_URL`、`DOWNLOAD_PROXY_URL` 两个公开地址；环境变量的其他值不会注入 HTML。版本号来自 `package.json`，模板中的 `{{VERSION}}` 不手动替换。
 

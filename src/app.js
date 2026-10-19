@@ -26,15 +26,17 @@ import { createMyPlaylists } from './netease/my-playlists.js';
 import { createContent } from './netease/content.js';
 import { createOnlinePlayback } from './audio/online.js';
 import { createPersistence } from './storage/playlist.js';
+import { createSongDetails } from './netease/song-details.js';
 import { createPorts, installPort, sealPorts } from './shared/ports.js';
 import { bindActions } from './ui/actions.js';
+import { BACKGROUND_WORKER_SOURCE } from 'aurora:background-worker';
 
 // Install live interfaces before starting events or asynchronous initialization.
 const ports = createPorts([
     'playback', 'download', 'onlinePlaylist', 'lyrics', 'auth', 'controls', 'debug',
     'resolver', 'prefetch', 'transfer', 'analysis', 'loop', 'queue', 'render', 'imports',
     'cache', 'dom', 'panels', 'localPlayback', 'covers', 'metadata', 'api',
-    'playlistView', 'browser', 'myPlaylists', 'content', 'onlinePlayback', 'persistence'
+    'playlistView', 'browser', 'myPlaylists', 'content', 'onlinePlayback', 'persistence', 'songDetails'
 ]);
 installPort(ports.playback, createPlayback(ports));
 installPort(ports.download, createDownload(ports));
@@ -52,7 +54,7 @@ installPort(ports.queue, createQueue(ports));
 installPort(ports.imports, createImports(ports));
 installPort(ports.cache, createCache(ports));
 installPort(ports.dom, createDom(ports));
-installPort(ports.render, createRender(ports));
+installPort(ports.render, createRender({ ...ports, backgroundWorkerSource: BACKGROUND_WORKER_SOURCE }));
 installPort(ports.panels, createPanels(ports));
 installPort(ports.localPlayback, createLocalPlayback(ports));
 installPort(ports.covers, createCovers(ports));
@@ -64,6 +66,7 @@ installPort(ports.myPlaylists, createMyPlaylists(ports));
 installPort(ports.content, createContent(ports));
 installPort(ports.onlinePlayback, createOnlinePlayback(ports));
 installPort(ports.persistence, createPersistence(ports));
+installPort(ports.songDetails, createSongDetails(ports));
 sealPorts(ports);
 ports.debug.initialize();
 ports.resolver.initialize();

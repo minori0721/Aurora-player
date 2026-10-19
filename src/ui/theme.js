@@ -89,7 +89,9 @@ function rankColorFamilies(candidates) {
             * (0.25 * (color.L - member.L) ** 2 + (color.a - member.a) ** 2 + (color.b - member.b) ** 2), 0) }));
         costs.sort((one, two) => one.cost - two.cost || two.color.support - one.color.support);
         family.color = costs[0].color;
-        family.score = family.support ** 0.9 * smoothstep(0.015, 0.06, family.coverage);
+        // Population leads; chroma can break ties without overpowering broad muted hues.
+        family.score = family.coverage ** 0.9 * (0.55 + 0.45 * Math.min(1, family.support / family.coverage))
+            * smoothstep(0.015, 0.06, family.coverage);
     }
     const best = Math.max(0, ...families.map(family => family.score));
     return families.filter(family => family.coverage > 0.015 && family.score > 0)
@@ -149,11 +151,19 @@ export function buildCoverTheme(pixels, palette = []) {
             colors: [base + 0.005, base - 0.05, base + 0.02, base - 0.025].map(L => backgroundTone(null, clamp(L, 0.84, 0.98), 0))
         };
     }
-    const secondaryFamily = ranked.find(family => family !== primaryFamily && family.coverage >= 0.03
-        && Math.hypot(family.color.a - primary.a, family.color.b - primary.b) >= 0.045);
+    const selected = [primaryFamily];
+    for (const family of ranked) {
+        if (selected.length === 3) break;
+        if (family === primaryFamily || family.coverage < 0.05 || family.score < primaryFamily.score * 0.15) continue;
+        if (selected.every(other => Math.hypot(family.color.a - other.color.a, family.color.b - other.color.b) >= 0.035)) selected.push(family);
+    }
+    const secondaryFamily = selected[1], tertiaryFamily = selected[2];
     const secondary = secondaryFamily?.color || primary;
-    const secondaryInfluence = secondaryFamily ? Math.min(0.5, secondaryFamily.support / (primaryFamily.support + secondaryFamily.support))
-        * smoothstep(0.03, 0.1, secondaryFamily.coverage) : 0;
+    const tertiary = tertiaryFamily?.color || primary;
+    const populations = selected.map(family => family.coverage ** 0.85);
+    const totalPopulation = populations.reduce((sum, weight) => sum + weight, 0);
+    const shares = populations.map(weight => weight / totalPopulation);
+    const secondaryInfluence = shares[1] || 0;
     const neutralBase = 0.86 + 0.1 * meanL;
     const base = neutralBase + (0.9 + 0.04 * meanL - neutralBase) * strength;
     const primaryChroma = Math.min(0.1, primary.C * 0.7) * strength;
@@ -161,13 +171,16 @@ export function buildCoverTheme(pixels, palette = []) {
     const lightnessSpread = 0.025 + 0.06 * strength;
     const tones = [
         [primary, base - lightnessSpread * 0.6, primaryChroma, 1],
-        [secondary, base + 0.005, Math.min(primaryChroma * 0.9, secondary.C * 0.65 * strength), secondaryInfluence],
-        [primary, base + 0.025, primaryChroma * 0.45, 1],
+        [secondary, base - 0.015, Math.min(0.09, secondary.C * 0.7) * strength, 1],
+        [tertiary, base + (tertiaryFamily ? -0.01 : 0.025), tertiaryFamily ? Math.min(0.085, tertiary.C * 0.7) * strength : primaryChroma * 0.45, 1],
         [primary, base - lightnessSpread, primaryChroma * 0.9, 1]
     ];
     return {
         mode: 'color', primary: [...primary.rgb], secondary: [...secondary.rgb], strength,
         primaryCoverage: primaryFamily.coverage, secondaryCoverage: secondaryFamily?.coverage || 0, secondaryInfluence,
+        tertiary: tertiaryFamily ? [...tertiary.rgb] : null, tertiaryCoverage: tertiaryFamily?.coverage || 0,
+        weights: tertiaryFamily ? [shares[0] * 0.5, shares[1], shares[2], shares[0] * 0.5]
+            : secondaryFamily ? [shares[0] * 0.3, shares[1], shares[0] * 0.4, shares[0] * 0.3] : [0.3, 0.2, 0.2, 0.3],
         base: backgroundTone(primary, base + 0.02, primaryChroma * 0.25),
         colors: tones.map(([color, L, chroma, opacity]) => backgroundTone(color, L, chroma, opacity))
     };

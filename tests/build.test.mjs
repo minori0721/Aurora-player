@@ -86,6 +86,19 @@ test('compiled Worker matches main-thread algorithms in all three modes and rele
     releaseAnalysisBuffer(buffer);
 });
 
+test('compiled background worker falls back without WebGL and needs no document or external imports', () => {
+    const posts = [], self = { postMessage: message => posts.push(message), close() {} };
+    const context = vm.createContext({ self, performance, setTimeout, clearTimeout });
+    new vm.Script(built.backgroundWorkerSource).runInContext(context);
+    self.onmessage({ data: { type: 'init', revision: 3,
+        canvas: { width: 1, height: 1, addEventListener() {}, getContext: () => null }, theme: {},
+        state: { playing: true, hidden: false, reduced: false, width: 1440, height: 900 } } });
+    assert.equal(posts.at(-1).revision, 3);
+    assert.equal(posts.at(-1).stats.failed, true);
+    self.onmessage({ data: { type: 'dispose' } });
+    assert.equal(posts.at(-1).type, 'disposed');
+});
+
 test('compiled import applies only the matching SLI and clears it on the next local track', async () => {
     const fixture = boot();
     const sli = { name: 'first.flac.sli', size: 30, lastModified: 1, text: async () => 'From=441000; To=44100;' };

@@ -12,6 +12,7 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
     const config = readPublicConfig(env);
     const common = { absWorkingDir: ROOT, bundle: true, write: false, minify, target: ['es2020'], legalComments: 'inline', charset: 'utf8', logLevel: 'silent' };
     const worker = await bundle({ ...common, entryPoints: ['src/analysis/worker.js'], format: 'iife', platform: 'browser' });
+    const backgroundWorker = await bundle({ ...common, entryPoints: ['src/ui/background-worker.js'], format: 'iife', platform: 'browser' });
     const app = await bundle({
         ...common,
         entryPoints: ['src/app.js'],
@@ -24,6 +25,10 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
                 build.onLoad({ filter: /.*/, namespace: 'aurora' }, () => ({
                     contents: `export const LOOP_WORKER_SOURCE = ${JSON.stringify(worker.outputFiles[0].text)};`,
                     loader: 'js'
+                }));
+                build.onResolve({ filter: /^aurora:background-worker$/ }, () => ({ path: 'background-worker', namespace: 'aurora-background' }));
+                build.onLoad({ filter: /.*/, namespace: 'aurora-background' }, () => ({
+                    contents: `export const BACKGROUND_WORKER_SOURCE = ${JSON.stringify(backgroundWorker.outputFiles[0].text)};`, loader: 'js'
                 }));
             }
         }]
@@ -48,7 +53,7 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
     }
     html = html.replaceAll('{{VERSION}}', pkg.version);
     if (/<!-- aurora:|\{\{VERSION\}\}/.test(html)) throw new Error('Unresolved template marker');
-    return { html, workerSource: worker.outputFiles[0].text, appSource: app.outputFiles[0].text, version: pkg.version, config };
+    return { html, workerSource: worker.outputFiles[0].text, backgroundWorkerSource: backgroundWorker.outputFiles[0].text, appSource: app.outputFiles[0].text, version: pkg.version, config };
 }
 
 export async function build({ outdir = 'dist', ...options } = {}) {

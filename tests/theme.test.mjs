@@ -186,11 +186,31 @@ test('related shades share population without merging distinct blue and purple f
     assert.ok(theme.primaryCoverage > 0.5);
     assert.deepEqual(theme.secondary, purple);
     assert.ok(theme.secondaryInfluence > 0.35 && theme.secondaryInfluence <= 0.5);
-    assert.match(theme.colors[1], /^rgba\(/);
+    assert.match(theme.colors[1], /^rgb\(/);
     assert.notEqual(theme.base, DEFAULT_THEME_BASE);
 });
 
-test('theme cache is bounded, least-recently-used and never retains pixels or image objects', () => {
+test('three supported families retain full-opacity tones and normalized population weights', () => {
+    const blue = [71, 122, 178], warm = [188, 111, 84], green = [77, 100, 74];
+    const theme = buildCoverTheme(pixelsOf([colorPart(blue, 0.41), colorPart(warm, 0.24), colorPart(green, 0.15), colorPart([245, 245, 245], 0.2)]), [blue, warm, green]);
+    assert.deepEqual(theme.primary, blue);
+    assert.deepEqual(theme.secondary, warm);
+    assert.deepEqual(theme.tertiary, green);
+    assert.ok(theme.colors.every(color => color.startsWith('rgb(')));
+    assert.ok(Math.abs(theme.weights.reduce((sum, value) => sum + value, 0) - 1) < 1e-12);
+    assert.ok(theme.weights[2] > 0.15);
+    for (const color of theme.colors) assert.ok(contrast(parseRgb(color)) >= 4.5);
+});
+
+test('small saturated details cannot displace a broadly supported muted family', () => {
+    const muted = [77, 100, 74], bright = [76, 167, 229];
+    const theme = buildCoverTheme(pixelsOf([colorPart(muted, 0.6), colorPart(bright, 0.04), colorPart([245, 245, 245], 0.36)]), [muted, bright]);
+    assert.deepEqual(theme.primary, muted);
+    assert.equal(theme.tertiary, null);
+    assert.deepEqual(theme.secondary, muted);
+});
+
+test('theme cache is bounded, least-recently-used and never retains full-size pixels or image objects', () => {
     const cache = createThemeCache(2);
     const source = { ...buildCoverTheme(pixelsOf([colorPart([40, 80, 190])]), [[40, 80, 190]]), pixels: new Uint8Array(4), image: {} };
     const first = cache.set('one', source);
@@ -207,6 +227,68 @@ test('theme cache is bounded, least-recently-used and never retains pixels or im
         const bounded = createThemeCache(limit);
         for (let i = 0; i < 100; i++) bounded.set(String(i), source);
         assert.ok(bounded.size > 0 && bounded.size <= 16);
+    }
+});
+
+test('theme cache retains at most sixteen fixed-size spatial samples by default', () => {
+    const cache = createThemeCache();
+    const theme = buildCoverTheme(pixelsOf([colorPart([40, 80, 190])]), [[40, 80, 190]]);
+    for (let i = 0; i < 20; i++) {
+        const spatial = { width: 64, height: 64, format: 'srgb-rgba8', data: new Uint8Array(16384), image: {} };
+        const cached = cache.set(String(i), { ...theme, spatial });
+        assert.equal(cached.spatial.data, spatial.data);
+        assert.equal('image' in cached.spatial, false);
+        assert.equal(Object.isFrozen(cached.spatial), true);
+    }
+    assert.equal(cache.size, 16);
+    assert.equal(cache.get('3'), null);
+    let bytes = 0;
+    for (let i = 4; i < 20; i++) bytes += cache.get(String(i)).spatial.data.byteLength;
+    assert.equal(bytes, 256 * 1024);
+    const invalid = cache.set('bad', { ...theme, spatial: { width: 1024, height: 1024, data: new Uint8Array(4) } });
+    assert.equal(invalid.spatial, undefined);
+});
+
+test('theme cache aliases reuse the owned immutable result without extending the LRU limit', () => {
+    const cache = createThemeCache(2);
+    const first = cache.set('one', buildCoverTheme(pixelsOf([colorPart([40, 80, 190])]), [[40, 80, 190]]));
+    assert.equal(cache.set('two', first), first);
+    assert.equal(cache.get('two'), first);
+    assert.equal(cache.set('three', first), first);
+    assert.equal(cache.get('one'), null);
+    assert.equal(cache.size, 2);
+});
+
+test('identical spatial samples across URLs skip palette work and theme writes; distinct maps do not', () => {
+    const saved = { window: globalThis.window, document: globalThis.document, ColorThief: globalThis.ColorThief };
+    let reads = 0, palettes = 0, writes = 0, reverse = false;
+    const canvas = { getContext: () => ({ drawImage() {}, getImageData() {
+        reads++;
+        const data = new Uint8ClampedArray(96 * 96 * 4);
+        for (let y = 0; y < 96; y++) for (let x = 0; x < 96; x++) {
+            const red = (x < 48) !== reverse;
+            data.set(red ? [200, 40, 40, 255] : [40, 60, 200, 255], (y * 96 + x) * 4);
+        }
+        return { data };
+    } }) };
+    try {
+        globalThis.window = { matchMedia: () => ({ matches: false }) };
+        globalThis.document = { createElement: () => canvas, body: { style: { setProperty() { writes++; } } } };
+        globalThis.ColorThief = class { getPalette() { palettes++; return [[200, 40, 40], [40, 60, 200]]; } };
+        const render = createRender({ dom: { el: { canvas } } });
+        const image = { naturalWidth: 512, naturalHeight: 512, src: 'blob:first' };
+        render.updateTheme(image);
+        image.src = 'blob:second'; render.updateTheme(image);
+        assert.equal(reads, 2); assert.equal(palettes, 1); assert.equal(writes, 5);
+        render.updateTheme(image);
+        assert.equal(reads, 2); assert.equal(palettes, 1); assert.equal(writes, 5);
+        reverse = true; image.src = 'blob:reversed'; render.updateTheme(image);
+        assert.equal(palettes, 2); assert.equal(writes, 10);
+        assert.equal(canvas.width, 1); assert.equal(canvas.height, 1);
+    } finally {
+        for (const name of ['window', 'document', 'ColorThief']) {
+            if (saved[name] === undefined) delete globalThis[name]; else globalThis[name] = saved[name];
+        }
     }
 });
 

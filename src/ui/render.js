@@ -1,13 +1,16 @@
 import { fmtTime } from '../shared/text.js';
 import { buildCoverTheme, DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS } from './theme.js';
 import { coverThemeKey, createThemeCache } from './theme-cache.js';
+import { createThreadedBackground } from './background-thread.js';
+import { sampleSpatialCover, sameSpatialCover } from './background-field.js';
 
 export function createRender({
     dom: domService,
     lyrics: lyricsService,
     playback: playbackService,
     prefetch: prefetchService,
-    queue: queueService
+    queue: queueService,
+    backgroundWorkerSource
 } = {}) {
     let particles = [];
 
@@ -17,6 +20,12 @@ export function createRender({
     const themeCache = createThemeCache();
     const noCoverTheme = { base: DEFAULT_THEME_BASE, colors: DEFAULT_THEME_COLORS };
     let lastTheme = null;
+    let background = null;
+
+    function syncBackground() {
+        background?.setState({ playing: playbackService.playbackState.isPlaying, hidden: document.hidden,
+            reduced: reducedMotionMedia.matches, width: window.innerWidth, height: window.innerHeight });
+    }
 
     const canvasCtx = domService.el.canvas.getContext('2d');
 
@@ -66,6 +75,7 @@ export function createRender({
     }
 
     function scheduleRender(force = false) {
+        syncBackground();
         if (document.hidden) return;
         if (force) lastBasicRenderAt = 0;
         if (renderFrameId || renderTimerId) return;
@@ -144,7 +154,15 @@ export function createRender({
                     const context = themeColorCanvas.getContext('2d', { willReadFrequently: true });
                     context.drawImage(img, 0, 0, themeColorCanvas.width, themeColorCanvas.height);
                     const pixels = context.getImageData(0, 0, themeColorCanvas.width, themeColorCanvas.height).data;
-                    theme = themeCache.set(key, buildCoverTheme(pixels, colorThief.getPalette(themeColorCanvas, 8, 1)));
+                    const spatial = sampleSpatialCover(pixels, themeColorCanvas.width, themeColorCanvas.height);
+                    if (sameSpatialCover(spatial, lastTheme?.spatial)) {
+                        themeCache.set(key, lastTheme);
+                        return;
+                    }
+                    theme = themeCache.set(key, {
+                        ...buildCoverTheme(pixels, colorThief.getPalette(themeColorCanvas, 8, 1)),
+                        spatial
+                    });
                 }
             } catch(e) {
                 theme = noCoverTheme;
@@ -153,10 +171,11 @@ export function createRender({
                 themeColorCanvas.width = themeColorCanvas.height = 1;
             }
         }
-        if (theme === lastTheme) return;
+        if (theme === lastTheme || sameSpatialCover(theme.spatial, lastTheme?.spatial)) return;
         lastTheme = theme;
         theme.colors.forEach((color, index) => document.body.style.setProperty(`--bg-${index + 1}`, color));
         document.body.style.setProperty('--bg-base', theme.base);
+        background?.setTheme(theme);
     }
 
     let freqData = null;
@@ -226,6 +245,8 @@ export function createRender({
         initialize() {
             if (initialized) return;
             initialized = true;
+            background = createThreadedBackground(document.getElementById('background-canvas'), { workerSource: backgroundWorkerSource });
+            background.setTheme(lastTheme || noCoverTheme);
             window.__auroraPerf = window.__auroraPerf || { rafCount: 0, canvasClearCount: 0 };
 
             domService.el.effectSel.addEventListener('change', () => {
@@ -241,6 +262,7 @@ export function createRender({
             });
 
             document.addEventListener('visibilitychange', () => {
+                syncBackground();
                 syncVisualCanvasSize();
                 if (document.hidden) {
                     if (renderFrameId) cancelAnimationFrame(renderFrameId);

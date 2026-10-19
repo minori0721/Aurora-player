@@ -16,8 +16,7 @@ export function createLocalPlayback({
     playback: playbackService,
     playlistView: playlistViewService,
     prefetch: prefetchService,
-    queue: queueService,
-    render: renderService
+    queue: queueService
 } = {}) {
     async function playTrack(i, existingPlayToken = null) {
         if(i < 0 || i >= queueService.playlist.length) return;
@@ -36,6 +35,8 @@ export function createLocalPlayback({
         playbackService.resetPlaybackTimeline();
         loopService.resetLoopUI();
         lyricsService.resetTrackLyrics();
+        domService.el.img.style.opacity = 0;
+        coversService.setMainCover('', { pending: true });
         const lyricSession = lyricsService.createLocalLyricSession(track, isCurrent);
         playbackService.setCurrentDownloadTrack(track, myPlayToken, false);
         domService.el.title.textContent = track.name;
@@ -71,6 +72,7 @@ export function createLocalPlayback({
         }
         if (!isCurrent()) return;
         if (!track.file) {
+            coversService.setMainCover();
             const label = track.asset?.relativePath || track.name || '本地文件';
             const message = track.fileHandle
                 ? `本地文件需要授权，请点击播放并允许访问：${label}`
@@ -84,6 +86,7 @@ export function createLocalPlayback({
         const unlocked = await audioUnlockPromise;
         if (!isCurrent()) return;
         if (!unlocked && playbackService.playbackWantsPlay && playbackService.transportVersion === unlockVersion) {
+            coversService.setMainCover();
             playbackService.setPlaybackStatus('error', { error: '浏览器阻止了音频播放' });
             playbackService.releasePlaybackLoad(load);
             return;
@@ -96,7 +99,6 @@ export function createLocalPlayback({
 
         contentService.setMainMusicEntityLinks(null);
         domService.el.title.textContent = track.name; domService.el.artist.textContent = "Loading...";
-        domService.el.img.style.opacity = 0; coversService.setMainCover();
         domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
         debugService.log(`Track: ${track.name}`);
 
@@ -147,7 +149,7 @@ export function createLocalPlayback({
                 // 计算FLAC比特率（文件大小 / 时长）
                 if (meta) {
                     meta.fileSize = track.file.size;
-                }
+                } else coversService.setMainCover();
             } else {
                 // 对于MP3等文件，计算比特率
                 const fileSize = track.file.size;
@@ -170,7 +172,7 @@ export function createLocalPlayback({
                     },
                     onError: () => {
                         if (!playbackService.isPlaybackActionCurrent(myPlayToken, track)) return;
-                        renderService.updateTheme(null);
+                        coversService.setMainCover();
                         lyricsService.applyLocalLyricMetadata(lyricSession, {}, 'ID3');
                     }
                 });
@@ -209,6 +211,7 @@ export function createLocalPlayback({
         } catch(e) {
             if (!isCurrent()) return;
             if (e.stale || e.message === 'stale') return;
+            coversService.setMainCover();
             metadataService.pendingQualityInfo = null;
             domService.el.bufferLine.style.width = '0%';
             domService.el.artist.textContent = '无法播放';

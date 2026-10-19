@@ -14,6 +14,7 @@ export function createOnlinePlaylist({
     playback: playbackService,
     playlistView: playlistViewService,
     queue: queueService,
+    prefetch: prefetchService,
     transfer: transferService
 } = {}) {
     let _currentPlaylistLoadToken = 0;
@@ -233,6 +234,7 @@ export function createOnlinePlaylist({
         else playlistViewService.renderPlaylist();
         debugService.log(`歌单后台追加 ${queueService.playlist.length - previousLength} 首，当前 ${queueService.playlist.length}/${data.totalCount} 首`, 'success');
         updatePlaylistImportButton(data);
+        prefetchService.prefetchUpcomingNeteaseDetails();
         settlePlaylistAdvance(data);
     }
 
