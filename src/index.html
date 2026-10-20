@@ -71,7 +71,7 @@
                             <option value="hires">Hi-Res</option>
                         </select>
                     </div>
-                    <button id="netease-login-btn" class="netease-login-btn" data-action="login">扫码登录网易云账号</button>
+                    <button id="netease-login-btn" class="netease-login-btn" data-action="login">登录网易云账号</button>
                 </div>
 
                 <div class="netease-tabs" role="tablist" aria-label="云音乐功能">
@@ -118,11 +118,37 @@
                 </div>
 
                 <div class="netease-tab-content" id="tab-qrlogin" style="display:none">
-                    <div class="qrcode-container">
-                        <div id="qrcode-img-wrap"><div class="netease-loading">生成二维码中...</div></div>
-                        <div class="qrcode-tip">请使用网易云音乐 APP 扫描二维码登录</div>
-                        <div class="qrcode-status waiting" id="qrcode-status">等待扫描...</div>
-                        <button class="glass-btn" style="margin-top:15px" data-action="refresh-qr">刷新二维码</button>
+                    <div class="login-page">
+                        <div class="login-modes" role="group" aria-label="登录方式">
+                            <button type="button" id="login-mode-qr" aria-pressed="true" aria-controls="login-qr-view">扫码登录</button>
+                            <button type="button" id="login-mode-sms" aria-pressed="false" aria-controls="login-sms-view">验证码登录</button>
+                        </div>
+                        <div class="qrcode-container" id="login-qr-view">
+                            <div id="qrcode-img-wrap"></div>
+                            <div class="qrcode-tip">请使用网易云音乐 APP 扫描二维码登录</div>
+                            <div class="login-status" id="qrcode-status" role="status" aria-live="polite"></div>
+                            <button type="button" class="login-secondary" id="login-refresh-qr" data-action="refresh-qr">刷新二维码</button>
+                        </div>
+                        <div id="login-sms-view" hidden>
+                            <form id="sms-login-form">
+                                <div class="login-phone-row">
+                                    <label class="login-country-field" for="login-country">国家区号
+                                        <span class="login-country-input"><span aria-hidden="true">+</span><input id="login-country" type="text" inputmode="numeric" autocomplete="tel-country-code" value="86" maxlength="4" required></span>
+                                    </label>
+                                    <label for="login-phone">手机号
+                                        <input id="login-phone" type="tel" inputmode="tel" autocomplete="tel-national" maxlength="24" placeholder="请输入手机号" required>
+                                    </label>
+                                </div>
+                                <label for="login-captcha">短信验证码</label>
+                                <div class="login-code-row">
+                                    <input id="login-captcha" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{4,8}" minlength="4" maxlength="8" placeholder="请输入验证码" required>
+                                    <button type="button" class="login-secondary" id="login-send-code" disabled>获取验证码</button>
+                                </div>
+                                <div class="login-status" id="sms-login-status" role="status" aria-live="polite"></div>
+                                <button type="submit" class="login-primary" id="login-submit" disabled>登录</button>
+                            </form>
+                        </div>
+                        <button type="button" class="login-secondary login-retry" id="login-retry" hidden>重试账号校验</button>
                     </div>
                 </div>
             </div>
@@ -266,8 +292,16 @@
                 <div class="track-title" id="track-title">Aurora Player</div>
                 <div class="track-artist" id="track-artist">System Ready</div>
             </div>
-            <div class="lyrics-box" id="lyrics-box">
-                <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+            <div class="lyrics-area">
+                <div class="lyrics-box" id="lyrics-box" tabindex="0" role="region" aria-label="歌词" data-lyric-region>
+                    <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+                </div>
+                <output class="lyric-browse-time" id="lyric-browse-time" aria-label="浏览位置" hidden></output>
+                <button class="lyric-return" id="lyric-return-current" type="button" aria-label="回到当前歌词" title="回到当前歌词" data-direction="here" hidden>
+                    <svg class="lyric-return-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    <svg class="lyric-return-locate" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
+                    <span>回到当前</span>
+                </button>
             </div>
             <div class="controls-row">
                 <button class="btn" id="mode-btn" aria-label="播放模式：列表循环"><svg id="icon-list-loop" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><svg id="icon-random" style="display:none" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg><svg id="icon-single" style="display:none" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg></button>

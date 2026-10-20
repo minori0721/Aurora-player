@@ -1,6 +1,6 @@
 export function bindActions({ analysis, auth, loop, onlinePlaylist, debug }, root = document) {
     const actions = {
-        login: () => auth.showQRLogin(),
+        login: () => auth.showLogin(),
         logout: () => auth.neteaseLogout(),
         'refresh-qr': () => auth.refreshQRCode(),
         capture: button => analysis.capturePoint(button.dataset.point),

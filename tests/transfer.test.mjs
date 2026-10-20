@@ -28,7 +28,7 @@ test('header/body stalls time out, and cancellation interrupts backoff immediate
     await assert.rejects(waiting, { name: 'AbortError' });
 });
 
-function prefetchFixture(size = 1024) {
+function prefetchFixture(size = 1024, lyrics) {
     globalThis.window = {};
     globalThis.matchMedia = () => ({ matches: false });
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
@@ -46,9 +46,34 @@ function prefetchFixture(size = 1024) {
         fetchAudioDataWithFallback: async () => { calls.bodies++; return { buffer: new ArrayBuffer(8), byteLength: 8, audioUrl: 'https://cdn.test/a' }; }
     };
     const playback = { getActiveCustomLoop: () => null, playbackState: { isPlaying: true } };
-    const prefetch = createPrefetch({ auth, queue, resolver, playback, transfer: transfers, debug: { log() {} } });
-    return { prefetch, auth, queue, calls, resolver, transfers, resolved };
+    const prefetch = createPrefetch({ auth, queue, resolver, playback, lyrics, transfer: transfers, debug: { log() {} } });
+    return { prefetch, auth, queue, calls, resolver, transfers, resolved, playback };
 }
+
+test('lyrics start with full next-audio prefetch, not URL prewarm, and do not delay the audio', async () => {
+    const ids = []; let active = false;
+    const lyrics = { prefetchLyricById(id) { ids.push(id); active = true; }, cancelLyricPrefetch() { active = false; } };
+    const { prefetch, calls } = prefetchFixture(1024, lyrics);
+    prefetch.prewarmNextNeteaseSongUrl(); await tick(); assert.deepEqual(ids, []);
+    await prefetch.prefetchNextSong(1); await prefetch.nextSongFetchPromise; await tick();
+    assert.deepEqual(ids, [2]); assert.equal(prefetch.hasPreloaded, true); assert.equal(active, true);
+    await prefetch.prefetchNextSong(1); assert.deepEqual(ids, [2]); assert.equal(calls.bodies, 1);
+    prefetch.cancelNextPreload(); assert.equal(active, false);
+});
+
+test('local files and loop modes never launch next-song lyric prefetch', async () => {
+    const ids = [], lyrics = { prefetchLyricById: id => ids.push(id), cancelLyricPrefetch() {} };
+    const local = prefetchFixture(1024, lyrics);
+    local.queue.playlist[1] = { name: 'local.wav', file: { size: 8, arrayBuffer: async () => new ArrayBuffer(8) } };
+    await local.prefetch.prefetchNextSong(1); await local.prefetch.nextSongFetchPromise; await tick();
+    assert.deepEqual(ids, []);
+    for (const custom of [false, true]) {
+        const f = prefetchFixture(1024, lyrics); f.queue.playMode = custom ? 0 : 2;
+        f.playback.getActiveCustomLoop = () => custom ? { start: 1, end: 2 } : null;
+        await f.prefetch.prefetchNextSong(1);
+    }
+    assert.deepEqual(ids, []);
+});
 
 test('URL prewarm and body download share one resolution; repeated requests do not redownload', async () => {
     const { prefetch, calls, queue } = prefetchFixture();

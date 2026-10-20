@@ -3,6 +3,7 @@ import { cleanCookie } from '../shared/text.js';
 export function createPrefetch({
     auth: authService,
     debug: debugService,
+    lyrics: lyricsService,
     playback: playbackService,
     queue: queueService,
     resolver: resolverService,
@@ -230,6 +231,7 @@ export function createPrefetch({
     // 取消下一首预加载；令牌递增后，任何迟到的 Promise 都不能回填新状态。
     function cancelNextPreload({ resetAttempted = true, silent = false, resetDetails = true } = {}) {
         nextPreloadToken++;
+        lyricsService?.cancelLyricPrefetch();
         try {
             if (nextSongAbortController) {
                 try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); }
@@ -540,6 +542,8 @@ export function createPrefetch({
             if (!reuseUrlPrewarm) nextSongPreloadMeta = null;
             prefetchInProgress = true;
             prefetchAttempted = true;
+
+            if (nextTrack.netease && !nextTrack.file) lyricsService?.prefetchLyricById(songId);
 
             const work = nextTrack.file
                 ? (async () => {

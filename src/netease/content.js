@@ -752,7 +752,7 @@ export function createContent({
         if (!id || !['album', 'artist'].includes(type)) return;
         if (!authService.neteaseUser || !authService.neteaseCookie) {
             browserService.musicBrowserState.authReturnHash = window.location.hash;
-            await authService.showQRLogin();
+            await authService.showLogin();
             return;
         }
         if (button.dataset.musicSubscriptionState === 'unknown') {
@@ -774,7 +774,7 @@ export function createContent({
                 if ([301, 302].includes(json?.code)) {
                     await authService.neteaseLogout();
                     browserService.musicBrowserState.authReturnHash = window.location.hash;
-                    await authService.showQRLogin();
+                    await authService.showLogin();
                     return;
                 }
                 throw new Error(json?.message || `HTTP ${response.status}`);

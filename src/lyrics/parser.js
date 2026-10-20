@@ -46,34 +46,132 @@ function parseLyricsToArray(text, metaBucket) {
 
 /**
  * 解析 YRC 逐字歌词
- * YRC 格式：[行起始ms,行时长ms,0]\n[字起始ms,字时长ms,0]字...
- * 返回 Array<{ t: number(秒), words: Array<{ txt, start(ms), dur(ms) }> }>
+ * YRC 格式：[行起始ms,行时长ms] 或 [行起始ms,行时长ms,0]，后接 (字起始ms,字时长ms,0)字。
+ * 返回 Array<{ t: number(秒), dur: number(ms), words: Array<{ txt, start(ms), dur(ms) }> }>
  */
 function parseYrc(text) {
     if (!text) return null;
     const lines = text.split(/\r?\n/);
     const result = [];
-    // 行头格式：[startMs,durMs,0]
-    const lineReg = /^\[(\d+),(\d+),\d+\]/;
-    // 字格式：(startMs,durMs,0)字
-    const wordReg = /\((\d+),(\d+),\d+\)([^(\[]*)/g;
+    const lineReg = /^\[(\d+),(\d+)(?:,\d+)?\]/;
+    const wordReg = /\((\d+),(\d+),\d+\)/g;
+    const validTiming = (start, dur) => Number.isSafeInteger(start) && Number.isSafeInteger(dur)
+        && Number.isSafeInteger(start + dur);
     for (const raw of lines) {
-        const lm = lineReg.exec(raw);
+        const line = raw.trim();
+        const lm = lineReg.exec(line);
         if (!lm) continue;
-        const lineStart = parseInt(lm[1]); // ms
-        const rest = raw.slice(lm[0].length);
+        const lineStart = Number(lm[1]), duration = Number(lm[2]);
+        if (!validTiming(lineStart, duration)) continue;
+        const rest = line.slice(lm[0].length);
+        const tokens = [...rest.matchAll(wordReg)];
+        if (tokens.some(token => !validTiming(Number(token[1]), Number(token[2])))) continue;
         const words = [];
-        let wm;
-        wordReg.lastIndex = 0;
-        while ((wm = wordReg.exec(rest)) !== null) {
-            const txt = wm[3];
-            if (txt) words.push({ txt, start: parseInt(wm[1]), dur: parseInt(wm[2]) });
+        for (let i = 0; i < tokens.length; i++) {
+            const token = tokens[i];
+            const txt = rest.slice(token.index + token[0].length, tokens[i + 1]?.index ?? rest.length);
+            if (txt) words.push({ txt, start: Number(token[1]), dur: Number(token[2]) });
         }
         if (words.length > 0) {
-            result.push({ t: lineStart / 1000, words });
+            result.push({ t: lineStart / 1000, dur: duration, words });
         }
     }
+    result.sort((a, b) => a.t - b.t);
     return result.length > 0 ? result : null;
+}
+
+function alignWordLyricTimeline(original, translated, roman, wordLyrics) {
+    if (!wordLyrics?.length) return { original, translated, roman };
+    const normalize = text => text.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '');
+    const isCredit = text => /^\s*(?:作[词詞曲]|[编編]曲|Lyricist|Lyrics|Composer|Composed|Arranger|Arranged)\s*[:：]/i.test(text);
+    const candidates = original.filter(line => line.t >= 0 && !isCredit(line.txt))
+        .map(line => ({ line, key: normalize(line.txt) }));
+    const replacements = new Map();
+    const wordRows = wordLyrics.map(line => ({ t: line.t, txt: line.words.map(word => word.txt).join('') }));
+    const keys = wordRows.map(line => normalize(line.txt));
+    // Strong agreement across complete tracks proves line order, even when individual
+    // timestamps or spellings differ. A partial/other version must not get paired by index.
+    const sameTrack = candidates.length === wordRows.length
+        && candidates.filter((candidate, i) => candidate.key === keys[i]).length / wordRows.length >= .75
+        && candidates.filter((candidate, i) => Math.abs(candidate.line.t - wordRows[i].t) <= 2).length / wordRows.length >= .75;
+    let textPairs = null;
+    if (!sameTrack && keys.join('') && candidates.map(candidate => candidate.key).join('') === keys.join('')) {
+        // Identical full text can have different line breaks. Character offsets prove
+        // correspondence without guessing which translation fragment belongs to which line.
+        let index = 0, end = keys[0].length, offset = 0;
+        const pairs = candidates.map(candidate => {
+            while (index + 1 < keys.length && offset >= end) end += keys[++index].length;
+            const pair = [candidate.line, wordRows[index].t];
+            offset += candidate.key.length;
+            return pair;
+        });
+        if (pairs.filter(([plain, time]) => Math.abs(plain.t - time) <= 2).length / pairs.length >= .75) textPairs = new Map(pairs);
+    }
+    wordRows.forEach((row, i) => {
+        if (sameTrack) {
+            replacements.set(candidates[i].line, row.t);
+            return;
+        }
+        if (textPairs) return;
+        let best = null, distance = Infinity;
+        for (const candidate of candidates) {
+            const { line: plain } = candidate;
+            const delta = Math.abs(plain.t - row.t);
+            if (replacements.has(plain) || delta > 2) continue;
+            if (keys[i] && candidate.key === keys[i] && delta < distance) {
+                best = plain; distance = delta;
+            }
+        }
+        // Preserve exact-time alternate text support without preferring it to a text match.
+        if (!best) best = candidates.find(candidate => !replacements.has(candidate.line)
+            && Math.abs(candidate.line.t - row.t) < .05)?.line;
+        if (best) replacements.set(best, row.t);
+    });
+    if (textPairs) for (const [plain, time] of textPairs) replacements.set(plain, time);
+    const main = [...original.filter(line => !replacements.has(line)), ...wordRows].sort((a, b) => a.t - b.t);
+    const findOriginal = createLyricTimeLookup([...replacements.keys()]);
+    const sourceByTime = new Map([...replacements.keys()].map(line => [line.t, line]));
+    const wordByTime = new Map(wordLyrics.map(line => [line.t, line]));
+    const alignExtra = (lines, field) => {
+        const aligned = lines.map(line => {
+            const plain = sourceByTime.get(line.t) || findOriginal(line.t);
+            return plain ? { ...line, t: replacements.get(plain) } : line;
+        });
+        const fallbackByTime = new Map();
+        for (const line of aligned) {
+            const previous = fallbackByTime.get(line.t);
+            fallbackByTime.set(line.t, previous ? `${previous} ${line.txt}` : line.txt);
+        }
+        // Subtitles attach to existing main rows. They never create a second singing timeline.
+        return main.flatMap(line => {
+            const txt = wordByTime.get(line.t)?.[field] ?? fallbackByTime.get(line.t);
+            return txt ? [{ t: line.t, txt }] : [];
+        });
+    };
+    return {
+        original: main, translated: alignExtra(translated, 'translation'), roman: alignExtra(roman, 'roman')
+    };
+}
+
+function selectNeteaseLyricTracks(data) {
+    const text = field => typeof data?.[field]?.lyric === 'string' ? data[field].lyric : '';
+    let wordLyrics = parseYrc(text('yrc'));
+    if (wordLyrics) {
+        const attach = field => {
+            const rows = parseLyricsToArray(text(field)).filter(line => line.t >= 0);
+            const times = createLyricTimeLookup(wordLyrics);
+            // Some yromalrc payloads are another version with credits or different timing.
+            // Accept partial tracks only when most of their rows belong to this YRC timeline.
+            if (!rows.length || rows.filter(line => times(line.t)).length / rows.length < .75) return () => undefined;
+            const exact = new Map(rows.map(line => [line.t, line]));
+            const fallback = createLyricTimeLookup(rows);
+            return time => exact.get(time) || fallback(time);
+        };
+        const translation = attach('ytlrc'), roman = attach('yromalrc');
+        wordLyrics = wordLyrics.map(line => ({ ...line,
+            translation: translation(line.t)?.txt, roman: roman(line.t)?.txt }));
+    }
+    return { original: text('lrc'), translated: text('tlyric') || text('trans'), roman: text('romalrc'), wordLyrics };
 }
 
 function createLyricTimeLookup(lines) {
@@ -106,4 +204,4 @@ function extractLyricsText(value, depth = 0) {
     return '';
 }
 
-export { createLyricTimeLookup, extractLyricsText, parseJsonLyricLine, parseLyricsToArray, parseYrc };
+export { alignWordLyricTimeline, createLyricTimeLookup, extractLyricsText, parseJsonLyricLine, parseLyricsToArray, parseYrc, selectNeteaseLyricTracks };

@@ -406,6 +406,7 @@ export function createPlayback({
         }
         updatePlayIcon();
         if (typeof renderService.scheduleRender === 'function') renderService.scheduleRender(true);
+        lyricsService.syncWordLyricPlayback?.();
         return nextStatus;
     }
 
@@ -432,6 +433,7 @@ export function createPlayback({
         get playbackWantsPlay() { return playbackWantsPlay; },
         get transportVersion() { return transportVersion; },
         get playbackState() { return playbackState; },
+        get audioContextRunning() { return actx.state === 'running'; },
         get currentAbortController() { return currentAbortController; },
         set currentAbortController(value) { currentAbortController = value; },
         get playbackMetadataController() { return playbackMetadataController; },
@@ -457,6 +459,10 @@ export function createPlayback({
         initialize() {
             if (initialized) return;
             initialized = true;
+            actx.addEventListener?.('statechange', () => {
+                lyricsService.syncWordLyricPlayback?.();
+                renderService.scheduleRender?.(true);
+            });
             gainNode.connect(analyser);
 
             analyser.connect(actx.destination);

@@ -41,7 +41,10 @@
         mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
         -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
     }
-    .lyric-line { font-size: 0.9rem; margin: 8px 0; text-align: center; transform-origin: center center; }
+    .lyric-line { font-size: 0.9rem; margin: 4px 0; min-height: 44px; text-align: center; transform-origin: center var(--lyric-anchor-y, 1em); }
+    .lyric-visual { font-size: calc(0.9rem * 1.16); transform-origin: center var(--lyric-anchor-y, 1em); }
+    .lyric-visual .lyric-translation { font-size: calc(0.8rem * 1.16); }
+    .lyric-translation { font-size: 0.8rem; }
     .lyrics-scroll { text-align: center; }
 
     .controls-row { justify-content: center; gap: 12px; padding: 10px 0; }

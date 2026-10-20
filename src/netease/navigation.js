@@ -20,6 +20,8 @@ export function createBrowser({
         artistPrefetchTimer: null,
         artistPrefetchController: null,
         authReturnHash: '',
+        authReturnContext: null,
+        lastMusicPosition: null,
         lastNonMusicHash: '',
         lastSearchRoute: null,
         restoringHistory: false,
@@ -54,7 +56,10 @@ export function createBrowser({
         if (!window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) return;
         try {
             const current = ensureMusicHistoryState() || {};
-            const state = { ...(history.state || {}), auroraMusic: { ...current, scrollTop: domService.neteaseBrowserScroll.scrollTop, routeHash: window.location.hash } };
+            const loginReturn = musicBrowserState.authReturnContext;
+            const scrollTop = loginReturn?.hash === window.location.hash ? loginReturn.scrollTop : domService.neteaseBrowserScroll.scrollTop;
+            musicBrowserState.lastMusicPosition = { hash: window.location.hash, scrollTop };
+            const state = { ...(history.state || {}), auroraMusic: { ...current, scrollTop, routeHash: window.location.hash } };
             history.replaceState(state, '', window.location.href);
         } catch (_) {}
     }
@@ -91,7 +96,7 @@ export function createBrowser({
         const sameArtistEntity = previousRoute?.kind === 'artist'
             && route.kind === 'artist'
             && Number(previousRoute.id) === Number(route.id);
-        authService.cancelQRCodeSession();
+        authService.cancelLoginSession();
         const preserveSameArtistRequests = sameArtistEntity && previousRoute?.kind === 'artist' && route.kind === 'artist';
         if (!preserveSameArtistRequests) abortMusicNavigationRequests();
         const controller = new AbortController();
@@ -172,14 +177,14 @@ export function createBrowser({
         const replace = options.replace ?? sameArtistViewSwitch;
         const beginsSession = options.newSession || !window.location.hash.startsWith(MUSIC_ROUTE_PREFIX) || !current;
         const musicState = beginsSession ? {
-            sessionId: createMusicSessionId(), depth: 0, scrollTop: 0,
+            sessionId: createMusicSessionId(), depth: 0, scrollTop: Math.max(0, Number(options.restoreScroll) || 0),
             parentUrl: options.parentUrl || window.location.href,
             hasParentEntry: options.hasParentEntry !== false,
             routeHash: hash
         } : {
             ...current,
             depth: replace ? current.depth : current.depth + 1,
-            scrollTop: 0,
+            scrollTop: Math.max(0, Number(options.restoreScroll) || 0),
             routeHash: hash
         };
         const state = { ...(history.state || {}), auroraMusic: musicState };
@@ -199,10 +204,12 @@ export function createBrowser({
         let saved = '';
         try { saved = sessionStorage.getItem('aurora_music_last_route') || ''; } catch (_) {}
         const savedRoute = parseMusicRoute(saved);
+        const lastPosition = musicBrowserState.lastMusicPosition;
         navigateMusic(savedRoute && savedRoute.kind !== 'invalid' ? savedRoute : { kind: 'search', q: '', type: 'all', page: 1 }, {
             newSession: true,
             parentUrl,
-            hasParentEntry: true
+            hasParentEntry: true,
+            restoreScroll: lastPosition?.hash === saved ? lastPosition.scrollTop : 0
         });
     }
 
@@ -211,7 +218,7 @@ export function createBrowser({
         saveMusicScrollState();
         try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
         abortMusicNavigationRequests();
-        authService.cancelQRCodeSession();
+        authService.cancelLoginSession();
         panelsService.modalController.close(domService.neteasePanel);
         if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
             const state = ensureMusicHistoryState();
@@ -231,7 +238,7 @@ export function createBrowser({
         const route = parseMusicRoute();
         if (!route) {
             abortMusicNavigationRequests();
-            authService.cancelQRCodeSession();
+            authService.cancelLoginSession();
             panelsService.modalController.close(domService.neteasePanel, false);
             document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
             musicBrowserState.renderedHash = window.location.hash;
@@ -247,6 +254,7 @@ export function createBrowser({
     return {
         get musicBrowserState() { return musicBrowserState; },
         currentMusicNavigationIs,
+        saveMusicScrollState,
         renderMusicRoute,
         navigateMusic,
         closeMusicBrowser,

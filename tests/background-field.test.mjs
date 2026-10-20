@@ -41,13 +41,14 @@ test('cover quadrants retain their own locations and transparency cannot inject 
     assert.deepEqual([...border.slice(0,3)],[...opaque.slice(0,3)]);
 });
 
-test('three radius-three blur passes keep color transitions local on the 64-pixel field', () => {
+test('three radius-four blur passes keep color transitions local on the 64-pixel field', () => {
     const blue = [40, 70, 200, 255], red = [220, 45, 45, 255];
     const data = buildSpatialCover(fixture(x => x < 32 ? blue : red, 64, 64), 64, 64).data;
     const solid = color => [...buildSpatialCover(fixture(() => color, 64, 64), 64, 64).data.slice(0, 3)];
     const at = x => [...data.slice((32 * 64 + x) * 4, (32 * 64 + x) * 4 + 3)];
-    assert.deepEqual(at(22), solid(blue));
-    assert.deepEqual(at(41), solid(red));
+    assert.deepEqual(at(19), solid(blue));
+    assert.deepEqual(at(44), solid(red));
+    assert.notDeepEqual(at(22), solid(blue));
     assert.notDeepEqual(at(28), solid(blue));
     assert.notDeepEqual(at(35), solid(red));
 });

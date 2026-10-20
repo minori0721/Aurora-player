@@ -1,5 +1,6 @@
-import { cleanCookie, escapeHtml, toHttps } from '../shared/text.js';
+import { cleanCookie, toHttps } from '../shared/text.js';
 import { MUSIC_ROUTE_PREFIX, parseMusicRoute } from './routes.js';
+import { createLoginPage, LOGIN_TIMEOUT_MS } from './login.js';
 
 export function createAuth({
     api: apiService,
@@ -14,37 +15,14 @@ export function createAuth({
     prefetch: prefetchService,
     resolver: resolverService
 } = {}) {
-    let neteaseQrAbortController = null;
-
     // ========== 网易云登录系统 ==========
     let neteaseUser = null;
 
     let neteaseCookie = localStorage.getItem('netease_cookie') || '';
 
-    let qrCheckTimer = null;
-
-    let qrLoginSession = null;
-
-    function cancelQRCodeSession(clearReturn = true) {
-        const session = qrLoginSession;
-        qrLoginSession = null;
-        session?.controller.abort();
-        clearTimeout(session?.timer);
-        clearTimeout(session?.returnTimer);
-        clearTimeout(qrCheckTimer);
-        qrCheckTimer = null;
-        neteaseQrAbortController = null;
-        if (clearReturn) browserService.musicBrowserState.authReturnHash = '';
-    }
-
-    function isQRCodeSessionCurrent(session) {
-        return qrLoginSession === session && !session.controller.signal.aborted
-            && browserService.currentMusicNavigationIs(session.navToken, session.hash)
-            && domService.neteasePanel.classList.contains('show') && isAuthSnapshotCurrent(session.authSnapshot);
-    }
-
     // 当前播放音质
     let neteaseVipType = 0;
+    let vipInfoPending = false;
 
     // 0=普通 1=VIP 2=SVIP 3=音乐包
     let neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
@@ -53,6 +31,11 @@ export function createAuth({
     let authGeneration = 0;
 
     const accountAbortControllers = new Set();
+    let accountRequestSequence = 0;
+    const loginPage = createLoginPage({
+        api: apiService, browser: browserService, dom: domService,
+        captureAuthSnapshot, isAuthSnapshotCurrent, commitLogin
+    });
 
     function abortAccountRequests() {
         accountAbortControllers.forEach(controller => {
@@ -112,6 +95,57 @@ export function createAuth({
         }
     }
 
+    async function accountPost(path, data) {
+        const controller = new AbortController();
+        let timer, abort;
+        const stopped = new Promise((_, reject) => {
+            abort = () => reject(new DOMException('Cancelled', 'AbortError'));
+            controller.signal.addEventListener('abort', abort, { once: true });
+            timer = window.setTimeout(() => {
+                reject(Object.assign(new Error('请求超时'), { name: 'TimeoutError' }));
+                controller.abort();
+            }, LOGIN_TIMEOUT_MS);
+        });
+        accountAbortControllers.add(controller);
+        try {
+            return await Promise.race([stopped, (async () => {
+                const response = await fetch(apiService.buildApiUrl(`${path}?timestamp=${Date.now()}&accountNonce=${++accountRequestSequence}`), {
+                    method: 'POST', cache: 'no-store', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data), signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            })()]);
+        } finally {
+            window.clearTimeout(timer);
+            controller.signal.removeEventListener('abort', abort);
+            accountAbortControllers.delete(controller);
+        }
+    }
+
+    function refreshVipInfo(snapshot) {
+        neteaseVipType = null;
+        vipInfoPending = true;
+        updateUserUI();
+        void fetchVipInfo(snapshot).then(() => {
+            if (!isAuthSnapshotCurrent(snapshot)) return;
+            vipInfoPending = false;
+            updateUserUI();
+        });
+    }
+
+    function commitLogin(cookie, profile, isCurrent) {
+        if (!isCurrent()) return null;
+        advanceAuthGeneration();
+        neteaseCookie = cookie;
+        neteaseUser = profile;
+        try { localStorage.setItem('netease_cookie', neteaseCookie); }
+        catch (_) { debugService.log('登录状态无法保存，关闭网页后需重新登录', 'warn'); }
+        const snapshot = captureAuthSnapshot();
+        refreshVipInfo(snapshot);
+        return snapshot;
+    }
+
     // 检查登录状态
     async function checkLoginStatus() {
         if (!neteaseCookie) {
@@ -123,26 +157,21 @@ export function createAuth({
 
         const snapshot = captureAuthSnapshot();
         try {
-            const resp = await accountFetch(apiService.buildApiUrl(`/login/status?cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}`));
-            if (resp.ok) {
-                const json = await resp.json();
-                if (!isAuthSnapshotCurrent(snapshot)) return false;
-                if (json.data?.profile) {
-                    await fetchVipInfo(snapshot);
-                    if (!isAuthSnapshotCurrent(snapshot)) return false;
-                    neteaseUser = json.data.profile;
-                    updateUserUI();
-                    debugService.log(`Logged in as: ${neteaseUser.nickname}`, 'success');
-                    const currentRoute = parseMusicRoute();
-                    if (currentRoute?.kind === 'playlist-mine' && domService.neteasePanel.classList.contains('show')) {
-                        void myPlaylistsService.loadMyPlaylists();
-                    }
-                    return true;
+            const json = await accountPost('/login/status', { cookie: cleanCookie(snapshot.cookie) });
+            if (!isAuthSnapshotCurrent(snapshot)) return false;
+            if (Number.isSafeInteger(Number(json.data?.profile?.userId)) && Number(json.data.profile.userId) > 0) {
+                neteaseUser = json.data.profile;
+                refreshVipInfo(snapshot);
+                debugService.log(`Logged in as: ${neteaseUser.nickname}`, 'success');
+                const currentRoute = parseMusicRoute();
+                if (currentRoute?.kind === 'playlist-mine' && domService.neteasePanel.classList.contains('show')) {
+                    void myPlaylistsService.loadMyPlaylists();
                 }
-                neteaseUser = null;
-                neteaseVipType = 0;
-                updateUserUI();
+                return true;
             }
+            neteaseUser = null;
+            neteaseVipType = 0;
+            updateUserUI();
         } catch (e) {
             if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('Login check failed: ' + e.message, 'error');
         }
@@ -152,29 +181,27 @@ export function createAuth({
     // 获取VIP信息
     async function fetchVipInfo(snapshot = captureAuthSnapshot()) {
         try {
-            const resp = await accountFetch(apiService.buildApiUrl(`/vip/info?cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}`));
-            if (resp.ok) {
-                const json = await resp.json();
-                if (!isAuthSnapshotCurrent(snapshot)) return false;
-                // redVipLevel: 0=普通 1=VIP; musicPackage=音乐包
-                const vipInfo = json.data;
-                if (vipInfo?.redVipLevel >= 7) {
-                    neteaseVipType = 2; // SVIP
-                    neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-                } else if (vipInfo?.redVipLevel >= 1) {
-                    neteaseVipType = 1; // VIP
-                    neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-                } else if (vipInfo?.musicPackage?.vipCode) {
-                    neteaseVipType = 3; // 音乐包
-                    neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-                } else {
-                    neteaseVipType = 0; // 普通
-                    neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
-                }
-                domService.qualitySelect.value = neteaseQuality;
-                localStorage.setItem('netease_quality', neteaseQuality);
-                return true;
+            const json = await accountPost('/vip/info', { cookie: cleanCookie(snapshot.cookie) });
+            if (!isAuthSnapshotCurrent(snapshot)) return false;
+            // redVipLevel: 0=普通 1=VIP; musicPackage=音乐包
+            const vipInfo = json.data;
+            if (!vipInfo || typeof vipInfo !== 'object') return false;
+            if (vipInfo.redVipLevel >= 7) {
+                neteaseVipType = 2; // SVIP
+                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+            } else if (vipInfo.redVipLevel >= 1) {
+                neteaseVipType = 1; // VIP
+                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+            } else if (vipInfo.musicPackage?.vipCode) {
+                neteaseVipType = 3; // 音乐包
+                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
+            } else {
+                neteaseVipType = 0; // 普通
+                neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
             }
+            domService.qualitySelect.value = neteaseQuality;
+            localStorage.setItem('netease_quality', neteaseQuality);
+            return true;
         } catch (e) {
             if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('VIP info fetch failed', 'warn');
         }
@@ -200,7 +227,9 @@ export function createAuth({
                 2: { text: 'SVIP会员', cls: 'svip' },
                 3: { text: '音乐包', cls: 'music-pack' }
             };
-            const typeInfo = typeMap[neteaseVipType] || typeMap[0];
+            const typeInfo = neteaseVipType === null
+                ? { text: vipInfoPending ? '会员状态查询中' : '会员状态暂不可用', cls: 'normal' }
+                : typeMap[neteaseVipType] || typeMap[0];
             userTypeEl.textContent = typeInfo.text;
             userTypeEl.className = 'netease-user-type ' + typeInfo.cls;
 
@@ -214,116 +243,14 @@ export function createAuth({
         }
     }
 
-    // 显示二维码登录
-    async function showQRLogin() {
-        if (!browserService.musicBrowserState.authReturnHash && window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
-            browserService.musicBrowserState.authReturnHash = window.location.hash;
-        }
-        // 切换到登录Tab
-        document.querySelectorAll('.netease-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.netease-tab-content').forEach(c => c.style.display = 'none');
-        document.getElementById('tab-qrlogin').style.display = 'block';
-        domService.neteasePageTitle.textContent = '扫码登录';
-
-        await generateQRCode();
-    }
-
-    async function generateQRCode() {
-        cancelQRCodeSession(false);
-        const session = {
-            controller: new AbortController(), timer: null, returnTimer: null, completed: false,
-            navToken: browserService.musicBrowserState.navToken, hash: window.location.hash,
-            authSnapshot: captureAuthSnapshot(),
-            returnHash: browserService.musicBrowserState.authReturnHash || window.location.hash,
-            returnScroll: domService.neteaseBrowserScroll.scrollTop
-        };
-        qrLoginSession = session;
-        neteaseQrAbortController = session.controller;
-        const qrSignal = session.controller.signal;
-        const imgWrap = document.getElementById('qrcode-img-wrap');
-        const status = document.getElementById('qrcode-status');
-        imgWrap.innerHTML = '<div class="netease-loading">生成二维码中...</div>';
-        status.textContent = '等待扫描...';
-        status.className = 'qrcode-status waiting';
-
-        try {
-            const keyResp = await fetch(apiService.buildApiUrl(`/login/qr/key?timestamp=${Date.now()}`), { signal: qrSignal });
-            if (!keyResp.ok) throw new Error('无法获取二维码');
-            const keyJson = await keyResp.json();
-            if (!isQRCodeSessionCurrent(session)) return;
-            if (!keyJson.data?.unikey) throw new Error('无法获取二维码key');
-            const qrKey = keyJson.data.unikey;
-            const imgResp = await fetch(apiService.buildApiUrl(`/login/qr/create?key=${qrKey}&qrimg=true&timestamp=${Date.now()}`), { signal: qrSignal });
-            if (!imgResp.ok) throw new Error('无法生成二维码图片');
-            const imgJson = await imgResp.json();
-            if (!isQRCodeSessionCurrent(session)) return;
-            if (!imgJson.data?.qrimg) throw new Error('无法生成二维码');
-            imgWrap.innerHTML = `<img src="${escapeHtml(toHttps(imgJson.data.qrimg))}" alt="QR Code">`;
-            const schedulePoll = () => {
-                session.timer = setTimeout(poll, 2000);
-                qrCheckTimer = session.timer;
-            };
-            const poll = async () => {
-                try {
-                    if (!isQRCodeSessionCurrent(session) || session.completed) return;
-                    const response = await fetch(apiService.buildApiUrl(`/login/qr/check?key=${qrKey}&timestamp=${Date.now()}&noCookie=true`), { signal: qrSignal });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const json = await response.json();
-                    if (!isQRCodeSessionCurrent(session) || session.completed) return;
-                    if (json.code === 800) {
-                        session.completed = true;
-                        status.textContent = '二维码已过期，请刷新';
-                        status.className = 'qrcode-status expired';
-                    } else if (json.code === 801) {
-                        status.textContent = '等待扫描...';
-                        status.className = 'qrcode-status waiting';
-                    } else if (json.code === 802) {
-                        status.textContent = '已扫描，请在手机上确认登录';
-                        status.className = 'qrcode-status scanned';
-                    } else if (json.code === 803) {
-                        session.completed = true;
-                        qrCheckTimer = null;
-                        status.textContent = '登录成功！';
-                        status.className = 'qrcode-status success';
-                        const nextCookie = cleanCookie(json.cookie || '');
-                        advanceAuthGeneration();
-                        neteaseCookie = nextCookie;
-                        session.authSnapshot = captureAuthSnapshot();
-                        localStorage.setItem('netease_cookie', neteaseCookie);
-                        await checkLoginStatus();
-                        if (!isQRCodeSessionCurrent(session)) return;
-                        session.returnTimer = setTimeout(() => {
-                            if (!isQRCodeSessionCurrent(session)) return;
-                            const parsed = parseMusicRoute(session.returnHash);
-                            const route = parsed && parsed.kind !== 'invalid' ? parsed
-                                : { kind: 'search', q: '', type: 'all', page: 1 };
-                            browserService.musicBrowserState.authReturnHash = '';
-                            browserService.navigateMusic(route, { replace: true, restoreScroll: session.returnScroll });
-                        }, 1000);
-                    }
-                } catch (error) {
-                    if (error?.name === 'AbortError') return;
-                }
-                if (isQRCodeSessionCurrent(session) && !session.completed) schedulePoll();
-            };
-            schedulePoll();
-        } catch (error) {
-            if (!isQRCodeSessionCurrent(session) || error?.name === 'AbortError') return;
-            imgWrap.innerHTML = '<div class="netease-empty">生成失败: ' + escapeHtml(error.message) + '</div>';
-            debugService.log('QR generate error: ' + error.message, 'error');
-        }
-    }
-
-    // 刷新二维码
-    const refreshQRCode = generateQRCode;
-
     // 退出登录
     const neteaseLogout = async function() {
         neteaseCookie = '';
         advanceAuthGeneration();
-        cancelQRCodeSession();
+        loginPage.cancel();
         neteaseUser = null;
         neteaseVipType = 0;
+        vipInfoPending = false;
         localStorage.removeItem('netease_cookie');
         await cacheService.purgeSensitiveIdbCache();
         updateUserUI();
@@ -336,12 +263,12 @@ export function createAuth({
 
     let initialized = false;
     return {
-        showQRLogin,
-        refreshQRCode,
+        showLogin: loginPage.open,
+        refreshQRCode: loginPage.refreshQRCode,
         neteaseLogout,
         get neteaseUser() { return neteaseUser; },
         get neteaseCookie() { return neteaseCookie; },
-        cancelQRCodeSession,
+        cancelLoginSession: loginPage.cancel,
         get neteaseQuality() { return neteaseQuality; },
         get authGeneration() { return authGeneration; },
         get accountAbortControllers() { return accountAbortControllers; },
@@ -351,6 +278,7 @@ export function createAuth({
         initialize() {
             if (initialized) return;
             initialized = true;
+            loginPage.initialize();
             domService.qualitySelect.value = neteaseQuality;
 
             domService.qualitySelect.onchange = () => {

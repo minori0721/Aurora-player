@@ -48,6 +48,8 @@ export function createRender({
 
     let lastBasicRenderAt = 0;
 
+    let lastLyricClock = null, lyricClockAdvancing = true;
+
     let canvasNeedsClear = true;
 
     function visualEffectIsActive() {
@@ -74,16 +76,26 @@ export function createRender({
         canvasNeedsClear = false;
     }
 
+    function nextLyricDelay() {
+        if (!lyricClockAdvancing) return Infinity;
+        const next = lyricsService.getNextLyricUpdateTime();
+        return Number.isFinite(next) ? Math.max(0, (next - playbackService.getCurrentTime()) * 1000) : Infinity;
+    }
+
     function scheduleRender(force = false) {
         syncBackground();
         if (document.hidden) return;
-        if (force) lastBasicRenderAt = 0;
+        if (force) {
+            lastBasicRenderAt = 0;
+            clearTimeout(renderTimerId); renderTimerId = 0;
+        }
         if (renderFrameId || renderTimerId) return;
         if (visualEffectIsActive() || lastBasicRenderAt === 0 || !playbackService.playbackState.isPlaying) {
             renderFrameId = requestAnimationFrame(renderFrame);
             return;
         }
-        const delay = Math.max(0, BASIC_RENDER_INTERVAL_MS - (performance.now() - lastBasicRenderAt));
+        // Wake at a lyric boundary without raising the whole playback UI's refresh rate.
+        const delay = Math.min(nextLyricDelay(), Math.max(0, BASIC_RENDER_INTERVAL_MS - (performance.now() - lastBasicRenderAt)));
         if (delay <= 4) {
             renderFrameId = requestAnimationFrame(renderFrame);
             return;
@@ -100,10 +112,15 @@ export function createRender({
         syncVisualCanvasSize();
         const effectActive = visualEffectIsActive();
         if (!effectActive) clearVisualCanvasOnce();
+        const clock = playbackService.playbackState.isPlaying ? playbackService.getCurrentTime() : null;
+        lyricClockAdvancing = clock !== null && clock !== lastLyricClock;
+        lastLyricClock = clock;
         const shouldUpdatePlayback = playbackService.playbackState.isPlaying || lastBasicRenderAt === 0;
         if (shouldUpdatePlayback && (lastBasicRenderAt === 0 || timestamp - lastBasicRenderAt >= BASIC_RENDER_INTERVAL_MS)) {
             lastBasicRenderAt = timestamp;
             updatePlaybackFrame();
+        } else if (playbackService.playbackState.isPlaying && nextLyricDelay() === 0) {
+            try { lyricsService.refreshLyricHighlightAndCenter(); } catch(e) {}
         }
         if (effectActive) renderVisuals();
         if (playbackService.playbackState.isPlaying || effectActive) scheduleRender();

@@ -115,6 +115,7 @@ export function createOnlinePlayback({
         const controller = new AbortController();
         playbackService.currentAbortController = controller;
         const signal = controller.signal;
+        const prefetchedLyric = lyricsService.takePrefetchedLyric(songId, { signal });
         if (!cover) supplementPlayingSongDetail(songId, myPlayToken, detail => { song = detail; });
         const recoveryBudget = preloadMatchesCurrent && prefetchService.nextPreloadRecoveryBudget
             ? prefetchService.nextPreloadRecoveryBudget : { urlRefreshUsed: false, stallRecoveryUsed: false };
@@ -190,7 +191,7 @@ export function createOnlinePlayback({
                         playbackService.finishPlaybackLoad(load);
                         metadataService.updateMediaSession();
 
-                        try { lyricsService.fetchLyricById(songId, { isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
+                        try { lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
                         // 批量预取后续详情，但仍只预热下一首音频 URL。
                         try {
@@ -315,7 +316,7 @@ export function createOnlinePlayback({
             metadataService.updateMediaSession();
 
             // 直接用歌曲ID获取歌词（已知ID无需搜索）
-            try { lyricsService.fetchLyricById(songId, { signal: controller.signal, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
+            try { lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
 
                 // 批量预取后续详情，但仍只预热下一首音频 URL。
                 try {

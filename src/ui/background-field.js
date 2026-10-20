@@ -105,7 +105,7 @@ export function buildSpatialCover(pixels, width, height) {
         field[offset + 3] = weight;
     }
     // Three separable box passes approximate a broad blur once per cover, in the Worker.
-    const radius = 3;
+    const radius = 4;
     for (let pass = 0; pass < 3; pass++) for (let axis = 0; axis < 2; axis++) {
         for (let y = 0; y < SPATIAL_SIZE; y++) for (let x = 0; x < SPATIAL_SIZE; x++) for (let c = 0; c < 4; c++) {
             let sum = 0;

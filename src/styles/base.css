@@ -140,27 +140,63 @@ body {
 .loop-marker::after { content: attr(data-label); position: absolute; top: -15px; left: -50%; color: #e74c3c; font-size: 10px; font-weight: bold; }
 
 .right-panel { min-width: 0; display: flex; flex-direction: column; justify-content: center; position: relative; }
-.track-header { margin-bottom: 20px; }
+.track-header { margin-bottom: 12px; }
 .track-title { font-size: 3rem; font-weight: 800; margin: 0 0 10px 0; line-height: 1.1; }
 .track-artist { font-size: 1.2rem; color: var(--text-sub); font-weight: 500; }
 
+.lyrics-area { position: relative; margin-bottom: 44px; min-width: 0; }
 .lyrics-box {
-    height: 350px; overflow: hidden; margin-bottom: 30px; position: relative;
-    padding-left: 20px;
+    --lyric-subtitle-gap: 3px;
+    height: 350px; overflow-y: auto; overflow-x: hidden; position: relative;
+    padding: 0 32px 0 20px; scrollbar-width: none; overscroll-behavior-y: contain;
+    overflow-anchor: none; touch-action: pan-y pinch-zoom; scroll-behavior: auto;
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent);
     mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent);
 }
-.lyrics-scroll { transition: transform 0.3s ease-out; width: 100%; text-align: left; will-change: transform; }
-.lyric-line { font-size: 1.1rem; color: var(--text-sub); margin: 16px 0; cursor: pointer; opacity: 0.6; transition: color 0.2s ease, opacity 0.2s ease, transform 0.24s ease; line-height: 1.55; transform: translateZ(0) scale(1); transform-origin: left center; }
+.lyrics-box::-webkit-scrollbar { display: none; }
+.lyrics-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.lyrics-scroll { position: relative; display: flow-root; width: 100%; text-align: left; box-sizing: border-box; transition: none; }
+.lyric-line { position: relative; font-size: 1.1rem; color: var(--text-sub); margin: 10px 0; min-height: 36px; padding: 3px 0; box-sizing: border-box; overflow-wrap: anywhere; cursor: pointer; opacity: 0.6; transition: color 0.24s ease, opacity 0.24s ease, transform 0.32s cubic-bezier(.22, 1, .36, 1); line-height: 1.55; transform: translateZ(0) scale(1); transform-origin: left var(--lyric-anchor-y, 1em); }
 .lyric-line.active { color: var(--text-main); font-weight: 800; opacity: 1; transform: translateZ(0) scale(1.16); }
+.lyric-line[data-lyric-time] { min-width: 0; padding-inline: 2px; transform: none; }
+.lyric-visual {
+    position: relative; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+    font-size: calc(1.1rem * 1.16); transform: scale(0.8620689655);
+    transform-origin: left var(--lyric-anchor-y, 1em);
+    transition: none;
+}
+.lyric-line.active .lyric-visual { transform: scale(1); }
+.lyric-visual .lyric-original, .lyric-visual .lyric-translation { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.lyric-visual .lyric-original { font-weight: 800; }
+.lyric-visual .lyric-translation {
+    font-size: calc(0.9rem * 1.16); font-weight: 500;
+    margin-top: var(--lyric-subtitle-gap);
+    /* Counter the parent's 1 / 1.16 scale without changing row layout. */
+    transform: translateY(calc(var(--lyric-subtitle-gap) * 0.16));
+    transition: none;
+}
+.lyric-line.active .lyric-visual .lyric-translation { transform: translateY(0); }
+.lyrics-browsing .lyric-line:not(.active) { opacity: .85; }
+.lyrics-browsing .lyric-preview:not(.active), .lyric-line[data-lyric-time]:hover { color: var(--text-main); }
+.lyric-return, .lyric-browse-time { position: absolute; bottom: -44px; z-index: 2; height: 44px; box-sizing: border-box; }
+.lyric-return { right: 4px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: 22px; background: var(--glass); color: var(--text-main); box-shadow: 0 3px 12px rgba(0,0,0,.06); font: inherit; font-size: .75rem; font-weight: 600; cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.lyric-return:hover { background: var(--glass-strong); }
+.lyric-return:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lyric-return svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lyric-return[data-direction="up"] .lyric-return-arrow { transform: rotate(180deg); }
+.lyric-return-locate, .lyric-return[data-direction="here"] .lyric-return-arrow { display: none; }
+.lyric-return[data-direction="here"] .lyric-return-locate { display: block; }
+.lyric-browse-time { left: 20px; display: flex; align-items: center; color: var(--text-sub); font-size: .75rem; font-variant-numeric: tabular-nums; pointer-events: none; }
+.lyric-return[hidden], .lyric-browse-time[hidden] { display: none; }
 
 /* 翻译行样式（显示在原歌词下方，字体较小且颜色偏淡） */
-.lyric-translation { font-size: 0.9rem; color: var(--text-sub); margin-top: 4px; line-height: 1.2; }
+.lyric-translation { font-size: 0.9rem; color: var(--text-sub); margin-top: 3px; line-height: 1.2; }
 
 /* ===== 逐字歌词 (YRC) 动画样式 ===== */
-/* 每个字用 span 包裹，通过 CSS 渐进填色实现 Apple Music 风格扫光 */
+/* Word spans share the audio clock while retaining progressive gradient fill. */
 .yrc-char {
     display: inline-block;
+    max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere;
     background: linear-gradient(to right, var(--text-main) 50%, var(--text-sub) 50%);
     background-size: 200% 100%;
     background-position: 100% 0;  /* 初始态：右半（灰色）在前 */
@@ -168,18 +204,7 @@ body {
     background-clip: text;
     -webkit-text-fill-color: transparent;
     color: transparent;
-    /* 激活时动画由 JS 单独设置 animation，不激活时无动画 */
-}
-@keyframes yrc-fill {
-    from { background-position: 100% 0; }
-    to   { background-position: 0%   0; }
-}
-/* 激活行上的逐字动画由 data-dur 属性驱动，duration 由 JS 内联设置 */
-.lyric-line.active .yrc-char {
-    animation-name: yrc-fill;
-    animation-timing-function: linear;
-    animation-fill-mode: both;
-    /* animation-duration 和 animation-delay 由 JS 内联 style 设置 */
+    /* Only the active row receives audio-clock-aligned Web Animations. */
 }
 /* 非激活行：字全部灰色，且不从上方继承 text-fill-color */
 .lyric-line:not(.active) .yrc-char {
@@ -188,6 +213,7 @@ body {
 }
 
 .controls-row { display: flex; align-items: center; justify-content: flex-start; gap: 25px; padding-top: 20px; flex-wrap: nowrap; min-width: 0; }
+.lyrics-area + .controls-row { padding-top: 6px; }
 .project-footer {
     position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom));
     transform: translateX(-50%); z-index: 11;

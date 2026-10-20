@@ -111,7 +111,7 @@ export function createControls({
 
             document.addEventListener('keydown', (e) => {
                 const target = e.target instanceof Element ? e.target : null;
-                if (panelsService.modalController.active || target?.closest('input, textarea, select, button, a[href], [contenteditable="true"], [role="button"], [role="slider"], [role="dialog"]')) return;
+                if (panelsService.modalController.active || target?.closest('input, textarea, select, button, a[href], [contenteditable="true"], [role="button"], [role="slider"], [role="dialog"], [data-lyric-region]')) return;
                 if(e.code === 'Space') { e.preventDefault(); domService.el.playBtn.click(); }
                 else if (e.code === 'ArrowLeft') { if (playbackService.audioBuffer) { const t = Math.max(0, playbackService.getCurrentTime() - 5); if (playbackService.playbackState.isPlaying) playbackService.startAudio(t); else { playbackService.playbackState.pauseTime = t; updateUI(t); } } }
                 else if (e.code === 'ArrowRight') { if (playbackService.audioBuffer) { const t = Math.min(playbackService.playbackState.duration, playbackService.getCurrentTime() + 5); if (playbackService.playbackState.isPlaying) playbackService.startAudio(t); else { playbackService.playbackState.pauseTime = t; updateUI(t); } } }
@@ -229,7 +229,7 @@ export function createControls({
                                                 const tdiv = document.createElement('div');
                                                 tdiv.className = 'lyric-translation';
                                                 tdiv.textContent = trans.txt;
-                                                lineEl.appendChild(tdiv);
+                                                (lineEl.querySelector('.lyric-visual') || lineEl).appendChild(tdiv);
                                             }
                                         });
                                     } else {

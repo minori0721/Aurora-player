@@ -1,6 +1,10 @@
 import { escapeHtml } from '../shared/text.js';
-import { createLyricTimeLookup, extractLyricsText, parseLyricsToArray, parseYrc } from './parser.js';
+import { alignWordLyricTimeline, createLyricTimeLookup, extractLyricsText, parseLyricsToArray, selectNeteaseLyricTracks } from './parser.js';
 import { chooseNeteaseSongMatch, extractNeteaseMatchSongs, getNeteaseSongArtists } from './matching.js';
+import { createLyricViewport } from './viewport.js';
+import { LYRIC_SCROLL_LEAD_MS } from './motion.js';
+import { createLyricRequests, isLyricResponse } from './requests.js';
+import { createWordLyricMotion } from './word-motion.js';
 
 export function createLyrics({
     api: apiService,
@@ -11,18 +15,27 @@ export function createLyrics({
     playback: playbackService
 } = {}) {
     let neteaseLyricAbortController = null;
+    const lyricRequests = createLyricRequests({ api: apiService, cache: cacheService });
 
     let localLyricSession = null;
 
     let lyrics = [], isSyncedLyrics = true;
 
     let activeLyricIndex = -1, lyricCursorTime = -Infinity;
+    let scrollAheadIndex = -1;
 
     let neteaseSearchEnabled = false;
 
+    let lyricViewport = null;
+    let wordMotion = null;
+
     function resetTrackLyrics() {
+        lyricRequests.cancelTaken();
+        wordMotion?.reset();
+        lyricViewport?.reset();
         lyrics = [];
         activeLyricIndex = -1;
+        scrollAheadIndex = -1;
         lyricCursorTime = -Infinity;
         isSyncedLyrics = true;
         originalLyricsText = translatedLyricsText = romanLyricsText = '';
@@ -105,17 +118,23 @@ export function createLyrics({
         // 构建主 lyrics 数组（用于高亮与滚动）
         lyrics = [];
         activeLyricIndex = -1;
+        scrollAheadIndex = -1;
         lyricCursorTime = -Infinity;
         _lastActiveLyric = null;
+        wordMotion?.reset();
         domService.el.lyricBox.style.transform = 'translateY(0)';
-        domService.el.lyricBox.innerHTML = `<div style="height:120px"></div>`;
+        lyricViewport?.reset();
+        domService.el.lyricBox.innerHTML = '';
 
         if(hasSynced && times.length) {
             const frag = document.createDocumentFragment();
-            const findOriginal = createLyricTimeLookup(originalLyricsArr);
-            const findTranslation = createLyricTimeLookup(translatedLyricsArr);
-            const findRoman = createLyricTimeLookup(romanLyricsArr);
-            const findYrc = createLyricTimeLookup(yrcData);
+            const exactOriginal = new Map(originalLyricsArr.map(line => [line.t.toFixed(3), line]));
+            const findOriginal = yrcData?.length ? t => exactOriginal.get(t.toFixed(3)) : createLyricTimeLookup(originalLyricsArr);
+            const exactTranslation = new Map(translatedLyricsArr.map(line => [line.t.toFixed(3), line]));
+            const exactRoman = new Map(romanLyricsArr.map(line => [line.t.toFixed(3), line]));
+            const findTranslation = yrcData?.length ? t => exactTranslation.get(t.toFixed(3)) : createLyricTimeLookup(translatedLyricsArr);
+            const findRoman = yrcData?.length ? t => exactRoman.get(t.toFixed(3)) : createLyricTimeLookup(romanLyricsArr);
+            const yrcByTime = new Map((yrcData || []).map(line => [line.t.toFixed(3), line]));
             times.forEach(t => {
                 const orig = findOriginal(t);
                 const trans = findTranslation(t);
@@ -130,14 +149,20 @@ export function createLyrics({
                 const container = document.createElement('div');
                 container.className = 'lyric-line';
                 container.dataset.time = t;
-                container.onclick = () => playbackService.startAudio(t);
+                container.dataset.lyricTime = t;
+                container.setAttribute('role', 'button');
+                container.tabIndex = -1;
+                const visual = document.createElement('div');
+                visual.className = 'lyric-visual';
+                container.appendChild(visual);
 
                 // === YRC 逐字渲染分支 ===
-                const yrcLine = findYrc(t);
+                const yrcLine = yrcByTime.get(t.toFixed(3));
                 if (yrcLine && yrcLine.words.length > 0) {
+                    container.classList.add('lyric-word');
                     // 找到对应逐字数据：用 span 包裹每个字
                     const odiv = document.createElement('div');
-                    odiv.className = 'yrc-line';
+                    odiv.className = 'lyric-original yrc-line';
                     yrcLine.words.forEach(w => {
                         const sp = document.createElement('span');
                         sp.className = 'yrc-char';
@@ -147,34 +172,28 @@ export function createLyrics({
                         sp.dataset.dur = w.dur;
                         odiv.appendChild(sp);
                     });
-                    container.appendChild(odiv);
+                    visual.appendChild(odiv);
                 } else {
                     // 无逐字数据：回退普通文字
-                    if(lyricDisplayMode === 'original') {
-                        container.textContent = otext || ttext || rtext || '';
-                    } else {
-                        const odiv = document.createElement('div'); odiv.textContent = otext || '';
-                        const subDiv = document.createElement('div');
-                        subDiv.className = 'lyric-translation';
-                        subDiv.textContent = lyricDisplayMode === 'both' ? (ttext || '') : (rtext || '');
-                        container.appendChild(odiv); container.appendChild(subDiv);
-                    }
+                    const odiv = document.createElement('div');
+                    odiv.className = 'lyric-original';
+                    odiv.textContent = otext || ttext || rtext || '';
+                    visual.appendChild(odiv);
                 }
 
-                // 附加行（YRC 行也追加翻译或罗马音）
-                if (yrcLine && lyricDisplayMode !== 'original') {
+                // 原文保持同一节点，附属文本只在下面增减。
+                if (lyricDisplayMode !== 'original') {
                     const subContent = lyricDisplayMode === 'both' ? ttext : rtext;
                     if (subContent) {
                         const subDiv = document.createElement('div');
                         subDiv.className = 'lyric-translation';
                         subDiv.textContent = subContent;
-                        container.appendChild(subDiv);
+                        visual.appendChild(subDiv);
                     }
                 }
 
                 frag.appendChild(container);
             });
-            const botPad = document.createElement('div'); botPad.style.height = '150px'; frag.appendChild(botPad);
             domService.el.lyricBox.appendChild(frag);
         } else if(!hasSynced) {
             // 无时间标签的纯文本歌词
@@ -202,6 +221,8 @@ export function createLyrics({
         } else {
             domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
         }
+
+        lyricViewport?.setLines(hasSynced ? domService.el.lyricBox.querySelectorAll('[data-lyric-time]') : []);
 
         // 无论有没有歌词，都设置来源和音质标签（修复无歌词时不显示标签的bug）
         setArtistTag(source || '', metadataService.currentAudioQuality || '');
@@ -382,15 +403,13 @@ export function createLyrics({
             const lyricData = await lyricResp.json();
             if (!isCurrent()) return false;
 
-            if (lyricData?.lrc?.lyric) {
+            const tracks = selectNeteaseLyricTracks(lyricData);
+            const { wordLyrics } = tracks;
+            if (tracks.original || wordLyrics) {
                 debugService.log('Netease lyrics loaded!', 'success');
-                const trans = lyricData?.tlyric?.lyric || lyricData?.trans?.lyric || '';
-                // 解析逐字歌词
-                const _roma = lyricData?.romalrc?.lyric || '';
-                const wordLyrics = parseYrc(lyricData?.yrc?.lyric || '');
                 if (wordLyrics) debugService.log(`YRC word-sync loaded: ${wordLyrics.length} lines`, 'success');
                 const commit = options.onLyrics || parseAndRenderLyrics;
-                if (!commit(lyricData.lrc.lyric, '网易云', trans, _roma, wordLyrics)) throw new Error('没有可用歌词');
+                if (!commit(tracks.original, '网易云', tracks.translated, tracks.roman, wordLyrics)) throw new Error('没有可用歌词');
                 return true;
             } else if (lyricData?.nolyric || lyricData?.uncollected) {
                 debugService.log('Song has no lyrics (instrumental)', 'warn');
@@ -430,18 +449,21 @@ export function createLyrics({
         try {
             if (!isCurrent()) return false;
             domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔍 获取歌词...</div>';
-            // 使用缓存队列获取歌词（ttl 1 hour）
-            const data = await cacheService.cachedFetchJson(apiService.buildApiUrl(`/lyric/new?id=${songId}`), { signal: lyricSignal, useQueue: true }, 3600_000);
+            let data = null;
+            if (options.prefetched) {
+                try { data = await options.prefetched; } catch (_) {}
+                if (!isCurrent() || lyricSignal.aborted) return false;
+            }
+            // An invalid/failed prefetch falls back once; playback itself never awaits lyrics.
+            if (!isLyricResponse(data)) data = await lyricRequests.load(songId, { signal: lyricSignal, priority: 'interactive' });
             if (!isCurrent()) return false;
             if (data) {
-                if (data?.lrc?.lyric) {
+                const tracks = selectNeteaseLyricTracks(data);
+                const { wordLyrics } = tracks;
+                if (tracks.original || wordLyrics) {
                     debugService.log('Lyrics loaded!', 'success');
-                    const trans = data?.tlyric?.lyric || data?.trans?.lyric || '';
-                    // 解析逐字歌词
-                    const _roma = data?.romalrc?.lyric || '';
-                    const wordLyrics = parseYrc(data?.yrc?.lyric || '');
                     if (wordLyrics) debugService.log(`YRC word-sync loaded: ${wordLyrics.length} lines`, 'success');
-                    parseAndRenderLyrics(data.lrc.lyric, '网易云', trans, _roma, wordLyrics);
+                    parseAndRenderLyrics(tracks.original, '网易云', tracks.translated, tracks.roman, wordLyrics);
                     return true;
                 } else if (data?.nolyric || data?.uncollected) {
                     resetTrackLyrics();
@@ -471,9 +493,9 @@ export function createLyrics({
         const translated = extractLyricsText(transText);
         const roman = extractLyricsText(romaText);
         const metadata = [];
-        const originalArr = parseLyricsToArray(original, metadata);
-        const translatedArr = parseLyricsToArray(translated, metadata);
-        const romanArr = parseLyricsToArray(roman, metadata);
+        const { original: originalArr, translated: translatedArr, roman: romanArr } = alignWordLyricTimeline(
+            parseLyricsToArray(original, metadata), parseLyricsToArray(translated, metadata),
+            parseLyricsToArray(roman, metadata), wordLyrics);
         if (!allowEmpty && !originalArr.length && !translatedArr.length && !romanArr.length && !metadata.length) return null;
         return { original, translated, roman, originalArr, translatedArr, romanArr, metadata, wordLyrics };
     }
@@ -523,54 +545,50 @@ export function createLyrics({
         return activeLyricIndex;
     }
 
+    function getNextLyricTime() {
+        if (!isSyncedLyrics || activeLyricIndex < 0) return null;
+        return lyrics[activeLyricIndex + 1]?.t ?? null;
+    }
+
+    function getNextLyricUpdateTime() {
+        const next = getNextLyricTime();
+        if (next === null || !playbackService.playbackState?.isPlaying || scrollAheadIndex === activeLyricIndex + 1
+            || next - lyrics[activeLyricIndex].t <= LYRIC_SCROLL_LEAD_MS * 2 / 1000) return next;
+        return next - LYRIC_SCROLL_LEAD_MS / 1000;
+    }
+
     function refreshLyricHighlightAndCenter(force = false) {
+        lyricViewport?.syncPlayback();
         if(!isSyncedLyrics || !lyrics || !lyrics.length) return;
         const now = playbackService.getCurrentTime();
+        const continuous = !force && now >= lyricCursorTime && now - lyricCursorTime <= .25;
+        if (force || !playbackService.playbackState?.isPlaying) scrollAheadIndex = -1;
         const idx = findActiveLyricIndex(now, force);
-        const activeLine = domService.el.lyricBox.children[idx + 1];
+        const activeLine = domService.el.lyricBox.children[idx];
         if(!activeLine) return;
 
+        const next = getNextLyricTime(), updateAt = getNextLyricUpdateTime();
+        // Anticipate only scrolling; highlighting and YRC still use the real playback time.
+        if (!force && next !== null && updateAt < next && now >= updateAt && now < next) {
+            scrollAheadIndex = idx + 1;
+            if (continuous) lyricViewport?.anticipate(idx + 1);
+        }
+
         // 避免每帧重复读取 DOM 宽高属性和清空类名（导致 Layout Thrashing/重排风暴）
-        if (!force && _lastActiveLyric === activeLine) return;
+        if (!force && _lastActiveLyric === activeLine) { wordMotion?.sync(); return; }
 
         if (_lastActiveLyric) {
             _lastActiveLyric.classList.remove('active');
+            _lastActiveLyric.removeAttribute('aria-current');
         } else {
             document.querySelectorAll('.lyric-line').forEach(l => l.classList.remove('active'));
         }
         activeLine.classList.add('active');
+        activeLine.setAttribute('aria-current', 'true');
         _lastActiveLyric = activeLine;
 
-        // === 如果是 YRC 逐字行，触发每个字的 CSS 动画 ===
-        const yrcLine = activeLine.querySelector('.yrc-line');
-        if (yrcLine) {
-            const lineStartMs = parseFloat(activeLine.dataset.time) * 1000;
-            const elapsedMs = now * 1000 - lineStartMs; // 已经过了多少毫秒
-            const yrcAnimations = [];
-            yrcLine.querySelectorAll('.yrc-char').forEach(sp => {
-                const wStart = parseFloat(sp.dataset.start);  // 字相对行起始的ms
-                const wDur   = parseFloat(sp.dataset.dur);    // 字持续ms
-                const delay  = (wStart - elapsedMs) / 1000;   // 剩余等待时间(秒)
-                const dur    = Math.max(wDur, 80) / 1000;     // 最小80ms防止闪烁
-                sp.style.animation = 'none';
-                sp.style.animationDuration = '';
-                sp.style.animationDelay = '';
-                yrcAnimations.push({ sp, dur, delay });
-            });
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    yrcAnimations.forEach(({ sp, dur, delay }) => {
-                        sp.style.animation = '';
-                        sp.style.animationDuration = `${dur}s`;
-                        sp.style.animationDelay = `${delay}s`;
-                    });
-                });
-            });
-        }
-
-        const parentHeight = domService.el.lyricBox.parentNode.offsetHeight || (window.innerHeight * 0.5);
-        const offset = activeLine.offsetTop - parentHeight/2 + activeLine.offsetHeight/2;
-        domService.el.lyricBox.style.transform = `translateY(${-offset}px)`;
+        wordMotion?.activate(activeLine, force);
+        lyricViewport?.setActive(idx, force);
     }
 
     let initialized = false;
@@ -593,11 +611,37 @@ export function createLyrics({
         updateLocalLyrics,
         readLrcFile,
         fetchLyricById,
+        prefetchLyricById: lyricRequests.prefetch,
+        takePrefetchedLyric: lyricRequests.take,
+        cancelLyricPrefetch: lyricRequests.cancelPrefetch,
         parseAndRenderLyrics,
+        getNextLyricTime,
+        getNextLyricUpdateTime,
         refreshLyricHighlightAndCenter,
+        syncWordLyricPlayback() { wordMotion?.sync(true); },
         initialize() {
             if (initialized) return;
             initialized = true;
+            lyricViewport = createLyricViewport(document.getElementById('lyrics-box'), {
+                content: domService.el.lyricBox,
+                returnButton: document.getElementById('lyric-return-current'),
+                timeHint: document.getElementById('lyric-browse-time'),
+                alignmentTarget: document.getElementById('cover-wrap'),
+                isPlaying: () => playbackService.playbackState.isPlaying,
+                seek: time => {
+                    if (!playbackService.audioBuffer || time > playbackService.playbackState.duration) return false;
+                    playbackService.startAudio(time);
+                    refreshLyricHighlightAndCenter(true);
+                    return true;
+                }
+            });
+            wordMotion = createWordLyricMotion(document.getElementById('lyrics-box'), {
+                getTime: () => playbackService.getCurrentTime(),
+                isPlaying: () => !!playbackService.playbackState?.isPlaying,
+                isClockRunning: () => playbackService.audioContextRunning !== false,
+                getTransportVersion: () => playbackService.transportVersion || 0
+            });
+            if (_lastActiveLyric) wordMotion.activate(_lastActiveLyric);
             if(domService.lyricToggleBtn) {
                 domService.lyricToggleBtn.onclick = () => {
                     // 三段式循环：original -> both (translation) -> roma (romanization)
@@ -616,7 +660,8 @@ export function createLyrics({
 
                         if (lyricDisplayMode !== 'original') {
                             const targetArr = lyricDisplayMode === 'both' ? translatedLyricsArr : romanLyricsArr;
-                            const findExtra = createLyricTimeLookup(targetArr);
+                            const exactExtra = new Map(targetArr.map(line => [line.t, line]));
+                            const findExtra = yrcData?.length ? t => exactExtra.get(t) : createLyricTimeLookup(targetArr);
                             lines.forEach(lineEl => {
                                 const t = parseFloat(lineEl.dataset.time || -1);
                                 if (isNaN(t) || t < 0) return;
@@ -625,12 +670,13 @@ export function createLyrics({
                                     const sdiv = document.createElement('div');
                                     sdiv.className = 'lyric-translation';
                                     sdiv.textContent = sub.txt;
-                                    lineEl.appendChild(sdiv);
+                                    (lineEl.querySelector('.lyric-visual') || lineEl).appendChild(sdiv);
                                 }
                             });
                         }
                         updateLyricToggleUI(true);
-                        try { refreshLyricHighlightAndCenter(true); } catch(e) {}
+                        lyricViewport.relayout();
+                        refreshLyricHighlightAndCenter();
                         return;
                     }
 
