@@ -9,6 +9,9 @@
 .quality-action button { padding:6px 10px; }
 .quality-item.disabled { opacity:0.45; pointer-events:none; filter:grayscale(0.4); }
 .quality-meta { color:var(--text-sub); font-size:0.9rem }
+.playback-preference { min-width: 0; }
+.playback-preference select { min-height: 44px; min-width: 0; }
+.playback-engine { font-size: 0.7rem; color: var(--text-sub); text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
 .quality-action { min-width:90px; display:flex; gap:8px; justify-content:flex-end }
 
 @media (prefers-reduced-motion: reduce) {
@@ -45,7 +48,10 @@
 
 @media screen and (min-width: 901px) {
     .main-container { grid-template-columns: clamp(320px, 38vw, 450px) minmax(0, 1fr); }
-    .controls-row { gap: clamp(4px, calc((100% - 370px) / 6), 25px); }
+    .right-panel { --controls-width: 520px; }
+    .controls-row { max-width: var(--controls-width); gap: clamp(4px, calc((100% - 370px) / 6), 25px); }
+    /* Match the playback row's right edge without narrowing the lyrics. */
+    .lyric-return { right: max(0px, calc(100% - var(--controls-width))); }
     .controls-row > .desktop-only { margin-left: 0 !important; }
     /* Shrink both axes together; fixed heights previously flattened the buttons. */
     .controls-row .btn { flex: 0 1 50px; width: 50px; min-width: 44px; height: auto; aspect-ratio: 1; }

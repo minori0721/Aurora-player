@@ -447,6 +447,27 @@ test('a wrap at the actual cue retargets early scrolling without a position jump
     f.view.dispose();
 });
 
+test('weight-driven original wraps settle with zoom and delayed resize does not restart following', () => {
+    const f = wrappingFixture({ reduced: false, withVisuals: true });
+    for (const [index, line] of f.lines.entries()) {
+        Object.defineProperty(line.querySelector('.lyric-original'), 'offsetHeight', { get: () => f.heights[index] - 12 });
+    }
+    f.view.relayout(); f.tick(400);
+    f.view.anticipate(1); f.tick(15);
+    const before = f.viewport.scrollTop;
+    f.heights[0] = 40; f.heights[1] = 64; f.view.setActive(1);
+    assert.equal(f.viewport.scrollTop, before, 'reflow must not snap the current scroll position');
+    assert.equal(f.lines[1].style['--lyric-anchor-y'], '26px');
+    f.tick(400);
+    const settled = f.viewport.scrollTop, writes = f.moves.length;
+    assert.equal(settled, f.lines[1].offsetTop + 29 - 90);
+    assert.equal(f.lines[1].querySelector('.lyric-visual').style.transform, 'scale(1)');
+    assert.equal(f.frames.size, 0);
+    f.resize(); f.flush(); f.tick(1000);
+    assert.equal(f.viewport.scrollTop, settled); assert.equal(f.moves.length, writes);
+    assert.equal(f.frames.size, 0); f.view.dispose();
+});
+
 test('reset, hidden pages and resize drop anticipation and use the actual current line', () => {
     const f = fixture({ reduced: false }); f.view.anticipate(3); f.tick(20);
     f.doc.hidden = true; f.event(f.doc, 'visibilitychange');

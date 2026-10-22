@@ -105,14 +105,16 @@ export function buildSpatialCover(pixels, width, height) {
         field[offset + 3] = weight;
     }
     // Three separable box passes approximate a broad blur once per cover, in the Worker.
-    const radius = 4;
+    const radius = 3.5, extent = Math.ceil(radius);
+    // Fractional radii give the two outermost samples proportional weight.
+    const weights = Array.from({ length: extent * 2 + 1 }, (_, index) => Math.min(1, radius + 1 - Math.abs(index - extent)));
     for (let pass = 0; pass < 3; pass++) for (let axis = 0; axis < 2; axis++) {
         for (let y = 0; y < SPATIAL_SIZE; y++) for (let x = 0; x < SPATIAL_SIZE; x++) for (let c = 0; c < 4; c++) {
             let sum = 0;
-            for (let d = -radius; d <= radius; d++) {
+            for (let d = -extent; d <= extent; d++) {
                 const xx = axis === 0 ? clamp(x + d, 0, SPATIAL_SIZE - 1) : x;
                 const yy = axis === 1 ? clamp(y + d, 0, SPATIAL_SIZE - 1) : y;
-                sum += field[(yy * SPATIAL_SIZE + xx) * 4 + c];
+                sum += field[(yy * SPATIAL_SIZE + xx) * 4 + c] * weights[d + extent];
             }
             scratch[(y * SPATIAL_SIZE + x) * 4 + c] = sum / (radius * 2 + 1);
         }

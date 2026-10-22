@@ -41,7 +41,7 @@ test('cover quadrants retain their own locations and transparency cannot inject 
     assert.deepEqual([...border.slice(0,3)],[...opaque.slice(0,3)]);
 });
 
-test('three radius-four blur passes keep color transitions local on the 64-pixel field', () => {
+test('three radius-3.5 blur passes keep color transitions local on the 64-pixel field', () => {
     const blue = [40, 70, 200, 255], red = [220, 45, 45, 255];
     const data = buildSpatialCover(fixture(x => x < 32 ? blue : red, 64, 64), 64, 64).data;
     const solid = color => [...buildSpatialCover(fixture(() => color, 64, 64), 64, 64).data.slice(0, 3)];
@@ -51,6 +51,27 @@ test('three radius-four blur passes keep color transitions local on the 64-pixel
     assert.notDeepEqual(at(22), solid(blue));
     assert.notDeepEqual(at(28), solid(blue));
     assert.notDeepEqual(at(35), solid(red));
+});
+
+test('fractional blur matches half-weight outer samples instead of rounding the radius', () => {
+    const data = buildSpatialCover(fixture(x => x < 32 ? [0, 0, 0, 255] : [255, 255, 255, 255], 64, 64), 64, 64).data;
+    const reference = weights => {
+        let row = Array.from({ length: 64 }, (_, x) => x < 32 ? 0 : 1);
+        const extent = (weights.length - 1) / 2, total = weights.reduce((sum, weight) => sum + weight, 0);
+        for (let pass = 0; pass < 3; pass++) {
+            row = row.map((_, x) => weights.reduce((sum, weight, index) =>
+                sum + weight * row[Math.max(0, Math.min(63, x + index - extent))], 0) / total);
+        }
+        return row.map(value => Math.round(mapCoverLightness(Math.cbrt(value)) ** 3 * 255));
+    };
+    const expected = reference([.5, 1, 1, 1, 1, 1, 1, 1, .5]);
+    assert.notDeepEqual(expected, reference(Array(7).fill(1)));
+    assert.notDeepEqual(expected, reference(Array(9).fill(1)));
+    for (let x = 0; x < 64; x++) {
+        const offset = (32 * 64 + x) * 4;
+        for (let channel = 0; channel < 3; channel++) assert.ok(Math.abs(data[offset + channel] - expected[x]) <= 1);
+        assert.equal(data[offset + 3], 255);
+    }
 });
 
 test('deforming grid stays bounded with fixed edges and no folded triangles',()=>{

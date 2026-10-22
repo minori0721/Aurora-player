@@ -1,4 +1,5 @@
 import { cleanCookie } from '../shared/text.js';
+import { createMediaTransport } from './media.js';
 
 export function createPrefetch({
     auth: authService,
@@ -30,6 +31,33 @@ export function createPrefetch({
     let nextSongUrlPrewarmController = null;
 
     let nextSongUrlPrewarmPromise = null;
+    let streamWarm = null;
+
+    function warmNextStreamIfNeeded(remaining) {
+        if (playbackService.playbackPreference !== 'stream' || remaining > 5 || remaining <= 0 || streamWarm
+            || document.hidden || navigator.connection?.saveData || /(^|-)2g$/.test(navigator.connection?.effectiveType || '')
+            || Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4
+            || !playbackService.canWarmNextStream || !playbackService.playbackState.isPlaying
+            || queueService.playMode === 2 || playbackService.getActiveCustomLoop() || nextPreloadKind !== 'netease-url'
+            || nextPreloadStatus !== 'url-ready' || !nextSongPreloadMeta?.candidates?.length
+            || !isNextPreloadCompatible()) return;
+        const media = createMediaTransport(nextSongPreloadMeta.candidates[0]);
+        const warm = { media, token: nextPreloadToken, taken: false };
+        streamWarm = warm;
+        media.observe({ error() { if (!warm.taken) media.dispose(); } });
+        media.ready.catch(() => { if (!warm.taken) media.dispose(); });
+    }
+
+    function takeNextStreamWarm(songId) {
+        const warm = streamWarm;
+        if (!warm || warm.media.disposed || warm.token !== nextPreloadToken || nextPreloadSongId !== Number(songId)
+            || !isNextPreloadCompatible()) return null;
+        const resolved = { ...nextSongPreloadMeta, candidates: [...nextSongPreloadMeta.candidates] };
+        warm.taken = true;
+        streamWarm = null;
+        cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
+        return { media: warm.media, resolved };
+    }
 
     function resetNeteaseDetailPrefetchState() {
         songDetailsService?.reset();
@@ -230,6 +258,8 @@ export function createPrefetch({
 
     // 取消下一首预加载；令牌递增后，任何迟到的 Promise 都不能回填新状态。
     function cancelNextPreload({ resetAttempted = true, silent = false, resetDetails = true } = {}) {
+        streamWarm?.media.dispose();
+        streamWarm = null;
         nextPreloadToken++;
         lyricsService?.cancelLyricPrefetch();
         try {
@@ -482,6 +512,12 @@ export function createPrefetch({
             if (!nextTrack) return;
             const songId = getPlaylistTrackSongId(nextTrack);
             if (!nextTrack.file && (!nextTrack.netease || !songId)) return;
+            if (nextTrack.netease && playbackService.playbackPreference === 'stream') {
+                lyricsService?.prefetchLyricById(songId);
+                prewarmNextNeteaseSongUrl();
+                prefetchAttempted = true;
+                return;
+            }
 
             const sameTarget = hasLockedNextPreloadTarget(queueRef, nextIdx, nextTrack)
                 && (nextTrack.file || (nextPreloadSongId === songId
@@ -588,6 +624,8 @@ export function createPrefetch({
 
     let initialized = false;
     return {
+        warmNextStreamIfNeeded,
+        takeNextStreamWarm,
         get LOCAL_PREFETCH_TRIGGER_SEC() { return LOCAL_PREFETCH_TRIGGER_SEC; },
         resetNeteaseDetailPrefetchState,
         get nextSongRawData() { return nextSongRawData; },

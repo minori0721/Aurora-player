@@ -167,7 +167,8 @@ body {
 }
 .lyric-line.active .lyric-visual { transform: scale(1); }
 .lyric-visual .lyric-original, .lyric-visual .lyric-translation { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-.lyric-visual .lyric-original { font-weight: 800; }
+.lyric-visual .lyric-original { font-weight: 400; }
+.lyric-line.active .lyric-visual .lyric-original { font-weight: 800; }
 .lyric-visual .lyric-translation {
     font-size: calc(0.9rem * 1.16); font-weight: 500;
     margin-top: var(--lyric-subtitle-gap);

@@ -50,7 +50,7 @@ export function createQueue({
         let nextIdx;
         if (playMode === 1) {
             if (playlist.length === 1) {
-                if (playbackService.audioBuffer) playbackService.startAudio(0);
+                if (playbackService.audioBuffer || playbackService.isStreaming) playbackService.startAudio(0);
                 else playTrackFromPlaylist(0);
                 return;
             }
@@ -159,16 +159,24 @@ export function createQueue({
         }
     }
 
-    function cyclePlayMode() {
-        const currentTime = playbackService.getCurrentTime();
-        const previousMode = playMode;
-        const hasCustomLoop = !!playbackService.getActiveCustomLoop();
-        playMode = (playMode + 1) % 3;
+    let modeChangeVersion = 0;
+
+    function updatePlayModeUI() {
         ['icon-list-loop', 'icon-random', 'icon-single'].forEach(id => document.getElementById(id).style.display = 'none');
         document.getElementById(['icon-list-loop', 'icon-random', 'icon-single'][playMode]).style.display = 'block';
         const modeNames = ['列表循环', '随机播放', '单曲循环'];
         domService.el.modeBtn.setAttribute('aria-label', `播放模式：${modeNames[playMode]}`);
         domService.el.modeBtn.title = modeNames[playMode];
+    }
+
+    async function cyclePlayMode() {
+        const version = ++modeChangeVersion;
+        const token = playbackService._currentPlayActionToken;
+        const currentTime = playbackService.getCurrentTime();
+        const previousMode = playMode;
+        const hasCustomLoop = !!playbackService.getActiveCustomLoop();
+        playMode = (playMode + 1) % 3;
+        updatePlayModeUI();
         prefetchService.prefetchAttempted = false;
         if(playMode === 2) {
             try { prefetchService.cancelNextPreload(); } catch(_) {}
@@ -179,6 +187,19 @@ export function createQueue({
         }
         if (playlist[curIdx]?.netease && playMode !== 2) prefetchService.prewarmNextNeteaseSongUrl();
         prefetchService.prefetchUpcomingNeteaseDetails?.();
+        if (playMode === 2 && playbackService.isStreaming && !hasCustomLoop) {
+            try {
+                await playbackService.ensureCompleteAudio('单曲无缝循环');
+                if (version !== modeChangeVersion || !playbackService.isPlaybackActionCurrent(token) || playMode !== 2) return;
+                await playbackService.activateCompleteAudio('单曲无缝循环');
+            } catch (error) {
+                if (version !== modeChangeVersion || !playbackService.isPlaybackActionCurrent(token)) return;
+                playMode = previousMode;
+                updatePlayModeUI();
+                if (!playbackService.playbackState.isPlaying) playbackService.setPlaybackStatus('error', { error: error.message });
+                debugService.log(`无法启用无缝循环: ${error.message}`, 'error');
+            }
+        }
     }
 
     let initialized = false;

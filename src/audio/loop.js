@@ -11,12 +11,16 @@ export function createLoop({
 
     // 网易云歌词搜索开关，默认关闭
     let loopState = { active: false, start: 0, end: 0, source: null };
+    let preparingLoop = false, pendingLoopVersion = 0;
 
     function getLoopEditVersion(track) {
         return track ? loopEditVersions.get(track) || 0 : 0;
     }
 
     function markLoopUserEdit() {
+        if (preparingLoop) domService.el.loopMsg.textContent = '';
+        pendingLoopVersion++;
+        preparingLoop = false;
         const track = queueService.playlist[queueService.curIdx];
         if (track) loopEditVersions.set(track, getLoopEditVersion(track) + 1);
     }
@@ -107,6 +111,23 @@ export function createLoop({
             prefetchService.prefetchUpcomingNeteaseDetails?.();
             return false;
         }
+        if (playbackService.isStreaming && !playbackService.audioBuffer) {
+            const version = pendingLoopVersion, token = playbackService._currentPlayActionToken;
+            preparingLoop = true;
+            domService.el.loopEnable.checked = false;
+            domService.el.loopMsg.textContent = '正在准备完整音频…';
+            playbackService.ensureCompleteAudio('自定义循环').then(() => {
+                if (version !== pendingLoopVersion || !playbackService.isPlaybackActionCurrent(token)) return;
+                preparingLoop = false;
+                applyLoop(s, e, source);
+                if (playbackService.playbackWantsPlay && !playbackService.playbackState.isPlaying) playbackService.startAudio(s);
+            }).catch(error => {
+                if (version !== pendingLoopVersion || !playbackService.isPlaybackActionCurrent(token)) return;
+                preparingLoop = false;
+                domService.el.loopMsg.textContent = error.message;
+            });
+            return false;
+        }
         domService.el.loopStart.value = s.toFixed(3); domService.el.loopEnd.value = e.toFixed(3);
         domService.el.loopEnable.checked = true; loopState = { active: true, start: s, end: e, source };
         domService.el.loopMsg.textContent = '';
@@ -122,7 +143,7 @@ export function createLoop({
         domService.el.loopEnable.checked = true; domService.el.loopEnable.dispatchEvent(new Event('change'));
     };
 
-    function resetLoopUI() { loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
+    function resetLoopUI() { pendingLoopVersion++; preparingLoop=false; loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
 
     function updateLoopMarkers() {
         if(!loopState.active) { domService.el.markerA.style.display='none'; domService.el.markerB.style.display='none'; document.getElementById('loop-status').style.display='none'; return; }
@@ -135,6 +156,7 @@ export function createLoop({
     return {
         setLoopPoint,
         get loopState() { return loopState; },
+        get preparingLoop() { return preparingLoop; },
         getLoopEditVersion,
         applySliLoopForTrack,
         syncCurrentTrackCompanions,
@@ -143,6 +165,8 @@ export function createLoop({
         initialize() {
             if (initialized) return;
             initialized = true;
+            domService.el.loopStart.addEventListener('input', markLoopUserEdit);
+            domService.el.loopEnd.addEventListener('input', markLoopUserEdit);
             domService.el.loopEnable.addEventListener('change', e => {
                 if(e.target.checked) {
                     const s = parseFloat(domService.el.loopStart.value), e_val = parseFloat(domService.el.loopEnd.value);

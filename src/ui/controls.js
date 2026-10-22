@@ -48,7 +48,8 @@ export function createControls({
         const snapshot = progressDragSnapshot;
         cancelProgressDrag();
         if (!snapshot || snapshot.token !== playbackService._currentPlayActionToken
-            || snapshot.buffer !== playbackService.audioBuffer || snapshot.track !== queueService.playlist[queueService.curIdx]) return;
+            || snapshot.track !== queueService.playlist[queueService.curIdx]) return;
+        playbackService.seekAudio(playbackService.playbackState.pauseTime);
         if(wasPlayingBeforeDrag) {
             playbackService.startAudio(playbackService.playbackState.pauseTime);
         } else playbackService.setPlaybackStatus('paused');
@@ -61,6 +62,13 @@ export function createControls({
     }
 
     function updateUI(t) { domService.el.currTime.textContent = fmtTime(t); renderService.setPlaybackProgress(t / playbackService.playbackState.duration); }
+
+    function seekFromKeyboard(time) {
+        const playing = playbackService.playbackWantsPlay || playbackService.playbackState.isPlaying;
+        playbackService.seekAudio(time);
+        if (playing) playbackService.startAudio(time);
+        updateUI(time);
+    }
 
     let initialized = false;
     return {
@@ -77,7 +85,7 @@ export function createControls({
                 analysisService.cancelPreviewTimer();
                 isDraggingProgress = true;
                 progressDragPointerId = e.pointerId;
-                wasPlayingBeforeDrag = playbackService.playbackState.isPlaying;
+                wasPlayingBeforeDrag = playbackService.playbackState.isPlaying || playbackService.playbackWantsPlay;
                 progressDragSnapshot = { token: playbackService._currentPlayActionToken, buffer: playbackService.audioBuffer, track: queueService.playlist[queueService.curIdx] };
                 try { domService.el.progBg.setPointerCapture(e.pointerId); } catch (_) {}
                 if(wasPlayingBeforeDrag) playbackService.stopAudio('paused');
@@ -88,7 +96,7 @@ export function createControls({
             domService.el.progBg.addEventListener('pointermove', e => {
                 if(!isDraggingProgress || e.pointerId !== progressDragPointerId) return;
                 if (progressDragSnapshot?.token !== playbackService._currentPlayActionToken
-                    || progressDragSnapshot?.buffer !== playbackService.audioBuffer || progressDragSnapshot?.track !== queueService.playlist[queueService.curIdx]) {
+                    || progressDragSnapshot?.track !== queueService.playlist[queueService.curIdx]) {
                     cancelProgressDrag();
                     return;
                 }
@@ -113,14 +121,14 @@ export function createControls({
                 const target = e.target instanceof Element ? e.target : null;
                 if (panelsService.modalController.active || target?.closest('input, textarea, select, button, a[href], [contenteditable="true"], [role="button"], [role="slider"], [role="dialog"], [data-lyric-region]')) return;
                 if(e.code === 'Space') { e.preventDefault(); domService.el.playBtn.click(); }
-                else if (e.code === 'ArrowLeft') { if (playbackService.audioBuffer) { const t = Math.max(0, playbackService.getCurrentTime() - 5); if (playbackService.playbackState.isPlaying) playbackService.startAudio(t); else { playbackService.playbackState.pauseTime = t; updateUI(t); } } }
-                else if (e.code === 'ArrowRight') { if (playbackService.audioBuffer) { const t = Math.min(playbackService.playbackState.duration, playbackService.getCurrentTime() + 5); if (playbackService.playbackState.isPlaying) playbackService.startAudio(t); else { playbackService.playbackState.pauseTime = t; updateUI(t); } } }
+                else if (e.code === 'ArrowLeft') { if (playbackService.hasAudio) seekFromKeyboard(Math.max(0, playbackService.getCurrentTime() - 5)); }
+                else if (e.code === 'ArrowRight') { if (playbackService.hasAudio) seekFromKeyboard(Math.min(playbackService.playbackState.duration, playbackService.getCurrentTime() + 5)); }
                 else if (e.code === 'ArrowUp') { e.preventDefault(); domService.el.volRange.value = Math.min(1, parseFloat(domService.el.volRange.value) + 0.05); playbackService.gainNode.gain.value = domService.el.volRange.value; showKeyboardVolume(); }
                 else if (e.code === 'ArrowDown') { e.preventDefault(); domService.el.volRange.value = Math.max(0, parseFloat(domService.el.volRange.value) - 0.05); playbackService.gainNode.gain.value = domService.el.volRange.value; showKeyboardVolume(); }
             });
 
             domService.el.progBg.addEventListener('keydown', event => {
-                if (!playbackService.audioBuffer || !playbackService.playbackState.duration) return;
+                if (!playbackService.hasAudio || !playbackService.playbackState.duration) return;
                 let target = null;
                 if (event.key === 'ArrowLeft') target = Math.max(0, playbackService.getCurrentTime() - 5);
                 else if (event.key === 'ArrowRight') target = Math.min(playbackService.playbackState.duration, playbackService.getCurrentTime() + 5);
@@ -129,12 +137,7 @@ export function createControls({
                 if (target === null) return;
                 event.preventDefault();
                 analysisService.cancelPreviewTimer();
-                if (playbackService.playbackState.isPlaying) playbackService.startAudio(target);
-                else {
-                    playbackService.playbackState.pauseTime = target;
-                    updateUI(target);
-                    renderService.scheduleRender(true);
-                }
+                seekFromKeyboard(target);
             });
 
             document.getElementById('toggle-list').onclick = () => panelsService.toggleFloatingPanel('playlist-sidebar');

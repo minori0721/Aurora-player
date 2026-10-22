@@ -629,7 +629,7 @@ export function createLyrics({
                 alignmentTarget: document.getElementById('cover-wrap'),
                 isPlaying: () => playbackService.playbackState.isPlaying,
                 seek: time => {
-                    if (!playbackService.audioBuffer || time > playbackService.playbackState.duration) return false;
+                    if (!(playbackService.hasAudio ?? playbackService.audioBuffer) || time > playbackService.playbackState.duration) return false;
                     playbackService.startAudio(time);
                     refreshLyricHighlightAndCenter(true);
                     return true;

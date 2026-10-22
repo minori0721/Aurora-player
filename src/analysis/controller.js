@@ -49,7 +49,7 @@ export function createAnalysis({
 
     async function runAnalysis() {
         if (domService.el.anaRun?.disabled) return;
-        if (!playbackService.audioBuffer) { domService.el.anaMsg.textContent = "Please load audio first!"; return; }
+        if (!playbackService.audioBuffer && !playbackService.isStreaming) { domService.el.anaMsg.textContent = "Please load audio first!"; return; }
 
         const roughA = parseFloat(domService.el.anaStart.value);
         const roughB = parseFloat(domService.el.anaEnd.value);
@@ -67,15 +67,21 @@ export function createAnalysis({
             domService.el.anaRun.textContent = "⏳ 匹配中...";
         }
 
-        const sourceBuffer = playbackService.audioBuffer;
-        const expectedAudioId = getLoopAnalysisAudioId(sourceBuffer);
+        let sourceBuffer = playbackService.audioBuffer;
+        let expectedAudioId = sourceBuffer ? getLoopAnalysisAudioId(sourceBuffer) : null;
         const playToken = playbackService._currentPlayActionToken;
         const run = { buttonText: runButtonText || "✨ 开始精确匹配", cancelWait: null };
         loopAnalysisRun = run;
         const isCurrent = () => loopAnalysisRun === run && playbackService.isPlaybackActionCurrent(playToken)
-            && sourceBuffer === playbackService.audioBuffer && expectedAudioId === getLoopAnalysisAudioId(playbackService.audioBuffer);
+            && (!sourceBuffer || sourceBuffer === playbackService.audioBuffer && expectedAudioId === getLoopAnalysisAudioId(playbackService.audioBuffer));
 
         try {
+            if (!sourceBuffer) {
+                domService.el.anaMsg.textContent = '正在准备完整音频…';
+                sourceBuffer = await playbackService.ensureCompleteAudio('智能分析');
+                expectedAudioId = getLoopAnalysisAudioId(sourceBuffer);
+                if (!isCurrent()) return;
+            }
             await new Promise(resolve => {
                 const frameId = requestAnimationFrame(() => {
                     run.cancelWait = null;
@@ -290,10 +296,10 @@ export function createAnalysis({
     }
 
     // 辅助：试听
-    function previewPoint(type) {
+    async function previewPoint(type) {
         const t = parseFloat(type==='a' ? domService.el.anaStart.value : domService.el.anaEnd.value);
-        const duration = Number(playbackService.audioBuffer?.duration || 0);
-        if (!playbackService.audioBuffer || !Number.isFinite(t) || !Number.isFinite(duration) || duration <= 0 || t < 0 || t > duration) {
+        const duration = Number(playbackService.audioBuffer?.duration || playbackService.playbackState.duration || 0);
+        if ((!playbackService.audioBuffer && !playbackService.isStreaming) || !Number.isFinite(t) || !Number.isFinite(duration) || duration <= 0 || t < 0 || t > duration) {
             domService.el.anaMsg.textContent = '请先加载音频并输入有效时间点';
             domService.el.anaMsg.style.color = 'red';
             return;
@@ -301,12 +307,25 @@ export function createAnalysis({
         cancelPreviewTimer();
         const token = playbackService._currentPlayActionToken;
         const track = queueService.playlist[queueService.curIdx] || null;
+        if (playbackService.isStreaming) {
+            const version = playbackService.transportVersion;
+            try {
+                await playbackService.ensureCompleteAudio('循环点试听');
+                if (!playbackService.isPlaybackActionCurrent(token) || version !== playbackService.transportVersion) return;
+                await playbackService.activateCompleteAudio('循环点试听');
+                if (!playbackService.isPlaybackActionCurrent(token)) return;
+            } catch (error) {
+                if (playbackService.isPlaybackActionCurrent(token)) domService.el.anaMsg.textContent = error.message;
+                return;
+            }
+        }
         playbackService.startAudio(Math.max(0, t - 3));
         const previewSource = playbackService.sourceNode;
+        const previewVersion = playbackService.transportVersion;
         const previewDurationMs = Math.max(250, Math.min(6000, (duration - Math.max(0, t - 3)) * 1000));
         previewStopTimer = setTimeout(() => {
             previewStopTimer = null;
-            if (token !== playbackService._currentPlayActionToken || queueService.playlist[queueService.curIdx] !== track || playbackService.sourceNode !== previewSource) return;
+            if (token !== playbackService._currentPlayActionToken || queueService.playlist[queueService.curIdx] !== track || playbackService.sourceNode !== previewSource || previewVersion !== playbackService.transportVersion) return;
             playbackService.playbackState.pauseTime = playbackService.getCurrentTime();
             playbackService.stopAudio('paused');
         }, previewDurationMs);

@@ -71,6 +71,13 @@
                             <option value="hires">Hi-Res</option>
                         </select>
                     </div>
+                    <div class="netease-quality-bar playback-preference">
+                        <label for="playback-mode">播放</label>
+                        <select id="playback-mode" class="netease-quality-select" title="后续在线歌曲的默认播放方式">
+                            <option value="stream" selected>流式优先</option>
+                            <option value="complete">完整加载</option>
+                        </select>
+                    </div>
                     <button id="netease-login-btn" class="netease-login-btn" data-action="login">登录网易云账号</button>
                 </div>
 
@@ -275,6 +282,7 @@
             <div class="progress-section">
                 <div class="time-display">
                     <span id="curr-time">00:00</span>
+                    <output id="playback-engine" class="playback-engine" aria-live="polite"></output>
                     <span id="loop-status" style="color:#e74c3c; display:none; font-weight:bold; font-size:0.8rem">∞ SEAMLESS</span>
                     <span id="total-time">00:00</span>
                 </div>

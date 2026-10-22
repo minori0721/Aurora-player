@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { createLyricMotion, LYRIC_REST_SCALE, LYRIC_SCROLL_DURATION_MS, LYRIC_SCROLL_EASING } from '../src/lyrics/motion.js';
 import { FakeElement } from './helpers/host.mjs';
 
-test('timed lyric transforms have one JS owner, with stable font weights and no CSS transition', () => {
+test('timed lyric transforms have one JS owner and only the active original is bold', () => {
     const css = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
     const ruleFor = selector => css.match(new RegExp(`^${selector.replaceAll('.', '\\.')}\\s*\\{([^}]+)\\}`, 'm'))[1];
     assert.equal(LYRIC_SCROLL_DURATION_MS, 400);
@@ -19,7 +19,9 @@ test('timed lyric transforms have one JS owner, with stable font weights and no 
         const rule = ruleFor(selector);
         assert.match(rule, /transition:\s*none\s*;/);
     }
-    assert.match(css, /\.lyric-visual \.lyric-original\s*\{\s*font-weight:\s*800;/);
+    assert.match(ruleFor('.lyric-visual .lyric-original'), /font-weight:\s*400/);
+    assert.match(ruleFor('.lyric-line.active .lyric-visual .lyric-original'), /font-weight:\s*800/);
+    assert.doesNotMatch(ruleFor('.lyric-line'), /transition:[^;]*(?:font|all)/);
     const subtitle = ruleFor('.lyric-visual .lyric-translation');
     assert.match(subtitle, /font-weight:\s*500/);
 });

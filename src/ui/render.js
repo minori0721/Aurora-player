@@ -136,6 +136,7 @@ export function createRender({
         }
         if(playbackService.playbackState.duration) {
             setPlaybackProgress(now / playbackService.playbackState.duration);
+            prefetchService.warmNextStreamIfNeeded?.(playbackService.playbackState.duration - now);
             const nextIdx = prefetchService.getLikelyNextPlaylistIndex();
             const nextTrack = nextIdx === null ? null : queueService.playlist[nextIdx];
             const triggerSec = nextTrack?.netease

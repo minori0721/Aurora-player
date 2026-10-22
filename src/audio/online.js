@@ -1,5 +1,5 @@
 import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
-import { createAudioQualityProbe, describeAudioQualityFromBuffer } from './quality.js';
+import { createAudioQualityProbe, describeAudioQualityFromBuffer, describeAudioQualityFromInfo, inferAudioTypeFromUrl, parseFlacStreamInfoFromBuffer } from './quality.js';
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
 
 export function createOnlinePlayback({
@@ -73,6 +73,7 @@ export function createOnlinePlayback({
         playbackService.setCurrentDownloadTrack(song, myPlayToken, true);
 
         const songId = song.id;
+        const preferStream = playbackService.playbackPreference === 'stream' && queueService.playMode !== 2;
         let songName = song.name;
         let artists = getNeteaseSongArtists(song).join(', ');
         let cover = toHttps(song.album?.picUrl || song.al?.picUrl || '');
@@ -119,11 +120,107 @@ export function createOnlinePlayback({
         if (!cover) supplementPlayingSongDetail(songId, myPlayToken, detail => { song = detail; });
         const recoveryBudget = preloadMatchesCurrent && prefetchService.nextPreloadRecoveryBudget
             ? prefetchService.nextPreloadRecoveryBudget : { urlRefreshUsed: false, stallRecoveryUsed: false };
+
+        async function useStream(initialResolved, rawData = null, media = null) {
+            const cookie = authService.neteaseCookie, generation = authService.authGeneration, level = authService.neteaseQuality;
+            let resolved = initialResolved, blob = rawData ? new Blob([rawData]) : null;
+            rawData = null;
+            let objectUrl = blob ? URL.createObjectURL(blob) : '';
+            let completeWork = null;
+            const guard = () => {
+                playbackService.assertPlaybackActionCurrent(myPlayToken);
+                if (signal.aborted) throw signal.reason || new DOMException('aborted', 'AbortError');
+                if (generation !== authService.authGeneration || cookie !== authService.neteaseCookie) throw new Error('账号状态已改变，请重新播放');
+            };
+            const releaseEncoded = () => {
+                blob = null;
+                if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ''; }
+            };
+            const loadComplete = () => {
+                if (completeWork) return completeWork;
+                completeWork = (async () => {
+                    guard();
+                    let ab, loadedUrl = resolved.candidates[0];
+                    if (blob) ab = await blob.arrayBuffer();
+                    else {
+                        const compact = typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
+                        const maxBytes = (compact || Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4 ? 64 : 128) * 1024 * 1024;
+                        while (true) {
+                            try {
+                                if (Number(resolved.audioInfo?.size) > maxBytes) throw new Error('完整音频超过安全加载上限，请继续流式播放');
+                                const result = await transferService.fetchAudioDataWithFallback(resolved.candidates, { signal, maxBytes });
+                                if (result.tooLarge) throw new Error('完整音频超过安全加载上限，请继续流式播放');
+                                ab = result.buffer; loadedUrl = result.audioUrl;
+                                break;
+                            } catch (error) {
+                                guard();
+                                if (!recoveryBudget.urlRefreshUsed && [401, 403, 404, 410].includes(Number(error.status))) {
+                                    recoveryBudget.urlRefreshUsed = true;
+                                    await resolverService.invalidateNeteaseResolvedAudioCache(songId, level, cookie);
+                                    guard();
+                                    const cookieParam = cookie ? `&cookie=${encodeURIComponent(cleanCookie(cookie))}` : '';
+                                    resolved = await resolverService.resolveNeteaseAudioUrlWithTimeout(songId, cookieParam, level,
+                                        { signal, useQueue: true, cacheScope: 'none' }, 0, resolverService.getNeteaseMatchStrategy(level));
+                                    guard();
+                                    if (!resolved.candidates?.length) throw new Error('NO_URL_FROM_OFFICIAL');
+                                    continue;
+                                }
+                                if (!recoveryBudget.stallRecoveryUsed && error.code === 'AUDIO_STALLED') {
+                                    recoveryBudget.stallRecoveryUsed = true;
+                                    continue;
+                                }
+                                throw error;
+                            }
+                        }
+                    }
+                    guard();
+                    const info = resolved.audioInfo || {};
+                    const probe = createAudioQualityProbe(ab, loadedUrl, info);
+                    const buffer = await playbackService.decodeCompleteData(ab, playbackService.playbackState.duration || Number(song.dt || song.duration || 0) / 1000,
+                        probe.flacInfo?.channels || probe.wavInfo?.channels || 2);
+                    guard();
+                    return { buffer, quality: describeAudioQualityFromBuffer(ab, loadedUrl, buffer, { ...info, _qualityProbe: probe }) };
+                })();
+                return completeWork;
+            };
+            const supplementStreamQuality = async () => {
+                if (inferAudioTypeFromUrl(resolved.candidates[0], resolved.audioInfo?.type) !== 'flac' || playbackService.audioBuffer) return;
+                const header = blob ? await blob.slice(0, 4096).arrayBuffer()
+                    : await transferService.fetchAudioHeader(resolved.candidates[0], { signal });
+                guard();
+                if (!header || playbackService.audioBuffer || !playbackService.isStreaming) return;
+                const streamInfo = parseFlacStreamInfoFromBuffer(header);
+                if (!streamInfo) return;
+                metadataService.currentAudioQuality = describeAudioQualityFromInfo(resolved.audioInfo, resolved.candidates[0], streamInfo).label;
+                lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
+            };
+            await playbackService.prepareStream(load, {
+                url: objectUrl || resolved.candidates[0], media, loadComplete, releaseEncoded,
+                dispose() { controller.abort(); releaseEncoded(); },
+                onComplete(result) {
+                    guard();
+                    metadataService.currentAudioQuality = result.quality.label;
+                    lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
+                }
+            });
+            guard();
+            if (!playbackService.audioBuffer) {
+                metadataService.currentAudioQuality = describeAudioQualityFromInfo(resolved.audioInfo, resolved.candidates[0]).label;
+                lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
+            }
+            playbackService.finishPlaybackLoad(load);
+            metadataService.updateMediaSession();
+            lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) });
+            prefetchService.prewarmNextNeteaseSongUrl();
+            prefetchService.prefetchUpcomingNeteaseDetails();
+            supplementStreamQuality().catch(() => {});
+        }
         try {
 
             // 如果预取目标仍是当前歌曲，则复用完整音频或已预热的 URL。
             // 正式播放会接管同一个下载 Promise，不因短暂等待而取消它。
             let prewarmedResolved = null;
+            let prewarmedMedia = null;
             try {
                 const preloadIndex = prefetchService.nextPreloadIndex;
                 const preloadTrack = queueService.playlist[preloadIndex];
@@ -147,7 +244,9 @@ export function createOnlinePlayback({
                     }
 
                     if (!res?.ab && prefetchService.nextPreloadKind === 'netease-url') {
-                        prewarmedResolved = prefetchService.takeNextPrewarmedNeteaseUrl(songId, authService.neteaseQuality);
+                        const warmed = preferStream ? prefetchService.takeNextStreamWarm?.(songId) : null;
+                        prewarmedMedia = warmed?.media || null;
+                        prewarmedResolved = warmed?.resolved || prefetchService.takeNextPrewarmedNeteaseUrl(songId, authService.neteaseQuality);
                     }
 
                     if (res?.ab && prefetchService.isNextPreloadSnapshotCurrent(preloadToken, queueService.playlist, preloadIndex, preloadTrack, songId, authService.neteaseQuality, authService.authGeneration)) {
@@ -162,6 +261,10 @@ export function createOnlinePlayback({
                         if (!consumed?.ab) {
                             try { prefetchService.cancelNextPreload(); } catch(e) {}
                         } else {
+                        if (preferStream) {
+                            await useStream({ ...consumed, candidates: consumed.candidates?.length ? consumed.candidates : [consumed.audioUrl] }, consumed.ab);
+                            return;
+                        }
                         domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
                         domService.el.bufferLine.style.width = '30%';
 
@@ -243,6 +346,10 @@ export function createOnlinePlayback({
             let audioCandidates = resolved.candidates || [];
             if (!audioInfo || !audioCandidates.length) {
                 throw new Error('NO_URL_FROM_OFFICIAL');
+            }
+            if (preferStream) {
+                await useStream(resolved, null, prewarmedMedia);
+                return;
             }
             let audioUrl = audioCandidates[0];
             debugService.log(`Audio URL: ${audioCandidates[0]}`);

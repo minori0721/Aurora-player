@@ -124,6 +124,44 @@ export function createTransfer({} = {}) {
         }
     }
 
+    async function fetchAudioHeader(audioUrl, { signal, maxBytes = 4096, timeoutMs = 3000 } = {}) {
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 65536) throw new RangeError('Invalid audio header size');
+        return withRequestTimeout(signal, timeoutMs, '音频文件头读取超时', async requestSignal => {
+            const response = await awaitWithSignal(fetch(audioUrl, {
+                headers: { Range: `bytes=0-${maxBytes - 1}` }, credentials: 'omit', signal: requestSignal
+            }), requestSignal);
+            const range = response.headers.get('content-range');
+            const match = range?.match(/^bytes\s+0-(\d+)\/(?:\d+|\*)$/i);
+            // Content-Range may be hidden by CORS. A visible, invalid range is never usable.
+            if (response.status !== 206 || Number(response.headers.get('content-length')) > maxBytes
+                || range && (!match || Number(match[1]) >= maxBytes) || !response.body?.getReader) {
+                response.body?.cancel().catch(() => {});
+                return null;
+            }
+            const reader = response.body.getReader();
+            const cancel = () => { reader.cancel().catch(() => {}); };
+            requestSignal.addEventListener('abort', cancel, { once: true });
+            const bytes = new Uint8Array(maxBytes);
+            let length = 0;
+            try {
+                while (length < maxBytes) {
+                    if (requestSignal.aborted) throw requestSignal.reason || createAbortError();
+                    const part = await awaitWithSignal(reader.read(), requestSignal);
+                    if (requestSignal.aborted) throw requestSignal.reason || createAbortError();
+                    if (part.done) break;
+                    if (part.value.byteLength > maxBytes - length) return null;
+                    bytes.set(part.value, length);
+                    length += part.value.byteLength;
+                }
+                return length ? bytes.buffer.slice(0, length) : null;
+            } finally {
+                requestSignal.removeEventListener('abort', cancel);
+                cancel();
+                try { reader.releaseLock(); } catch (_) {}
+            }
+        });
+    }
+
     function createAbortError(message = 'request aborted') {
         return new DOMException(message, 'AbortError');
     }
@@ -218,6 +256,7 @@ export function createTransfer({} = {}) {
         awaitWithSignal,
         withRequestTimeout,
         fetchAudioDataWithFallback,
+        fetchAudioHeader,
         createAbortError,
         abortableDelay,
         fetchJsonWithStageTimeout,

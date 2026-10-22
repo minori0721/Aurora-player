@@ -1,4 +1,6 @@
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
+import { createMediaTransport, pcmSizeEstimate, readPlaybackPreference } from './media.js';
+import { fmtTime } from '../shared/text.js';
 
 export function createPlayback({
     analysis: analysisService,
@@ -81,7 +83,178 @@ export function createPlayback({
     // 用于取消之前的网络请求
     let playbackMetadataController = null;
 
+    let playbackPreference = readPlaybackPreference();
+    let streamSession = null, onlineResource = null, completePreparation = null, completeActivation = null;
+
+    function updateEngineLabel(message = '') {
+        const label = document.getElementById('playback-engine');
+        if (label) label.textContent = message || (streamSession ? '流式播放' : audioBuffer ? '完整播放' : '');
+    }
+
+    function disposeStream() {
+        const session = streamSession;
+        streamSession = null;
+        if (session?.resumeOnline) window.removeEventListener?.('online', session.resumeOnline);
+        session?.media.dispose();
+        if (session) onlineResource?.releaseEncoded?.();
+    }
+
+    function releaseOnlineResource() {
+        disposeStream();
+        onlineResource?.dispose?.();
+        onlineResource = null;
+        completePreparation = null;
+        completeActivation = null;
+    }
+
+    function assertPcmBudget(duration, channels = 2) {
+        const compact = typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches;
+        const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4;
+        const limit = (compact || lowMemory ? 128 : 256) * 1024 * 1024;
+        if (pcmSizeEstimate(duration, actx.sampleRate, channels) > limit) throw new Error('完整解码预计占用过高，请选择较短的音频或继续流式播放');
+    }
+
+    async function decodeCompleteData(data, duration, channels = 2) {
+        assertPcmBudget(duration, channels);
+        return actx.decodeAudioData(data);
+    }
+
+    function ensureCompleteAudio(reason = '精确播放') {
+        if (audioBuffer) return Promise.resolve(audioBuffer);
+        if (completePreparation) return completePreparation;
+        const resource = onlineResource, token = _currentPlayActionToken;
+        if (!resource) return Promise.reject(new Error('没有可完整加载的音频'));
+        updateEngineLabel(`准备完整音频 · ${reason}`);
+        const work = Promise.resolve().then(() => {
+            assertPlaybackActionCurrent(token);
+            assertPcmBudget(playbackState.duration);
+            return resource.loadComplete();
+        }).then(result => {
+            assertPlaybackActionCurrent(token);
+            if (onlineResource !== resource) throw Object.assign(new Error('stale'), { stale: true });
+            resource.onComplete?.(result);
+            audioBuffer = result.buffer;
+            return audioBuffer;
+        }).finally(() => {
+            if (completePreparation === work) { completePreparation = null; updateEngineLabel(); }
+        });
+        completePreparation = work;
+        return work;
+    }
+
+    function activateCompleteAudio(reason = '精确播放', offset = null) {
+        if (completeActivation) return completeActivation;
+        const token = _currentPlayActionToken;
+        const work = (async () => {
+            await ensureCompleteAudio(reason);
+            assertPlaybackActionCurrent(token);
+            const position = offset ?? (streamSession?.media.ended ? 0 : getCurrentTime());
+            disposeStream();
+            playbackState.duration = audioBuffer.duration;
+            playbackState.pauseTime = Math.min(position, audioBuffer.duration);
+            updateEngineLabel();
+            if (playbackWantsPlay) startAudio(playbackState.pauseTime);
+            else setPlaybackStatus('paused');
+        })().finally(() => { if (completeActivation === work) completeActivation = null; });
+        completeActivation = work;
+        return work;
+    }
+
+    async function prepareStream(load, options) {
+        const media = options.media || createMediaTransport(options.url);
+        const session = { media, token: load.token, recovering: false, fallbackUsed: false };
+        streamSession = session;
+        onlineResource = options;
+        const current = () => streamSession === session && isPlaybackActionCurrent(load.token);
+        const syncDuration = () => {
+            if (!current() || !media.duration) return;
+            playbackState.duration = media.duration;
+            domService.el.totalTime.textContent = fmtTime(media.duration);
+        };
+        const recover = async error => {
+            if (!current() || session.recovering || error?.name === 'AbortError') return;
+            if (error?.name === 'NotAllowedError') {
+                playbackWantsPlay = false;
+                setPlaybackStatus('error', { error: '浏览器阻止了音频播放，请点击播放重试' });
+                return;
+            }
+            session.pendingError = error;
+            if (navigator.onLine === false) {
+                setPlaybackStatus(playbackWantsPlay ? 'loading' : 'paused');
+                if (!session.resumeOnline) {
+                    session.resumeOnline = () => {
+                        window.removeEventListener?.('online', session.resumeOnline);
+                        session.resumeOnline = null;
+                        if (current() && playbackWantsPlay) recover(error);
+                    };
+                    window.addEventListener?.('online', session.resumeOnline);
+                }
+                return;
+            }
+            if (!playbackWantsPlay) { setPlaybackStatus('paused'); return; }
+            if (session.fallbackUsed) { setPlaybackStatus('error', { error: error.message }); return; }
+            session.pendingError = null;
+            session.fallbackUsed = true;
+            playbackState.pauseTime = getCurrentTime();
+            session.recovering = true;
+            media.pause();
+            setPlaybackStatus(playbackWantsPlay ? 'loading' : 'paused');
+            debugService.log(`流式播放失败，尝试完整加载一次: ${error.message}`, 'warn');
+            try { await activateCompleteAudio('流式回退'); }
+            catch (failure) {
+                if (!current()) return;
+                session.failure = failure;
+                session.recovering = false;
+                setPlaybackStatus('error', { error: failure.message });
+                debugService.log(`完整加载失败: ${failure.message}`, 'error');
+            }
+        };
+        session.recover = recover;
+        media.observe({
+            state(status) {
+                if (!current() || session.recovering || !playbackWantsPlay) return;
+                setPlaybackStatus(status);
+            },
+            duration: syncDuration,
+            progress() {
+                if (current() && playbackState.duration) domService.el.bufferLine.style.width = `${Math.min(100, media.bufferedEnd() / playbackState.duration * 100)}%`;
+            },
+            seek() { if (current()) { playbackState.pauseTime = media.time; renderService.scheduleRender?.(true); lyricsService.syncWordLyricPlayback?.(); } },
+            suspended: () => !playbackWantsPlay || actx.state !== 'running',
+            error: recover,
+            ended() {
+                if (!current() || !playbackWantsPlay || session.recovering) return;
+                playbackState.pauseTime = media.time;
+                if (queueService.playMode === 2 || loopService.preparingLoop) {
+                    setPlaybackStatus('loading');
+                    if (queueService.playMode === 2) activateCompleteAudio('单曲无缝循环', 0).catch(recover);
+                } else queueService.handleNext();
+            }
+        });
+        try { await media.ready; }
+        catch (error) {
+            if (!current()) throw Object.assign(new Error('stale'), { stale: true });
+            await recover(error);
+            if (!audioBuffer && !session.pendingError) throw session.failure || error;
+            return;
+        }
+        assertPlaybackActionCurrent(load.token);
+        syncDuration();
+        try { media.connect(actx, gainNode); } catch (error) { await recover(error); }
+        updateEngineLabel();
+    }
+
+    function seekAudio(offset) {
+        const time = Math.max(0, Math.min(Number(offset) || 0, playbackState.duration));
+        playbackState.pauseTime = time;
+        if (streamSession) streamSession.media.seek(time);
+        else if (playbackState.isPlaying) startAudio(time);
+        renderService.scheduleRender?.(true);
+        return time;
+    }
+
     function beginPlaybackAction() {
+        releaseOnlineResource();
         const previousLoad = activePlaybackLoad;
         activePlaybackLoad = null;
         previousLoad?.resume?.();
@@ -218,7 +391,7 @@ export function createPlayback({
             return request;
         }
         const load = activePlaybackLoad;
-        if (!load && !audioBuffer) {
+        if (!load && !audioBuffer && !streamSession) {
             if (!queueService.playlist.length) return Promise.resolve(false);
             const index = queueService.curIdx >= 0 && queueService.curIdx < queueService.playlist.length ? queueService.curIdx : 0;
             return queueService.playTrackFromPlaylist(index);
@@ -240,13 +413,13 @@ export function createPlayback({
                 return false;
             }
             if (isPlaybackLoadCurrent(load)) load.resume?.();
-            else if (audioBuffer) startAudio(playbackState.pauseTime);
+            else if (audioBuffer || streamSession) startAudio(playbackState.pauseTime);
             return true;
         }).finally(() => {
             if (pendingTransportPlay === request) {
                 pendingTransportPlay = null;
                 if (isPlaybackLoadCurrent(load)) load.resume?.();
-                else if (guard() && audioBuffer && !playbackState.isPlaying) startAudio(playbackState.pauseTime);
+                else if (guard() && (audioBuffer || streamSession) && !playbackState.isPlaying) startAudio(playbackState.pauseTime);
                 updatePlayIcon();
             }
         });
@@ -287,6 +460,27 @@ export function createPlayback({
     }
 
     function startAudio(offset) {
+        if (streamSession && !loopStateRequiresPcm()) {
+            const session = streamSession;
+            const version = ++transportVersion;
+            playbackWantsPlay = true;
+            playbackState.pauseTime = Number(offset) || 0;
+            setPlaybackStatus('loading');
+            if (session.pendingError) { session.recover(session.pendingError); return true; }
+            session.media.play(offset, () => streamSession === session && transportVersion === version && playbackWantsPlay).catch(error => {
+                if (streamSession === session && transportVersion === version) session.recover(error);
+            });
+            return true;
+        }
+        if (streamSession && !audioBuffer) {
+            playbackWantsPlay = true;
+            seekAudio(offset);
+            activateCompleteAudio('精确循环').catch(error => {
+                if (!error.stale && error.name !== 'AbortError') debugService.log(error.message, 'error');
+            });
+            return true;
+        }
+        if (streamSession) disposeStream();
         if (!audioBuffer || !Number.isFinite(audioBuffer.duration) || audioBuffer.duration <= 0) {
             setPlaybackStatus('error', { error: '没有可播放的音频数据' });
             return false;
@@ -322,6 +516,7 @@ export function createPlayback({
         playbackState.startTime = actx.currentTime - startOffset;
         playbackState.pauseTime = startOffset;
         setPlaybackStatus('playing');
+        updateEngineLabel();
 
         if (actx.state !== 'running') {
             unlockAudioContext('start-audio').then(unlocked => {
@@ -365,6 +560,7 @@ export function createPlayback({
             pendingTransportPlay = null;
         }
         if(sourceNode) { try{sourceNode.onended=null; sourceNode.stop()}catch(e){}; sourceNode.disconnect(); sourceNode=null; }
+        streamSession?.media.pause();
         setPlaybackStatus(nextStatus);
         // 取消当前的网络请求
         if(currentAbortController && !preserveLoad) {
@@ -374,6 +570,7 @@ export function createPlayback({
     }
 
     function getCurrentTime() {
+        if (streamSession && !streamSession.recovering) return streamSession.media.time;
         if(!playbackState.isPlaying) return playbackState.pauseTime;
         let t = actx.currentTime - playbackState.startTime;
         const customLoop = getActiveCustomLoop();
@@ -382,6 +579,8 @@ export function createPlayback({
         else if (t > playbackState.duration) t = playbackState.duration;
         return t;
     }
+
+    function loopStateRequiresPcm() { return queueService.playMode === 2 || loopService.loopState.active; }
 
     function updatePlayIcon() {
         const canPause = playbackState.isPlaying || playbackWantsPlay
@@ -402,7 +601,7 @@ export function createPlayback({
         domService.el.loadTip.style.display = nextStatus === 'loading' ? 'block' : 'none';
         document.querySelector('.main-container')?.setAttribute('aria-busy', nextStatus === 'loading' ? 'true' : 'false');
         if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = nextStatus === 'playing' ? 'playing' : (nextStatus === 'idle' ? 'none' : 'paused');
+            navigator.mediaSession.playbackState = nextStatus === 'playing' || nextStatus === 'loading' && playbackWantsPlay ? 'playing' : (nextStatus === 'idle' ? 'none' : 'paused');
         }
         updatePlayIcon();
         if (typeof renderService.scheduleRender === 'function') renderService.scheduleRender(true);
@@ -419,6 +618,7 @@ export function createPlayback({
         domService.el.totalTime.textContent = '00:00';
         renderService.setPlaybackProgress(0);
         domService.el.bufferLine.style.width = '0%';
+        updateEngineLabel();
     }
 
     let initialized = false;
@@ -427,6 +627,16 @@ export function createPlayback({
         get audioBuffer() { return audioBuffer; },
         set audioBuffer(value) { audioBuffer = value; },
         get sourceNode() { return sourceNode; },
+        get isStreaming() { return !!streamSession; },
+        get canWarmNextStream() { return !streamSession || streamSession.media.bufferedEnd() >= Math.min(playbackState.duration, getCurrentTime() + 5); },
+        get hasAudio() { return !!audioBuffer || !!streamSession; },
+        get playbackPreference() { return playbackPreference; },
+        get preparingCompleteAudio() { return !!completePreparation; },
+        prepareStream,
+        ensureCompleteAudio,
+        activateCompleteAudio,
+        decodeCompleteData,
+        seekAudio,
         get gainNode() { return gainNode; },
         get analyser() { return analyser; },
         unlockAudioContext,
@@ -459,6 +669,15 @@ export function createPlayback({
         initialize() {
             if (initialized) return;
             initialized = true;
+            const modeSelect = document.getElementById('playback-mode');
+            if (modeSelect) {
+                modeSelect.value = playbackPreference;
+                modeSelect.addEventListener('change', () => {
+                    playbackPreference = modeSelect.value === 'stream' ? 'stream' : 'complete';
+                    try { localStorage.setItem('aurora_playback_mode', playbackPreference); } catch (_) {}
+                    debugService.log(`后续在线播放: ${playbackPreference === 'stream' ? '流式优先' : '完整加载'}`);
+                });
+            }
             actx.addEventListener?.('statechange', () => {
                 lyricsService.syncWordLyricPlayback?.();
                 renderService.scheduleRender?.(true);

@@ -56,7 +56,7 @@ function parseFlacStreamInfoFromBuffer(buffer) {
             const type = header & 0x7F;
             const len = view.getUint32(offset) & 0x00FFFFFF;
             offset += 4;
-            if (type === 0 && len >= 18 && offset + 18 <= view.byteLength) {
+            if (type === 0 && len === 34 && offset + len <= view.byteLength) {
                 const byte10 = view.getUint8(offset + 10);
                 const byte11 = view.getUint8(offset + 11);
                 const byte12 = view.getUint8(offset + 12);
@@ -64,6 +64,7 @@ function parseFlacStreamInfoFromBuffer(buffer) {
                 const sampleRate = (byte10 << 12) | (byte11 << 4) | (byte12 >> 4);
                 const channels = ((byte12 & 0x0E) >> 1) + 1;
                 const bitsPerSample = (((byte12 & 0x01) << 4) | (byte13 >> 4)) + 1;
+                if (!sampleRate || bitsPerSample < 4) return null;
                 return { sampleRate, channels, bitsPerSample };
             }
             offset += len;
@@ -97,14 +98,15 @@ function parseWavStreamInfoFromBuffer(buffer) {
     return null;
 }
 
-function describeAudioQualityFromInfo(audioInfo, audioUrl = '') {
+function describeAudioQualityFromInfo(audioInfo, audioUrl = '', streamInfo = null) {
     const type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
     const brKbps = audioInfo?.br ? Math.round(audioInfo.br / 1000) : null;
-    const sampleRate = audioInfo?.sr || null;
+    const sampleRate = streamInfo?.sampleRate || audioInfo?.sr || null;
     const srText = formatSampleRate(sampleRate);
     let label = type;
     if (type === 'FLAC' || type === 'WAV' || type === 'AIFF') {
-        if (srText) label = `${type} ${srText}`;
+        if (type === 'FLAC' && srText && streamInfo?.bitsPerSample) label = `${type} ${srText}/${streamInfo.bitsPerSample}bit`;
+        else if (srText) label = `${type} ${srText}`;
         else if (brKbps) label = `${type} ${brKbps}kbps`;
     } else if (brKbps) {
         label = `${type} ${brKbps}kbps`;
@@ -255,4 +257,4 @@ function parseFlacTagsFromArrayBuffer(buffer, maxPictureBytes = 12 * 1024 * 1024
     return Object.keys(tags).length ? tags : null;
 }
 
-export { createAudioQualityProbe, describeAudioQualityFromBuffer, formatSampleRate, inferAudioTypeFromUrl, parseFlacTagsFromArrayBuffer, parseFlacStreamInfoFromBuffer, parseWavStreamInfoFromBuffer };
+export { createAudioQualityProbe, describeAudioQualityFromBuffer, describeAudioQualityFromInfo, formatSampleRate, inferAudioTypeFromUrl, parseFlacTagsFromArrayBuffer, parseFlacStreamInfoFromBuffer, parseWavStreamInfoFromBuffer };
