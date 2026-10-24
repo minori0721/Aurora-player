@@ -131,6 +131,35 @@ test('stream playback begins without a full fetch or PCM decode; pause/resume ke
     assert.equal(f.element.plays, 2); assert.equal(f.player.getCurrentTime(), 27);
 });
 
+test('standard media controls keep the real timeline across stream-to-PCM promotion without a silent element', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const handlers = new Map(), positions = [];
+    navigator.mediaSession = { setActionHandler: (name, callback) => handlers.set(name, callback),
+        setPositionState: state => positions.push(state) };
+    const f = fixture(t); await f.ready; f.player.finishPlaybackLoad(f.load); await tick();
+    assert.equal(navigator.mediaSession.playbackState, 'playing');
+    handlers.get('seekto')({ seekTime: 23 });
+    assert.equal(f.element.currentTime, 23);
+    assert.equal(positions.at(-1).position, 23);
+    assert.equal(f.fullCalls, 0);
+    f.queue.playMode = 2;
+    await f.player.activateCompleteAudio('test');
+    assert.equal(f.fullCalls, 1);
+    assert.equal(f.player.isStreaming, false);
+    assert.equal(f.media.disposed, true);
+    assert.equal(f.player.sourceNode.loop, true);
+    assert.equal(positions.at(-1).position, 23);
+    handlers.get('pause')();
+    handlers.get('seekto')({ seekTime: 0 });
+    assert.equal(f.player.playbackState.status, 'paused');
+    assert.equal(f.player.getCurrentTime(), 0);
+    await handlers.get('play')();
+    assert.equal(f.player.playbackState.status, 'playing');
+    assert.equal(f.fullCalls, 1);
+    assert.equal(f.player.sourceNode.loopEnd, 120);
+    assert.equal(handlers.size, 7);
+});
+
 test('pause before metadata does not let the old pending play restart audio', async t => {
     const element = new Media(); element.manual = true;
     const f = fixture(t, element);

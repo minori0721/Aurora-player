@@ -6,6 +6,7 @@ export function createAuth({
     api: apiService,
     browser: browserService,
     cache: cacheService,
+    content: contentService,
     debug: debugService,
     dom: domService,
     download: downloadService,
@@ -254,6 +255,7 @@ export function createAuth({
         localStorage.removeItem('netease_cookie');
         await cacheService.purgeSensitiveIdbCache();
         updateUserUI();
+        contentService.clearMusicImages(document.getElementById('mylist-content'));
         document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
         if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX) && domService.neteasePanel.classList.contains('show')) {
             browserService.renderMusicRoute(parseMusicRoute(), domService.neteaseBrowserScroll.scrollTop);

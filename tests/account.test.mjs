@@ -27,6 +27,7 @@ function fixture(t) {
     const browser = { musicBrowserState: {}, renderMusicRoute() {} };
     const dom = { qualitySelect: elements.get('netease-quality-select'), neteasePanel: elements.get('netease-panel') };
     const auth = createAuth({ api: { buildApiUrl: path => 'https://api.test' + path }, browser, dom, playback,
+        content: { clearMusicImages() {} },
         download: { cancelDownloadProbes: change }, onlinePlaylist: { cancelPlaylistLoad: change },
         prefetch: { cancelNextPreload: change, resetNeteaseDetailPrefetchState: change },
         cache: { clearAccountJsonCache: change, purgeSensitiveIdbCache: async () => {} },

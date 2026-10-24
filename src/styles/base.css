@@ -294,12 +294,16 @@ body {
 .pl-item.active { background: #fff; color: var(--text-main); font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .pl-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pl-item-index { width: 22px; opacity: 0.55; flex-shrink: 0; text-align: right; }
-.pl-item-cover {
-    width: 30px; height: 30px; border-radius: 6px; object-fit: cover;
+.pl-cover {
+    width: 30px; height: 30px; border-radius: 6px;
     background: rgba(0,0,0,0.08); flex-shrink: 0;
+    overflow: hidden;
+}
+.pl-item-cover {
+    display: block; width: 100%; height: 100%; object-fit: cover;
 }
 .pl-item-cover.empty {
-    background: linear-gradient(135deg, rgba(0,0,0,0.10), rgba(0,0,0,0.04));
+    opacity: 0;
 }
 .pl-item-title {
     flex: 1; min-width: 0; white-space: nowrap;

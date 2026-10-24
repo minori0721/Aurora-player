@@ -63,6 +63,7 @@ export function createMyPlaylists({
     function renderMyPlaylistsView(userId, status = {}) {
         const container = document.getElementById('mylist-content');
         const html = buildMyPlaylistsHtml(myPlaylistsData, userId, status);
+        contentService.clearMusicImages(container);
         container.innerHTML = html;
         contentService.observeMusicImages(container);
         return html;
@@ -72,11 +73,13 @@ export function createMyPlaylists({
     async function loadMyPlaylists() {
         const container = document.getElementById('mylist-content');
         if (!authService.neteaseUser) {
+            contentService.clearMusicImages(container);
             container.innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
             return;
         }
 
         if (myPlaylistsCache) {
+            contentService.clearMusicImages(container);
             container.innerHTML = myPlaylistsCache;
             contentService.observeMusicImages(container);
             return;
@@ -94,6 +97,7 @@ export function createMyPlaylists({
         myPlaylistsAbortController = controller;
         myPlaylistsData = [];
         myPlaylistsLoading = true;
+        contentService.clearMusicImages(container);
         container.innerHTML = '<div class="netease-loading">正在加载首批歌单...</div>';
 
         const isCurrent = () => !controller.signal.aborted
@@ -170,6 +174,7 @@ export function createMyPlaylists({
                 if (error?.name === 'AbortError' || controller.signal.aborted) return;
                 if (isCurrent()) {
                     myPlaylistsLoading = false;
+                    contentService.clearMusicImages(container);
                     container.innerHTML = '<div class="netease-empty">加载失败: ' + escapeHtml(error.message) + '</div>';
                 }
             } finally {

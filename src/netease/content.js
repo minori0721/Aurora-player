@@ -1,6 +1,7 @@
 import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
 import { parseMusicRoute, positiveMusicInteger } from './routes.js';
 import { normalizeMusicAlbum, normalizeMusicArtist, normalizeMusicSong } from './models.js';
+import { createMusicImages } from './images.js';
 
 export function createContent({
     api: apiService,
@@ -20,19 +21,15 @@ export function createContent({
 
     const MUSIC_FALLBACK_ARTIST = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><rect width="160" height="160" rx="80" fill="#e8edf3"/><circle cx="80" cy="62" r="28" fill="#c7d2de"/><path d="M31 145c5-31 24-48 49-48s44 17 49 48" fill="#c7d2de"/></svg>');
 
-    const musicImageObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-            if (!entry.isIntersecting) return;
-            const image = entry.target;
-            const source = image.dataset.src;
-            if (source) image.src = toHttps(source);
-            image.removeAttribute('data-src');
-            observer.unobserve(image);
-        });
-    }, { rootMargin: '240px 0px', threshold: 0.01 });
+    const musicImages = createMusicImages({
+        root: domService.neteaseBrowserScroll,
+        isActive: () => domService.neteasePanel.classList.contains('show'),
+        fallbackCover: MUSIC_FALLBACK_COVER,
+        fallbackArtist: MUSIC_FALLBACK_ARTIST
+    });
 
-    function observeMusicImages(root = document) {
-        root.querySelectorAll?.('img[data-src]').forEach(image => musicImageObserver.observe(image));
+    function observeMusicImages(root = domService.neteaseBrowserScroll) {
+        musicImages.observe(root);
     }
 
     function musicArtistLinksHtml(artists) {
@@ -100,9 +97,6 @@ export function createContent({
                 </div>
                 <span class="netease-item-duration">${fmtTime(song.durationMs / 1000)}</span>
                 <button class="netease-item-play" data-music-play aria-label="播放 ${escapeHtml(song.name)}">&#9654;</button>`;
-            item.querySelectorAll('img').forEach(image => {
-                image.addEventListener('error', () => { image.src = MUSIC_FALLBACK_COVER; }, { once: true });
-            });
             fragment.appendChild(item);
         });
         container.appendChild(fragment);
@@ -182,7 +176,6 @@ export function createContent({
                     <div class="music-card-title">${escapeHtml(album.name)}</div>
                 </button>
                 <div class="music-card-subtitle">${musicArtistLinksHtml(album.artists)}</div>`;
-            card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
             grid.appendChild(card);
         });
         container.appendChild(grid);
@@ -202,7 +195,6 @@ export function createContent({
                     <div class="music-card-title">${escapeHtml(artist.name)}</div>
                     <div class="music-card-subtitle">${artist.albumSize ? `${artist.albumSize} 张专辑` : '歌手'}</div>
                 </button>`;
-            card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_ARTIST; }, { once: true });
             grid.appendChild(card);
         });
         container.appendChild(grid);
@@ -229,6 +221,7 @@ export function createContent({
     async function searchNeteaseSongs(keyword, type = 'all', page = 1, token = browserService.musicBrowserState.navToken, signal = browserService.musicBrowserState.controller?.signal) {
         const query = String(keyword || '').trim().slice(0, 200);
         if (!query) return;
+        musicImages.clear(domService.searchResults);
         domService.searchResults.innerHTML = '<div class="netease-loading">搜索中...</div>';
         domService.searchBtn.disabled = true;
         const hash = window.location.hash;
@@ -297,6 +290,7 @@ export function createContent({
         onlinePlaylistService.currentPage = page;
         const start = page * onlinePlaylistService.SONGS_PER_PAGE;
         const pageSongs = songs.slice(start, start + onlinePlaylistService.SONGS_PER_PAGE);
+        musicImages.clear(container);
         container.innerHTML = '';
         renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
         renderMusicPagination(
@@ -370,7 +364,6 @@ export function createContent({
                     <div class="music-card-title">${escapeHtml(mv.name || '未命名 MV')}</div>
                     <div class="music-card-subtitle">${mv.playCount ? `${formatMusicCount(mv.playCount)} 次播放` : 'MV'}</div>
                 </a>`;
-            card.querySelector('img').addEventListener('error', event => { event.currentTarget.src = MUSIC_FALLBACK_COVER; }, { once: true });
             grid.appendChild(card);
         });
         container.appendChild(grid);
@@ -398,6 +391,7 @@ export function createContent({
 
     async function renderMusicAlbumPage(route, token, signal, options = {}) {
         const hash = window.location.hash;
+        musicImages.clear(domService.neteaseBrowserView);
         domService.neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入专辑...</div>';
         const [albumResult, dynamicResult] = await Promise.allSettled([
             fetchMusicStatic(`/album?id=${route.id}`, signal, 1_800_000, options),
@@ -631,6 +625,7 @@ export function createContent({
         if (!browserService.currentMusicNavigationIs(token, hash)) return;
         const content = domService.neteaseBrowserView.querySelector('#music-artist-content');
         if (!content) return;
+        musicImages.clear(content);
         content.innerHTML = '';
         const { artist, topSongs, topError } = session;
 
@@ -691,6 +686,7 @@ export function createContent({
 
         let activeSession = sameEntity ? session : null;
         if (!activeSession) {
+            musicImages.clear(domService.neteaseBrowserView);
             domService.neteaseBrowserView.innerHTML = '<div class="netease-loading">正在载入歌手...</div>';
             const baseData = await fetchArtistBaseData(route.id, signal, options);
             if (!browserService.currentMusicNavigationIs(token, hash)) return;
@@ -712,6 +708,7 @@ export function createContent({
         const content = domService.neteaseBrowserView.querySelector('#music-artist-content');
         if (content) {
             content.setAttribute('aria-busy', 'true');
+            musicImages.clear(content);
             content.innerHTML = '<div class="netease-loading">正在载入内容...</div>';
         }
         const viewData = await fetchArtistViewData(route, signal, options);
@@ -821,7 +818,7 @@ export function createContent({
         if (!mini || !track) {
             if (mini) {
                 mini.classList.remove('show');
-                document.getElementById('music-mini-cover')?.removeAttribute('src');
+                musicImages.setMiniCover(document.getElementById('music-mini-cover'));
             }
             return;
         }
@@ -832,7 +829,7 @@ export function createContent({
         const cover = currentCover || coversService.coverDisplayUrl(song?.picUrl || MUSIC_FALLBACK_COVER);
         document.getElementById('music-mini-title').textContent = title;
         document.getElementById('music-mini-artists').textContent = artists;
-        document.getElementById('music-mini-cover').src = cover;
+        musicImages.setMiniCover(document.getElementById('music-mini-cover'), cover);
         const miniPlay = document.getElementById('music-mini-play');
         miniPlay.textContent = domService.el.playBtn.getAttribute('aria-label') === '暂停' ? '❚❚' : '▶';
         miniPlay.setAttribute('aria-label', domService.el.playBtn.getAttribute('aria-label'));
@@ -845,11 +842,14 @@ export function createContent({
     }
 
     // 懒加载图片实现
-    const lazyLoadImages = () => observeMusicImages(document);
+    const lazyLoadImages = () => observeMusicImages();
 
     let initialized = false;
     return {
         observeMusicImages,
+        clearMusicImages: scope => musicImages.clear(scope),
+        pauseMusicImages: () => musicImages.pause(),
+        resumeMusicImages: () => musicImages.resume(),
         searchNeteaseSongs,
         renderSongList,
         renderMusicAlbumPage,
@@ -943,6 +943,7 @@ export function createContent({
             };
 
             // 初始化懒加载
+            musicImages.initialize();
             lazyLoadImages();
         }
     };

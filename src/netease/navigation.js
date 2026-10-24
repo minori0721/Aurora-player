@@ -69,6 +69,7 @@ export function createBrowser({
         domService.neteaseTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabName));
         const content = document.getElementById(`tab-${tabName}`);
         if (content) content.style.display = 'flex';
+        contentService.resumeMusicImages();
     }
 
     function currentMusicNavigationIs(token, hash) {
@@ -89,6 +90,8 @@ export function createBrowser({
 
     async function renderMusicRoute(route, restoreScroll = 0, options = {}) {
         if (!route) {
+            contentService.pauseMusicImages();
+            contentService.clearMusicImages();
             panelsService.modalController.close(domService.neteasePanel, false);
             return;
         }
@@ -97,6 +100,7 @@ export function createBrowser({
             && route.kind === 'artist'
             && Number(previousRoute.id) === Number(route.id);
         authService.cancelLoginSession();
+        contentService.clearMusicImages();
         const preserveSameArtistRequests = sameArtistEntity && previousRoute?.kind === 'artist' && route.kind === 'artist';
         if (!preserveSameArtistRequests) abortMusicNavigationRequests();
         const controller = new AbortController();
@@ -128,6 +132,7 @@ export function createBrowser({
                 if (route.q) {
                     await contentService.searchNeteaseSongs(route.q, route.type, route.page, token, controller.signal);
                 } else {
+                    contentService.clearMusicImages(domService.searchResults);
                     domService.searchResults.innerHTML = '<div class="netease-empty">输入关键词开始搜索</div>';
                 }
             } else if (route.kind === 'playlist-import') {
@@ -135,7 +140,11 @@ export function createBrowser({
             } else if (route.kind === 'playlist-mine') {
                 setMusicBrowserTab('mylist');
                 if (authService.neteaseUser && !myPlaylistsService.myPlaylistsCache) await myPlaylistsService.loadMyPlaylists();
-                else if (!authService.neteaseUser) document.getElementById('mylist-content').innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+                else if (!authService.neteaseUser) {
+                    const target = document.getElementById('mylist-content');
+                    contentService.clearMusicImages(target);
+                    target.innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
+                }
             } else if (route.kind === 'album') {
                 setMusicBrowserTab('entity');
                 await contentService.renderMusicAlbumPage(route, token, controller.signal, options);
@@ -144,11 +153,13 @@ export function createBrowser({
                 await contentService.renderMusicArtistPage(route, token, controller.signal, options);
             } else {
                 setMusicBrowserTab('entity');
+                contentService.clearMusicImages(domService.neteaseBrowserView);
                 domService.neteaseBrowserView.innerHTML = `<div class="music-browser-state"><strong>${escapeHtml(route.reason || '页面不可用')}</strong><button class="music-retry-btn" data-music-home>返回搜索</button></div>`;
             }
         } catch (error) {
             if (error?.name !== 'AbortError' && currentMusicNavigationIs(token, hash)) {
                 const target = route.kind === 'search' ? domService.searchResults : domService.neteaseBrowserView;
+                contentService.clearMusicImages(target);
                 target.innerHTML = `<div class="music-browser-state"><strong>加载失败</strong>${escapeHtml(error?.message || '未知错误')}<br><button class="music-retry-btn" data-music-reload>重试</button></div>`;
             }
         }
@@ -219,6 +230,8 @@ export function createBrowser({
         try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
         abortMusicNavigationRequests();
         authService.cancelLoginSession();
+        contentService.pauseMusicImages();
+        contentService.clearMusicImages();
         panelsService.modalController.close(domService.neteasePanel);
         if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) {
             const state = ensureMusicHistoryState();
@@ -239,6 +252,8 @@ export function createBrowser({
         if (!route) {
             abortMusicNavigationRequests();
             authService.cancelLoginSession();
+            contentService.pauseMusicImages();
+            contentService.clearMusicImages();
             panelsService.modalController.close(domService.neteasePanel, false);
             document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
             musicBrowserState.renderedHash = window.location.hash;

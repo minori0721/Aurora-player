@@ -46,6 +46,7 @@ export function createOnlinePlaylist({
     // 取消歌单请求
     const cancelPlaylistRequest = function() {
         if (!cancelPlaylistLoad('cancelled')) {
+            contentService.clearMusicImages(domService.playlistResults);
             domService.playlistResults.innerHTML = '<div class="netease-empty">请求已取消</div>';
         }
     };
@@ -262,6 +263,7 @@ export function createOnlinePlaylist({
         const match = rawInput.match(/playlist[?/].*?id[=/]?(\d+)/i) || rawInput.match(/(\d{5,})/);
         const playlistId = match ? match[1] : rawInput;
         if (!/^\d+$/.test(playlistId)) {
+            contentService.clearMusicImages(domService.playlistResults);
             domService.playlistResults.innerHTML = '<div class="netease-empty">无效的歌单链接或ID</div>';
             return;
         }
@@ -275,6 +277,7 @@ export function createOnlinePlaylist({
         domService.playlistBtn.disabled = true;
         currentPlaylistData = null;
         domService.playlistPreview.innerHTML = '';
+        contentService.clearMusicImages(domService.playlistResults);
         domService.playlistResults.innerHTML = '';
         updatePlaylistLoadStatus('正在获取歌单信息...', 0, 0, myLoadToken);
 
@@ -329,6 +332,7 @@ export function createOnlinePlaylist({
 
             if (!totalCount) {
                 finishPlaylistLoad(job, 'completed');
+                contentService.clearMusicImages(domService.playlistResults);
                 domService.playlistResults.innerHTML = '<div class="netease-empty">这个歌单没有歌曲</div>';
                 return;
             }
@@ -432,6 +436,7 @@ export function createOnlinePlaylist({
             finishPlaylistLoad(job, signal.aborted ? 'cancelled' : 'failed');
             if (!isCurrent() && error.name === 'AbortError') return;
             if (playlistLoadJob === job && myLoadToken === _currentPlaylistLoadToken && job.generation === authService.authGeneration) {
+                contentService.clearMusicImages(domService.playlistResults);
                 domService.playlistResults.innerHTML = `<div class="netease-empty">${signal.aborted ? '请求已取消' : '获取失败: ' + escapeHtml(error.message)}</div>`;
             }
         } finally {

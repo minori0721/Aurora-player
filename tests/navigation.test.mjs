@@ -9,6 +9,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(t) {
     const { host, elements, frames } = createHost(html), scroller = { scrollTop: 540 };
+    const imageLifecycle = [];
     host.location.href = 'http://localhost/#music/album/12'; host.location.hash = '#music/album/12';
     const panel = elements.get('netease-panel'); panel.classList.add('show');
     host.history.length = 2; host.history.go = () => {};
@@ -32,10 +33,12 @@ function fixture(t) {
             neteaseBrowserView: elements.get('netease-browser-view'), searchBtn: elements.get('netease-search-btn'), searchInput: elements.get('netease-search-input') },
         auth: { cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } },
         panels: { modalController: { open() { panel.classList.add('show'); }, close() { panel.classList.remove('show'); } } },
-        content: { async renderMusicAlbumPage() {}, updateMusicMiniPlayer() {} }
+        content: { async renderMusicAlbumPage() {}, updateMusicMiniPlayer() {},
+            clearMusicImages() { imageLifecycle.push('clear'); }, pauseMusicImages() { imageLifecycle.push('pause'); },
+            resumeMusicImages() { imageLifecycle.push('resume'); } }
     });
     const paint = async () => { await flush(); for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
-    return { host, scroller, browser, panel, elements, paint };
+    return { host, scroller, browser, panel, elements, paint, imageLifecycle };
 }
 
 test('saving history while login is open preserves the source page instead of the login scroll', t => {
@@ -75,4 +78,14 @@ test('closing a direct-link login and reopening restores its source scroll', asy
     f.elements.get('toggle-netease-panel').onclick(); await f.paint();
     assert.equal(f.host.location.hash, '#music/album/12'); assert.equal(f.scroller.scrollTop, 540);
     assert.equal(f.host.history.state.auroraMusic.scrollTop, 540);
+});
+
+test('navigation clears old image subscriptions before resuming and closing releases them again', async t => {
+    const f = fixture(t);
+    await f.browser.renderMusicRoute({ kind: 'album', id: 12 });
+    assert.deepEqual(f.imageLifecycle, ['clear', 'resume']);
+    f.browser.closeMusicBrowser();
+    assert.deepEqual(f.imageLifecycle.slice(-2), ['pause', 'clear']);
+    await f.browser.renderMusicRoute(null);
+    assert.deepEqual(f.imageLifecycle.slice(-2), ['pause', 'clear']);
 });

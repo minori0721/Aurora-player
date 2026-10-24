@@ -1,5 +1,6 @@
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
 import { createMediaTransport, pcmSizeEstimate, readPlaybackPreference } from './media.js';
+import { createMediaSession } from './media-session.js';
 import { fmtTime } from '../shared/text.js';
 
 export function createPlayback({
@@ -170,6 +171,7 @@ export function createPlayback({
             if (!current() || !media.duration) return;
             playbackState.duration = media.duration;
             domService.el.totalTime.textContent = fmtTime(media.duration);
+            mediaSession.sync();
         };
         const recover = async error => {
             if (!current() || session.recovering || error?.name === 'AbortError') return;
@@ -219,7 +221,7 @@ export function createPlayback({
             progress() {
                 if (current() && playbackState.duration) domService.el.bufferLine.style.width = `${Math.min(100, media.bufferedEnd() / playbackState.duration * 100)}%`;
             },
-            seek() { if (current()) { playbackState.pauseTime = media.time; renderService.scheduleRender?.(true); lyricsService.syncWordLyricPlayback?.(); } },
+            seek() { if (current()) { playbackState.pauseTime = media.time; mediaSession.sync(); renderService.scheduleRender?.(true); lyricsService.syncWordLyricPlayback?.(); } },
             suspended: () => !playbackWantsPlay || actx.state !== 'running',
             error: recover,
             ended() {
@@ -249,11 +251,13 @@ export function createPlayback({
         playbackState.pauseTime = time;
         if (streamSession) streamSession.media.seek(time);
         else if (playbackState.isPlaying) startAudio(time);
+        mediaSession.sync();
         renderService.scheduleRender?.(true);
         return time;
     }
 
     function beginPlaybackAction() {
+        mediaSession.reset();
         releaseOnlineResource();
         const previousLoad = activePlaybackLoad;
         activePlaybackLoad = null;
@@ -600,9 +604,7 @@ export function createPlayback({
         domService.el.coverWrap.classList.toggle('playing', nextStatus === 'playing');
         domService.el.loadTip.style.display = nextStatus === 'loading' ? 'block' : 'none';
         document.querySelector('.main-container')?.setAttribute('aria-busy', nextStatus === 'loading' ? 'true' : 'false');
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = nextStatus === 'playing' || nextStatus === 'loading' && playbackWantsPlay ? 'playing' : (nextStatus === 'idle' ? 'none' : 'paused');
-        }
+        mediaSession.sync();
         updatePlayIcon();
         if (typeof renderService.scheduleRender === 'function') renderService.scheduleRender(true);
         lyricsService.syncWordLyricPlayback?.();
@@ -618,8 +620,19 @@ export function createPlayback({
         domService.el.totalTime.textContent = '00:00';
         renderService.setPlaybackProgress(0);
         domService.el.bufferLine.style.width = '0%';
+        mediaSession.sync();
         updateEngineLabel();
     }
+
+    const mediaSession = createMediaSession({
+        readState: () => ({ status: playbackState.status, hasAudio: !!audioBuffer || !!streamSession,
+            duration: playbackState.duration, position: getCurrentTime(), running: actx.state === 'running' }),
+        seekTo: seekAudio,
+        play: requestPlaybackPlay,
+        pause: requestPlaybackPause,
+        previous: () => document.getElementById('prev-btn')?.click(),
+        next: () => document.getElementById('next-btn')?.click()
+    });
 
     let initialized = false;
     return {
@@ -669,6 +682,7 @@ export function createPlayback({
         initialize() {
             if (initialized) return;
             initialized = true;
+            mediaSession.initialize();
             const modeSelect = document.getElementById('playback-mode');
             if (modeSelect) {
                 modeSelect.value = playbackPreference;
@@ -679,6 +693,7 @@ export function createPlayback({
                 });
             }
             actx.addEventListener?.('statechange', () => {
+                mediaSession.sync();
                 lyricsService.syncWordLyricPlayback?.();
                 renderService.scheduleRender?.(true);
             });

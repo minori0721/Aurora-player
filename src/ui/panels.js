@@ -59,6 +59,7 @@ export function createPanels({
                 else document.getElementById('toggle-advanced')?.focus({ preventScroll: true });
             }
             panel.classList.remove('show');
+            if (id === 'playlist-sidebar') playlistViewService.pausePlaylistCovers();
             const finish = event => {
                 if (event && (event.target !== panel || event.propertyName !== 'transform')) return;
                 if (state.open) return;

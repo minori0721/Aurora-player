@@ -3,8 +3,7 @@ import { extractLyricsText } from '../lyrics/parser.js';
 export function createMetadata({
     covers: coversService,
     dom: domService,
-    lyrics: lyricsService,
-    playback: playbackService
+    lyrics: lyricsService
 } = {}) {
     function updateMediaSession() {
         if ('mediaSession' in navigator) {
@@ -14,10 +13,6 @@ export function createMetadata({
                 artist: domService.el.artist.textContent,
                 artwork: artworkSrc ? [{ src: domService.el.img.src, sizes: domService.el.img.complete && domService.el.img.naturalWidth ? `${domService.el.img.naturalWidth}x${domService.el.img.naturalHeight}` : 'any', ...(coversService.mainCoverMimeType ? { type: coversService.mainCoverMimeType } : {}) }] : []
             });
-            navigator.mediaSession.setActionHandler('play', playbackService.requestPlaybackPlay);
-            navigator.mediaSession.setActionHandler('pause', playbackService.requestPlaybackPause);
-            navigator.mediaSession.setActionHandler('previoustrack', () => document.getElementById('prev-btn').click());
-            navigator.mediaSession.setActionHandler('nexttrack', () => document.getElementById('next-btn').click());
         }
     }
 
