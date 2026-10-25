@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLyricRequests, isLyricResponse } from '../src/lyrics/requests.js';
+import { createLyricRequests, isLyricResponse, lyricCacheTtl } from '../src/lyrics/requests.js';
 import { createLyrics } from '../src/lyrics/controller.js';
 import { createCache } from '../src/storage/cache.js';
 import { createTransfer } from '../src/audio/transfer.js';
@@ -28,7 +28,7 @@ function fixture(t) {
     const cache = { async cachedFetchJson(url, options, ttl) {
         if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         calls.push({ url, options, ttl });
-        return transfer.awaitWithSignal(Promise.resolve(state.handler()), options.signal);
+        return transfer.awaitWithSignal(Promise.resolve(state.handler(url)), options.signal);
     } };
     const requests = createLyricRequests({ api, cache });
     t.after(() => { requests.cancelPrefetch(); requests.cancelTaken(); });
@@ -57,7 +57,11 @@ test('one raw lyric request covers all languages/YRC and deduplicates the same b
     assert.equal(requests.prefetch(0), false); assert.equal(requests.prefetch('2'), false);
     requests.prefetch(2); requests.prefetch(2); await settle();
     assert.equal(calls.length, 1); assert.match(calls[0].url, /\/lyric\/new\?id=2$/);
-    assert.equal(calls[0].ttl, 3600_000); assert.equal(calls[0].options.priority, 'idle');
+    assert.equal(calls[0].ttl, lyricCacheTtl);
+    assert.equal(calls[0].ttl(payload()), 24 * 3600_000);
+    assert.equal(calls[0].ttl({ nolyric: true }), 3600_000);
+    assert.equal(calls[0].options.staleWhileRevalidate, true);
+    assert.equal(calls[0].options.priority, 'idle');
     assert.equal(calls[0].options.requestPriority.value, 'idle');
     assert.deepEqual(await requests.take(2), payload());
 });
@@ -205,11 +209,11 @@ test('credits and very short cues do not acquire a neighboring row of timed word
 
 test('local-file cloud matching uses the same paired YRC tracks as direct online playback', async t => {
     const { lyrics, state, box } = controllerFixture(t);
-    state.handler = () => ({ code: 200, result: { songs: [{ id: 2, name: 'fixture', ar: [{ name: 'Example' }] }] } });
-    globals(t, { fetch: async () => Response.json({ code: 200,
+    state.handler = url => url.includes('/lyric/new') ? { code: 200,
         lrc: { lyric: '[00:00.780]one\n[00:07.298]two' },
         yrc: { lyric: '[930,6000](930,6000,0)one\n[7400,7000](7400,7000,0)two' },
-        ytlrc: { lyric: '[00:00.930]paired one\n[00:07.400]paired two' } }) });
+        ytlrc: { lyric: '[00:00.930]paired one\n[00:07.400]paired two' }
+    } : { code: 200, result: { songs: [{ id: 2, name: 'fixture', ar: [{ name: 'Example' }] }] } };
     lyrics.neteaseSearchEnabled = true; lyrics.lyricDisplayMode = 'both';
     const session = lyrics.createLocalLyricSession({}, () => true);
     lyrics.applyLocalLyricMetadata(session, { title: 'fixture', artist: 'Example' }, 'local');

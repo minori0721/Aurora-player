@@ -11,6 +11,69 @@ test('space grouping is literal and retains a mixed-language Latin suffix as a s
     assert.deepEqual(parts('  希望をもって\t\tmemories　fade  '), ['希望をもって', 'memories　fade']);
 });
 
+test('Latin runs are identified across the whole text, independent of surrounding scripts or brackets', () => {
+    for (const [text, expected] of [
+        ['予想外の連続に 天変地異のようなNew game', ['予想外の連続に', '天変地異のようなNew game']],
+        ['朝の光 New gameが始まる 今', ['朝の光', 'New gameが始まる', '今']],
+        ['带着希望 走进New game的世界 明天', ['带着希望', '走进New game的世界', '明天']],
+        ['새로운 꿈으로New game 시작', ['새로운', '꿈으로New game', '시작']],
+        ['希望 (New game) 明日', ['希望', '(New game)', '明日']],
+        ["希望 don't stop, won't fade", ['希望', "don't stop,", "won't fade"]],
+        ['希望 caf\u00e9 de\u0301j\u00e0 vu 明日', ['希望', 'caf\u00e9 de\u0301j\u00e0 vu', '明日']],
+        ['希望 \ud83d\udeb6\ud83c\udffd\u200d\u2640\ufe0f memories fade e\u0301cho', ['希望', '\ud83d\udeb6\ud83c\udffd\u200d\u2640\ufe0f', 'memories fade e\u0301cho']],
+        ['希望 hello - world 明日', ['希望', 'hello', '-', 'world', '明日']],
+        ['希望 12 34 明日', ['希望', '12', '34', '明日']]
+    ]) assert.deepEqual(parts(text), expected);
+});
+
+test('the strong plan protects mixed Latin runs and the weaker plan retains ordinary boundaries', () => {
+    const text = '予想外の連続に 天変地異のようなNew game';
+    assert.deepEqual(lyricWrapCandidates(text).map(ranges => ranges.map(([start, end]) => text.slice(start, end))), [
+        ['予想外の連続に', '天変地異のようなNew game'],
+        ['予想外の連続に', '天変地異のようなNew', 'game']
+    ]);
+    assert.deepEqual(parts(text, false), ['予想外の連続に', '天変地異のようなNew', 'game']);
+});
+
+test('range protection only removes base boundaries, preserves text and never creates extra candidates', () => {
+    const prefixes = ['朝の光', '明日のNew', '新的caf\u00e9', '꿈New', '(New', '\ud83c\udfb5New'];
+    const separators = [' ', '\t', '\u3000', '\u00a0', '\u202f'];
+    const tails = ['game 明日', "don't fade 明日", 'de\u0301j\u00e0 vu)', 'game！？ 明日'];
+    for (const prefix of prefixes) for (const separator of separators) for (const tail of tails) {
+        const text = `希望 ${prefix}${separator}${tail}`, base = lyricPhraseRanges(text, false);
+        const boundaries = new Set(base.slice(0, -1).map(range => range[1]));
+        const strong = lyricPhraseRanges(text), snapshot = JSON.stringify(strong);
+        for (const [start, end] of strong) { assert.ok(start >= 0 && end <= text.length && start < end); }
+        assert.ok(strong.slice(0, -1).every(range => boundaries.has(range[1])));
+        let restored = '', offset = 0;
+        for (const [start, end] of strong) { restored += text.slice(offset, start) + text.slice(start, end); offset = end; }
+        assert.equal(restored + text.slice(offset), text);
+        assert.ok(lyricWrapCandidates(text).length <= 2);
+        assert.equal(JSON.stringify(lyricPhraseRanges(text)), snapshot);
+    }
+});
+
+test('mixed-script timed ranges never split the Latin run or rebuild time nodes', () => {
+    const text = '予想外の連続に 天変地異のようなNew game';
+    const nodes = ['予想外の連続に ', '天変地異のようなNew ', 'game'];
+    assert.deepEqual(timedPhraseCuts(text, lyricPhraseRanges(text), nodes.map(value => value.length)), [1]);
+    const value = host({ text, timed: nodes }); value.manager.refresh();
+    const originals = [...value.elements[0].childNodes];
+    assert.equal(value.manager.layout(), true);
+    assert.deepEqual(value.content.querySelectorAll('.yrc-char'), originals);
+    assert.deepEqual(value.content.querySelectorAll('.lyric-phrase').map(node => node.textContent), ['天変地異のようなNew game']);
+    value.manager.reset(); assert.deepEqual(value.elements[0].childNodes, originals);
+});
+
+test('near-limit Latin words and dense boundaries remain bounded without special-case text rules', () => {
+    const long = 'W'.repeat(740);
+    assert.deepEqual(parts('希望 ' + long), ['希望', long]);
+    const pair = 'W'.repeat(360) + ' ' + 'x'.repeat(360);
+    assert.deepEqual(parts('希望 ' + pair), ['希望', pair]);
+    assert.deepEqual(lyricWrapCandidates('希望 ' + long + 'x'.repeat(40)), []);
+    assert.deepEqual(lyricWrapCandidates(Array(49).fill('New希望').join(' ')), []);
+});
+
 test('punctuation stays on the preceding phrase, with closing quotes and numeric separators intact', () => {
     assert.deepEqual(parts('「出発しよう。」そして、明日へ！'), ['「出発しよう。」', 'そして、', '明日へ！']);
     assert.deepEqual(parts('心跳，继续；明天：再见。'), ['心跳，', '继续；', '明天：', '再见。']);

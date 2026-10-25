@@ -8,7 +8,7 @@ import { ROOT, buildHtml } from './build.mjs';
 
 const globals = new Set(`window document navigator localStorage sessionStorage indexedDB history location console performance
     AudioContext ColorThief jsmediatags Image File FileReader Blob Worker URL URLSearchParams ResizeObserver
-    IntersectionObserver HTMLElement Element Event MediaMetadata AbortController AbortSignal DOMException TextDecoder
+    IntersectionObserver HTMLElement Element Event MediaMetadata AbortController AbortSignal DOMException TextDecoder TextEncoder
     ReadableStream Response Request Headers
     Uint8Array Uint16Array Uint32Array Int16Array Float32Array Float64Array ArrayBuffer DataView WeakMap WeakSet Map Set
     Object Reflect Array String Number Boolean Math Date Promise Error TypeError RangeError JSON RegExp Symbol Infinity

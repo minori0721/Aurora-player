@@ -1,6 +1,7 @@
 import { createRequestPriority } from '../storage/cache.js';
 
-const LYRIC_CACHE_TTL_MS = 3600_000;
+const LYRIC_CACHE_TTL_MS = 24 * 3600_000;
+const EMPTY_LYRIC_CACHE_TTL_MS = 3600_000;
 const PREFETCH_TIMEOUT_MS = 12_000;
 
 export function isLyricResponse(data) {
@@ -9,13 +10,20 @@ export function isLyricResponse(data) {
             .some(key => typeof data[key]?.lyric === 'string'));
 }
 
+export function lyricCacheTtl(data) {
+    const hasText = !data?.nolyric && !data?.uncollected
+        && ['lrc', 'tlyric', 'trans', 'romalrc', 'yrc']
+            .some(key => typeof data?.[key]?.lyric === 'string' && data[key].lyric.trim());
+    return hasText ? LYRIC_CACHE_TTL_MS : EMPTY_LYRIC_CACHE_TTL_MS;
+}
+
 export function createLyricRequests({ api, cache } = {}) {
     let background = null, taken = null;
 
     function load(songId, options = {}) {
         return cache.cachedFetchJson(api.buildApiUrl(`/lyric/new?id=${songId}`), {
-            ...options, useQueue: true, cachePredicate: isLyricResponse
-        }, LYRIC_CACHE_TTL_MS);
+            ...options, useQueue: true, staleWhileRevalidate: true, cachePredicate: isLyricResponse
+        }, lyricCacheTtl);
     }
 
     function cancelPrefetch() {

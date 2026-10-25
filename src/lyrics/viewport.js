@@ -10,6 +10,9 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     let lines = [], centers = [], geometry = [], active = -1, preview = null, browsing = false, disposed = false;
     let anticipated = -1;
     let followTarget = null, followEnd = null, layoutSmooth = false, pendingReflow = false;
+    let scrolling = false, layoutDirty = false, refreshWrapping = false, returning = false, selecting = false, returnTimer = 0;
+    let returnRevision = 0;
+    let shownTime = null;
     let resumeTimer = 0, settleTimer = 0, paintFrame = 0, layoutFrame = 0, generation = 0;
     let playing = !!isPlaying(), pointer = null, touches = 0, touchMoved = false, keyboardReading = false;
     let suppressClickUntil = 0, lastScrollAt = -Infinity;
@@ -31,7 +34,33 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     const clearResume = () => { environment.clearTimeout(resumeTimer); resumeTimer = 0; };
     const clearSettle = () => { environment.clearTimeout(settleTimer); settleTimer = 0; };
     const moveTo = scrollMotion.moveTo;
-    const cancelFollowing = () => { anticipated = -1; followEnd = null; scrollMotion.cancel(); };
+    const cancelFollowing = () => { cancelReturn(); anticipated = -1; followEnd = null; scrollMotion.cancel(); };
+
+    function cancelReturn() {
+        returnRevision++;
+        environment.clearTimeout(returnTimer); returnTimer = 0;
+        if (!returning) return;
+        returning = false; followTarget = null;
+        viewport.scrollTo?.({ top: top(), behavior: 'auto' });
+    }
+
+    function finishReturn() {
+        if (!returning) return;
+        returnRevision++;
+        environment.clearTimeout(returnTimer); returnTimer = 0;
+        returning = false; followTarget = null;
+        if (layoutDirty || refreshWrapping) relayout(false, { position: false });
+        const target = Math.max(0, Math.min(maxScroll(), centers[active] - followPoint));
+        if (Number.isFinite(target) && Math.abs(target - top()) >= .5) align();
+        else followTarget = target;
+        paint();
+    }
+
+    function waitForReturn() {
+        environment.clearTimeout(returnTimer);
+        const revision = ++returnRevision;
+        returnTimer = environment.setTimeout(() => { if (revision === returnRevision) finishReturn(); }, SCROLL_SETTLE_MS);
+    }
 
     function cancelLayoutShifts() {
         for (const animation of layoutShifts.values()) animation.cancel();
@@ -81,8 +110,11 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         const time = Number(lines[index]?.dataset.time);
         timeHint.hidden = !Number.isFinite(time) || time < 0;
         if (!timeHint.hidden) {
-            timeHint.textContent = `浏览 ${fmtTime(time)}`;
-            timeHint.setAttribute('aria-label', `浏览位置 ${fmtTime(time)}`);
+            if (shownTime !== time) {
+                shownTime = time;
+                timeHint.textContent = `浏览 ${fmtTime(time)}`;
+                timeHint.setAttribute('aria-label', `浏览位置 ${fmtTime(time)}`);
+            }
         }
     }
 
@@ -95,7 +127,8 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         else timeHint.hidden = true;
         if (!returnButton.hidden) {
             const position = centers[active] - top();
-            returnButton.dataset.direction = position < height() * .15 ? 'up' : position > height() * .85 ? 'down' : 'here';
+            const direction = position < height() * .15 ? 'up' : position > height() * .85 ? 'down' : 'here';
+            if (returnButton.dataset.direction !== direction) returnButton.dataset.direction = direction;
         }
     }
 
@@ -105,6 +138,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     }
 
     function align(smooth = true) {
+        if (returning) return;
         const index = anticipated >= 0 ? anticipated : active;
         if (index < 0 || !Number.isFinite(centers[index])) return;
         const target = centers[index] - followPoint;
@@ -115,12 +149,19 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     function returnToCurrent() {
         if (!lines.length || active < 0 || disposed) return;
         const restoreFocus = doc.activeElement === returnButton;
-        anticipated = -1;
+        cancelFollowing(); anticipated = -1;
+        cancelLayoutShifts(); scrolling = false;
         clearResume(); clearSettle(); browsing = false; keyboardReading = false;
         shell.classList?.remove('lyrics-browsing');
+        if (layoutFrame || layoutDirty || refreshWrapping || wrapping.layout(lines[active])) relayout(false, { position: false });
         paint();
-        if (layoutFrame) { followTarget = null; scheduleLayout(true); }
-        else align();
+        const target = Math.max(0, Math.min(maxScroll(), centers[active] - followPoint));
+        followTarget = target;
+        if (!reduced.matches && !doc.hidden && typeof viewport.scrollTo === 'function' && Math.abs(target - top()) >= .5) {
+            returning = true;
+            viewport.scrollTo({ top: target, behavior: 'smooth' });
+            waitForReturn();
+        } else moveTo(target);
         if (restoreFocus) viewport.focus({ preventScroll: true });
     }
 
@@ -136,14 +177,29 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
 
     function settled() {
         clearSettle();
-        if (browsing) { scheduleLayout(); schedulePaint(); armResume(); }
+        if (returning) { finishReturn(); return; }
+        if (!browsing || !scrolling || pointer || touches) return;
+        scrolling = false;
+        if (layoutDirty || refreshWrapping || wrapping.layout(lines[nearestIndex()])) relayout();
+        schedulePaint(); armResume();
     }
 
     function beginBrowsing() {
-        cancelFollowing();
+        if (!browsing || returning) cancelFollowing();
         if (!lines.length || maxScroll() < 1) return;
         if (!browsing) { browsing = true; shell.classList?.add('lyrics-browsing'); moveTo(top()); }
+        scrolling = true;
+        if (layoutFrame) { environment.cancelAnimationFrame(layoutFrame); layoutFrame = 0; layoutDirty = true; }
         clearResume(); schedulePaint();
+    }
+
+    function settleAfterRelease() {
+        if (settleTimer) return;
+        if (browsing && scrolling) {
+            const remaining = SCROLL_SETTLE_MS - (now() - lastScrollAt);
+            if (remaining <= 0) settled();
+            else settleTimer = environment.setTimeout(settled, remaining);
+        } else armResume();
     }
 
     function measureLine(line) {
@@ -162,11 +218,14 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         return !previous || previous.height !== next.height || previous.anchor !== next.anchor || previous.center !== next.center || previous.origin !== next.origin;
     }
 
-    function relayout(smooth = false) {
+    function relayout(smooth = false, { position = true } = {}) {
         if (disposed) return;
+        if (browsing && scrolling) { layoutDirty = true; return; }
+        if (refreshWrapping) { wrapping.refresh(lines); refreshWrapping = false; }
+        layoutDirty = false;
         smooth = smooth || layoutSmooth; layoutSmooth = false;
         environment.cancelAnimationFrame(layoutFrame); layoutFrame = 0;
-        const index = browsing ? nearestIndex() : -1;
+        const index = browsing && position ? nearestIndex() : -1;
         const offset = index >= 0 ? centers[index] - top() - followPoint : 0;
         const visibleHeight = height();
         followPoint = visibleHeight / 2;
@@ -185,7 +244,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         wrapping.layout(lines[index >= 0 ? index : anticipated >= 0 ? anticipated : active]);
         // Read geometry together, then update only changed transform anchors.
         const next = lines.map(measureLine);
-        if (pendingReflow) compensateReflow(geometry, next);
+        if (pendingReflow && position) compensateReflow(geometry, next);
         pendingReflow = false;
         next.forEach(({ origin }, index) => {
             if (geometry[index]?.origin !== origin) lines[index].style.setProperty('--lyric-anchor-y', `${origin}px`);
@@ -194,17 +253,18 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         centers = next.map(line => line.center);
         scrollMotion.refresh();
         const followIndex = anticipated >= 0 ? anticipated : active;
-        if (browsing && index >= 0 && !pointer && !touches) {
+        if (position && browsing && index >= 0 && !pointer && !touches) {
             const target = centers[index] - followPoint - offset;
             if (Math.abs(target - top()) > .5) moveTo(target);
         }
-        else if (!browsing && Number.isFinite(centers[followIndex])
+        else if (position && !browsing && Number.isFinite(centers[followIndex])
             && (followTarget === null || Math.abs(centers[followIndex] - followPoint - followTarget) > .5)) align(smooth);
         paint();
     }
 
     function scheduleLayout(smooth = false) {
         if (smooth === true) layoutSmooth = true;
+        if (browsing && scrolling) { layoutDirty = true; return; }
         if (disposed || layoutFrame || doc.hidden) return;
         layoutFrame = environment.requestAnimationFrame(() => { layoutFrame = 0; relayout(); });
     }
@@ -221,6 +281,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         preview?.classList.remove('lyric-preview'); preview = null;
         lines = []; centers = []; geometry = []; active = -1; browsing = false;
         followTarget = followEnd = null; layoutSmooth = false; pendingReflow = false;
+        scrolling = layoutDirty = refreshWrapping = returning = selecting = false; shownTime = null;
         shell.classList?.remove('lyrics-browsing');
         content.style.paddingTop = content.style.paddingBottom = '0px';
         content.style.transform = '';
@@ -242,17 +303,34 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     function activate(line) {
         if (!line || !lines.includes(line) || selectionInside()) return;
         const time = Number(line.dataset.time);
-        if (Number.isFinite(time) && time >= 0 && seek(time) !== false) returnToCurrent();
+        if (!Number.isFinite(time) || time < 0) return;
+        const stamp = generation;
+        cancelFollowing(); clearResume(); clearSettle();
+        // Commit the transport and active row before allowing a single positioning pass.
+        selecting = true;
+        let accepted;
+        try { accepted = seek(time) !== false; }
+        finally { selecting = false; }
+        if (disposed || stamp !== generation) return;
+        if (accepted) returnToCurrent();
+        else if (!browsing && !blocked()) align();
+        else armResume();
     }
 
     listen(viewport, 'scroll', () => {
+        if (returning) { waitForReturn(); return; }
         if (!browsing && (pointer || touches)) beginBrowsing();
         if (!browsing) return;
+        scrolling = true;
         if (touches) touchMoved = true;
         lastScrollAt = now(); clearResume(); clearSettle(); schedulePaint();
         settleTimer = environment.setTimeout(settled, SCROLL_SETTLE_MS);
     }, { passive: true });
-    listen(viewport, 'scrollend', settled, { passive: true });
+    listen(viewport, 'scrollend', () => {
+        // Cancelling an older native scroll may deliver its scrollend after a new return starts.
+        if (returning && Math.abs(top() - Math.max(0, Math.min(maxScroll(), followTarget))) >= .5) { waitForReturn(); return; }
+        settled();
+    }, { passive: true });
     listen(viewport, 'wheel', event => {
         if (event.ctrlKey || !event.deltaY) return;
         beginBrowsing(); clearSettle();
@@ -276,7 +354,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         if (pointer.moved || event.type === 'pointercancel') suppressClickUntil = now() + 500;
         pointer = null;
         if (!browsing && !touches && !selectionInside()) align();
-        if (!settleTimer) armResume();
+        settleAfterRelease();
     };
     listen(doc, 'pointerup', releasePointer, { passive: true });
     listen(doc, 'pointercancel', releasePointer, { passive: true });
@@ -287,7 +365,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
             if (touchMoved) suppressClickUntil = now() + 500;
             touchMoved = false;
             if (!browsing && !pointer && !selectionInside()) align();
-            if (!settleTimer) armResume();
+            settleAfterRelease();
         }
     };
     listen(viewport, 'touchend', releaseTouch, { passive: true });
@@ -342,10 +420,10 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     }
 
     return {
-        reset, relayout(smooth = false) { wrapping.refresh(lines); relayout(smooth); }, syncPlayback, returnToCurrent,
+        reset, relayout(smooth = false) { refreshWrapping = true; relayout(smooth); }, syncPlayback, returnToCurrent,
         setLines(next) { reset(); lines = [...next]; wrapping.refresh(lines); relayout(); },
         anticipate(index) {
-            if (disposed || browsing || blocked() || reduced.matches || !isPlaying() || active < 0 || index !== active + 1
+            if (disposed || selecting || returning || browsing || blocked() || reduced.matches || !isPlaying() || active < 0 || index !== active + 1
                 || !Number.isFinite(centers[index])) return false;
             if (anticipated === index) return true;
             anticipated = index;
@@ -361,6 +439,12 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
             if (changed || force) anticipated = -1;
             active = index;
             if (!changed && !force) return;
+            if (selecting || browsing || returning) {
+                layoutDirty = true;
+                scrollMotion.setActive(lines[index], { smooth: previous >= 0 });
+                paint();
+                return;
+            }
             if (wrapping.layout(lines[index]) || layoutFrame || geometryChanged(previous) || geometryChanged(index)) {
                 pendingReflow = pendingReflow || previous >= 0 && changed;
                 // Apply the changed row geometry before this frame paints, not one frame later.

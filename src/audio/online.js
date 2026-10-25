@@ -1,5 +1,6 @@
 import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
 import { createAudioQualityProbe, describeAudioQualityFromBuffer, describeAudioQualityFromInfo, inferAudioTypeFromUrl, parseFlacStreamInfoFromBuffer } from './quality.js';
+import { readMp3StreamInfo } from './mp3.js';
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
 
 export function createOnlinePlayback({
@@ -184,14 +185,16 @@ export function createOnlinePlayback({
                 return completeWork;
             };
             const supplementStreamQuality = async () => {
-                if (inferAudioTypeFromUrl(resolved.candidates[0], resolved.audioInfo?.type) !== 'flac' || playbackService.audioBuffer) return;
-                const header = blob ? await blob.slice(0, 4096).arrayBuffer()
-                    : await transferService.fetchAudioHeader(resolved.candidates[0], { signal });
+                const audioUrl = resolved.candidates[0], info = resolved.audioInfo;
+                const type = inferAudioTypeFromUrl(audioUrl, info?.type);
+                if (!['flac', 'mp3'].includes(type) || type === 'mp3' && Number(info?.br) > 0 || playbackService.audioBuffer) return;
+                const readRange = start => blob ? blob.slice(start, start + 4096).arrayBuffer()
+                    : transferService.fetchAudioHeader(audioUrl, { signal, start });
+                const streamInfo = type === 'mp3' ? await readMp3StreamInfo(readRange, { totalBytes: blob?.size || 0 })
+                    : parseFlacStreamInfoFromBuffer(await readRange(0));
                 guard();
-                if (!header || playbackService.audioBuffer || !playbackService.isStreaming) return;
-                const streamInfo = parseFlacStreamInfoFromBuffer(header);
-                if (!streamInfo) return;
-                metadataService.currentAudioQuality = describeAudioQualityFromInfo(resolved.audioInfo, resolved.candidates[0], streamInfo).label;
+                if (!streamInfo || resolved.candidates[0] !== audioUrl || playbackService.audioBuffer || !playbackService.isStreaming) return;
+                metadataService.currentAudioQuality = describeAudioQualityFromInfo(info, audioUrl, streamInfo).label;
                 lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
             };
             await playbackService.prepareStream(load, {

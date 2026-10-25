@@ -10,8 +10,8 @@ test('lyric padding stays immediate when reduced-motion sets a global transition
     assert.match(rule, /transition:\s*none\s*;/);
 });
 
-function fixture({ cover = null, desktop = true, reduced = true, withVisuals = false } = {}) {
-    let now = 0, sequence = 0, selected = false, resizeCallback = () => {};
+function fixture({ cover = null, desktop = true, reduced = true, withVisuals = false, nativeSmooth = false, onSeek = null } = {}) {
+    let now = 0, sequence = 0, selected = false, resizeCallback = () => {}, geometryReads = 0;
     const timers = new Map(), frames = new Map(), moves = [], seeks = [];
     const doc = new FakeElement(), shell = new FakeElement(), viewport = new FakeElement(), content = new FakeElement();
     const button = new FakeElement(), hint = new FakeElement(), state = { playing: true, reduced, desktop };
@@ -22,7 +22,7 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
     const lines = Array.from({ length: 20 }, (_, index) => {
         const line = new FakeElement(); line.dataset.time = String(index * 5); line.dataset.lyricTime = line.dataset.time;
         line.closest = selector => selector === '[data-lyric-time]' ? line : null;
-        Object.defineProperty(line, 'offsetTop', { configurable: true, get: () => (parseFloat(content.style.paddingTop) || 0) + index * 60 });
+        Object.defineProperty(line, 'offsetTop', { configurable: true, get: () => { geometryReads++; return (parseFloat(content.style.paddingTop) || 0) + index * 60; } });
         line.offsetHeight = 44;
         if (withVisuals) {
             const visual = new FakeElement(), original = new FakeElement(), subtitle = new FakeElement();
@@ -36,7 +36,7 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
     viewport.contains = node => node === viewport || node === content || lines.includes(node);
     viewport.focus = () => { doc.activeElement = viewport; };
     Object.defineProperty(viewport, 'scrollHeight', { get: () => (parseFloat(content.style.paddingTop) || 0) + (parseFloat(content.style.paddingBottom) || 0) + 19 * 60 + 44 });
-    viewport.scrollTo = options => { viewport.scrollTop = options.top; moves.push(options); };
+    viewport.scrollTo = options => { if (!nativeSmooth || options.behavior !== 'smooth') viewport.scrollTop = options.top; moves.push(options); };
     doc.hidden = false; doc.getSelection = () => ({ isCollapsed: !selected, anchorNode: lines[0] });
     const environment = Object.assign(new FakeElement(), {
         performance: { now: () => now },
@@ -60,13 +60,13 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
     const event = (target, type, extra = {}) => target.dispatchEvent({ type, target, preventDefault() {}, stopPropagation() {}, ...extra });
     let view;
     view = createLyricViewport(viewport, { content, returnButton: button, timeHint: hint, alignmentTarget: cover, environment, document: doc,
-        isPlaying: () => state.playing, seek: time => { seeks.push(time); view.setActive(time / 5); } });
+        isPlaying: () => state.playing, seek: time => { seeks.push(time); if (onSeek) return onSeek(time, view); view.setActive(time / 5); } });
     view.setLines(lines); view.setActive(2);
     const scroll = top => { viewport.scrollTop = top; event(viewport, 'scroll'); flush(); };
     const wheel = () => event(viewport, 'wheel', { deltaY: 120 });
     const click = line => event(content, 'click', { target: line });
     return { view, shell, viewport, content, button, hint, state, lines, doc, environment, timers, frames, moves, seeks,
-        event, tick, flush, scroll, wheel, click, header, controls, observed, resize: () => resizeCallback(),
+        event, tick, flush, scroll, wheel, click, header, controls, observed, resize: () => resizeCallback(), geometryReads: () => geometryReads,
         select(value) { selected = value; event(doc, 'selectionchange'); } };
 }
 
@@ -77,6 +77,42 @@ test('lyrics follow only when the active line changes, with no persistent idle t
     f.view.setActive(3); assert.equal(f.viewport.scrollTop, 202);
     assert.equal(f.button.hidden, true); assert.equal(f.timers.size, 0); assert.equal(f.frames.size, 0);
     f.view.dispose();
+});
+
+test('continuous browsing cancels follow only once and defers geometry work until the gesture ends', () => {
+    const f = fixture(), before = f.moves.length;
+    f.wheel(); f.scroll(600);
+    const reads = f.geometryReads(), entered = f.moves.length;
+    for (let index = 3; index < 15; index++) { f.wheel(); f.view.setActive(index); f.view.relayout(); }
+    assert.equal(entered, before + 1); assert.equal(f.moves.length, entered);
+    assert.equal(f.geometryReads(), reads);
+    f.tick(180); assert.ok(f.geometryReads() > reads);
+    const settled = f.geometryReads(); f.event(f.viewport, 'scrollend'); f.flush();
+    assert.equal(f.geometryReads(), settled, 'native event and timer must not duplicate layout');
+    f.view.dispose();
+});
+
+test('returning far away uses native smooth scrolling and cannot be overwritten by a cue change', () => {
+    const f = fixture({ reduced: false, nativeSmooth: true });
+    f.wheel(); f.scroll(1100); f.view.returnToCurrent();
+    assert.equal(f.moves.at(-1).behavior, 'smooth'); assert.equal(f.viewport.scrollTop, 1100);
+    const moves = f.moves.length;
+    f.view.setActive(6); assert.equal(f.moves.length, moves);
+    f.scroll(142); f.event(f.viewport, 'scrollend'); f.tick(400);
+    assert.equal(f.viewport.scrollTop, 382); assert.deepEqual(f.seeks, []);
+    f.view.dispose();
+});
+
+test('manual input interrupts native return and stale callbacks cannot finish a later return', () => {
+    const f = fixture({ reduced: false, nativeSmooth: true });
+    f.wheel(); f.scroll(1100); f.view.returnToCurrent();
+    const old = [...f.timers.values()].at(-1).callback;
+    f.wheel(); f.scroll(900); f.view.returnToCurrent();
+    const moves = f.moves.length; old();
+    assert.equal(f.moves.length, moves); assert.equal(f.viewport.scrollTop, 900);
+    f.wheel(); f.scroll(800); f.tick(180);
+    assert.equal(f.viewport.scrollTop, 800); assert.equal(f.button.hidden, false);
+    f.view.dispose(); assert.equal(f.timers.size, 0);
 });
 
 test('wheel browsing keeps playback separate and resumes six seconds after scrolling settles', () => {
@@ -124,6 +160,47 @@ test('return button aligns to the latest playing line without seeking or changin
     f.state.playing = false; f.view.syncPlayback(); f.doc.activeElement = f.button; f.event(f.button, 'click');
     assert.equal(f.viewport.scrollTop, 622); assert.equal(f.state.playing, false); assert.deepEqual(f.seeks, []);
     assert.equal(f.doc.activeElement, f.viewport);
+    f.view.dispose();
+});
+
+test('clicking a following lyric commits its new active line before starting exactly one return', () => {
+    const f = fixture({ reduced: false, nativeSmooth: true, withVisuals: true }), before = f.moves.length;
+    f.click(f.lines[8]);
+    assert.deepEqual(f.seeks, [40]);
+    assert.equal(f.moves.length, before + 1);
+    assert.equal(f.moves.at(-1).behavior, 'smooth');
+    assert.equal(f.moves.at(-1).top, f.lines[8].offsetTop + 17 - 90);
+    const target = f.moves.at(-1).top, moves = f.moves.length;
+    f.scroll(target); f.event(f.viewport, 'scrollend'); f.flush(); f.tick(500);
+    assert.equal(f.moves.length, moves, 'finishing an aligned return must not write the position again');
+    assert.equal(f.viewport.scrollTop, target);
+    f.view.dispose();
+});
+
+test('a later clicked line wins and reset during a seek invalidates the old positioning pass', () => {
+    const f = fixture({ reduced: false, nativeSmooth: true });
+    f.click(f.lines[8]); f.click(f.lines[12]);
+    assert.deepEqual(f.seeks, [40, 60]);
+    const target = f.moves.at(-1).top;
+    assert.equal(target, f.lines[12].offsetTop + 22 - 90);
+    f.scroll(target); f.event(f.viewport, 'scrollend'); f.tick(1000);
+    assert.equal(f.viewport.scrollTop, target);
+    f.view.dispose();
+    const g = fixture({ onSeek: (time, view) => { view.reset(); return true; } });
+    g.click(g.lines[8]);
+    assert.equal(g.button.hidden, true);
+    assert.equal(g.viewport.scrollTop, 0);
+    g.view.dispose();
+});
+
+test('a cancelled native scrollend cannot finish a newer lyric return before it reaches its target', () => {
+    const f = fixture({ reduced: false, nativeSmooth: true });
+    f.wheel(); f.scroll(1100); f.view.returnToCurrent(); f.click(f.lines[12]);
+    const count = f.moves.length, target = f.moves.at(-1).top;
+    f.event(f.viewport, 'scrollend');
+    assert.equal(f.moves.length, count); assert.equal(f.viewport.scrollTop, 1100);
+    f.scroll(target); f.event(f.viewport, 'scrollend');
+    assert.equal(f.moves.length, count); assert.equal(f.viewport.scrollTop, target);
     f.view.dispose();
 });
 

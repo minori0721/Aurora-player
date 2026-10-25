@@ -461,11 +461,7 @@ export function createLyrics({
             debugService.log(`匹配歌曲 ID：${songId} - ${bestMatch.name}`);
 
             // 获取歌词
-            const lyricResp = await fetch(apiService.buildApiUrl(`/lyric/new?id=${songId}`), { signal: options.signal });
-            if (!isCurrent()) return false;
-            if (!lyricResp.ok) throw new Error('获取歌词失败');
-
-            const lyricData = await lyricResp.json();
+            const lyricData = await lyricRequests.load(songId, { signal: options.signal, priority: 'interactive' });
             if (!isCurrent()) return false;
 
             const tracks = selectNeteaseLyricTracks(lyricData);
@@ -694,9 +690,15 @@ export function createLyrics({
                 isPlaying: () => playbackService.playbackState.isPlaying,
                 seek: time => {
                     if (!(playbackService.hasAudio ?? playbackService.audioBuffer) || time > playbackService.playbackState.duration) return false;
-                    playbackService.startAudio(time);
-                    refreshLyricHighlightAndCenter(true);
-                    return true;
+                    try {
+                        playbackService.seekAudio(time);
+                        if (!playbackService.playbackState.isPlaying && playbackService.startAudio(playbackService.getCurrentTime()) === false) return false;
+                        refreshLyricHighlightAndCenter(true);
+                        return true;
+                    } catch (error) {
+                        debugService.log(`歌词跳转失败：${error.message || error}`, 'warn');
+                        return false;
+                    }
                 }
             });
             wordMotion = createWordLyricMotion(document.getElementById('lyrics-box'), {

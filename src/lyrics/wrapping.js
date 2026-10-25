@@ -6,7 +6,8 @@ const CLOSING = /[」』）\]})”’»]/u;
 const ENDING = /[，。、！？；：,.!?;:…‥]/u;
 const DIGIT = /\p{Nd}/u;
 const LATIN = /\p{Script=Latin}/u;
-const LATIN_RUN = /^[\p{Script=Latin}\p{M}\p{N}\p{P}\p{Zs}\t]+$/u;
+const LATIN_WORD = /[\p{Script=Latin}\p{N}][\p{Script=Latin}\p{M}\p{N}'\u2019-]*/gu;
+const WORD_SPACE = /^[ \t\u3000\u00a0\u202f]+$/u;
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const RTL = /[\p{Script=Arabic}\p{Script=Hebrew}]/u;
 
@@ -20,7 +21,7 @@ function punctuationAt(text, index) {
         && (index + 1 === text.length || SPACE.test(text[index + 1]) || CLOSING.test(text[index + 1]));
 }
 
-export function lyricPhraseRanges(text, joinLatin = true) {
+function phraseBoundaries(text) {
     if (typeof text !== 'string' || text.length > MAX_TEXT || /[\r\n]/u.test(text) || RTL.test(text)) return [];
     const ranges = [];
     let start = 0, index = 0;
@@ -44,28 +45,46 @@ export function lyricPhraseRanges(text, joinLatin = true) {
         if (previous && GLUE.test(text.slice(previous[1] - 1, range[0] + 1))) previous[1] = range[1];
         else protectedRanges.push([...range]);
     }
-    if (!joinLatin) return protectedRanges;
+    return protectedRanges;
+}
+
+function protectLatinRanges(text, ranges) {
+    if (ranges.length < 2 || !LATIN.test(text)) return ranges;
+    const runs = [];
+    let run = null;
+    for (const match of text.matchAll(LATIN_WORD)) {
+        const start = match.index, end = start + match[0].length, latin = LATIN.test(match[0]);
+        if (run && WORD_SPACE.test(text.slice(run.end, start))) {
+            run.end = end; run.latin ||= latin; run.joined = true;
+        } else {
+            if (run?.joined && run.latin) runs.push([run.start, run.end]);
+            run = { start, end, latin, joined: false };
+        }
+    }
+    if (run?.joined && run.latin) runs.push([run.start, run.end]);
     const merged = [];
-    const latinEdge = (value, end) => {
-        const pieces = glued ? value.split(GLUE) : [value];
-        const edge = pieces[end ? pieces.length - 1 : 0];
-        return LATIN.test(edge) && LATIN_RUN.test(edge);
-    };
-    for (const range of protectedRanges) {
-        const previous = merged[merged.length - 1], value = text.slice(...range);
-        if (previous && latinEdge(value, false) && latinEdge(text.slice(...previous), true)
-            && /^[ \t\u3000]+$/u.test(text.slice(previous[1], range[0]))
-            && !/[，。、！？；：,.!?;:][」』）\]})”’»]*$/u.test(text.slice(...previous))) previous[1] = range[1];
+    let index = 0;
+    for (const range of ranges) {
+        const previous = merged[merged.length - 1];
+        while (previous && index < runs.length && runs[index][1] <= previous[1]) index++;
+        // A run can start inside a mixed-language group; only its internal boundaries are protected.
+        if (previous && index < runs.length && runs[index][0] < previous[1] && runs[index][1] > range[0]) previous[1] = range[1];
         else merged.push([...range]);
     }
     return merged;
 }
 
+export function lyricPhraseRanges(text, joinLatin = true) {
+    const ranges = phraseBoundaries(text);
+    return joinLatin ? protectLatinRanges(text, ranges) : ranges;
+}
+
 export function lyricWrapCandidates(text) {
-    if (!CJK.test(text)) return [];
-    const candidates = [lyricPhraseRanges(text, true)];
+    if (typeof text !== 'string' || !CJK.test(text)) return [];
+    const ranges = phraseBoundaries(text);
+    const candidates = [protectLatinRanges(text, ranges)];
     // With a protected join, a weaker plan could strand the first/last word of a Latin run.
-    if (!GLUE.test(text)) candidates.push(lyricPhraseRanges(text, false));
+    if (!GLUE.test(text)) candidates.push(ranges);
     const seen = new Set();
     return candidates.filter(ranges => {
         if (ranges.length < 2) return false;

@@ -7,6 +7,15 @@ import { createHost } from './helpers/host.mjs';
 const html = fs.readFileSync(new URL('../src/index.html', import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+test('music browser reserves its mini player in flex layout instead of covering the scrollbar', () => {
+    const css = fs.readFileSync(new URL('../src/styles/music.css', import.meta.url), 'utf8');
+    const mini = css.match(/\.music-mini-player\s*\{([^}]+)\}/)[1];
+    assert.match(mini, /position:\s*relative/); assert.match(mini, /flex:\s*0 0 auto/);
+    assert.doesNotMatch(mini, /position:\s*(absolute|fixed)/);
+    assert.match(css, /\.netease-browser-scroll\s*\{[^}]*min-height:\s*0/);
+    assert.doesNotMatch(css, /padding:[^;}]*\b(?:90|96)px/);
+});
+
 function fixture(t) {
     const { host, elements, frames } = createHost(html), scroller = { scrollTop: 540 };
     const imageLifecycle = [];

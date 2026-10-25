@@ -1,4 +1,5 @@
-import { describeJsonCache, isJsonResponseCacheable } from './cache-policy.js';
+import { describeJsonCache, isJsonResponseCacheable, canRevalidateJson, jsonCacheEntryBytes,
+    jsonCacheTtl, jsonCacheEvictions, JSON_CACHE_LIMITS } from './cache-policy.js';
 
 const REQUEST_PRIORITY_ORDER = ['interactive', 'normal', 'idle'];
 
@@ -74,7 +75,8 @@ export function createCache({
     }
 
     function qFetch(url, options = {}) {
-        const { priority: requestedPriority = 'normal', requestPriority = null, ...fetchOptions } = options;
+        const { priority: requestedPriority = 'normal', requestPriority = null, onRequestStart = null,
+            readResponse = null, ...fetchOptions } = options;
         const priority = requestPriority?.value || (REQUEST_PRIORITY_ORDER.includes(requestedPriority) ? requestedPriority : 'normal');
         const signal = fetchOptions.signal;
         return new Promise((resolve, reject) => {
@@ -88,7 +90,11 @@ export function createCache({
                 signal,
                 started: false,
                 finished: false,
-                fn: () => fetch(url, fetchOptions),
+                fn: async () => {
+                    onRequestStart?.();
+                    const response = await transferService.awaitWithSignal(fetch(url, fetchOptions), signal);
+                    return readResponse ? transferService.awaitWithSignal(readResponse(response), signal) : response;
+                },
                 resolve,
                 reject,
                 cleanup: () => { signal?.removeEventListener('abort', onAbort); unsubscribe(); }
@@ -242,30 +248,47 @@ export function createCache({
 
     const jsonInFlight = new Map();
 
-    const JSON_CACHE_MAX_ENTRIES = 200;
+    const memoryBytes = new WeakMap();
 
-    const JSON_CACHE_MAX_AGE = 7 * 24 * 60 * 60_000;
+    const revalidationFailures = new Map();
+
+    const REVALIDATION_TIMEOUT_MS = 12_000;
+
+    const REVALIDATION_COOLDOWN_MS = 300_000;
 
     let publicJsonWritesSincePrune = 0;
 
+    let publicJsonBytesSincePrune = 0;
+
     let publicJsonPruneTimer = null;
 
-    function touchJsonMemoryEntry(cache, key, entry) {
+    function deleteJsonMemoryEntry(cache, key) {
+        const previous = cache.get(key);
+        if (!previous) return;
+        memoryBytes.set(cache, Math.max(0, (memoryBytes.get(cache) || 0) - previous.bytes));
         cache.delete(key);
+    }
+
+    function touchJsonMemoryEntry(cache, key, entry) {
+        deleteJsonMemoryEntry(cache, key);
+        const size = jsonCacheEntryBytes(entry);
+        if (size > JSON_CACHE_LIMITS.memoryBytes) return;
         cache.set(key, entry);
-        while (cache.size > JSON_CACHE_MAX_ENTRIES) {
-            cache.delete(cache.keys().next().value);
+        memoryBytes.set(cache, (memoryBytes.get(cache) || 0) + size);
+        while (cache.size > JSON_CACHE_LIMITS.entries || memoryBytes.get(cache) > JSON_CACHE_LIMITS.memoryBytes) {
+            deleteJsonMemoryEntry(cache, cache.keys().next().value);
         }
     }
 
     function clearAccountJsonCache() {
         accountJsonCache.clear();
+        memoryBytes.set(accountJsonCache, 0);
         jsonInFlight.forEach((record, key) => {
             if (key.startsWith('json-account|')) record.controller.abort();
         });
     }
 
-    async function prunePublicJsonCache(maxEntries = JSON_CACHE_MAX_ENTRIES, maxAge = JSON_CACHE_MAX_AGE) {
+    async function prunePublicJsonCache() {
         try {
             const db = await openIdb();
             return await new Promise((resolve, reject) => {
@@ -279,18 +302,14 @@ export function createCache({
                     const cursor = request.result;
                     if (cursor) {
                         if (typeof cursor.key === 'string' && cursor.key.startsWith('json|')) {
-                            entries.push({ key: cursor.key, ts: Number(cursor.value?.ts || 0) });
+                            entries.push({ key: cursor.key, ts: Number(cursor.value?.ts || 0), bytes: cursor.value?.bytes });
                         }
                         cursor.continue();
                         return;
                     }
-                    entries.sort((a, b) => b.ts - a.ts);
-                    entries.forEach((entry, index) => {
-                        if (!entry.ts || now - entry.ts > maxAge || index >= maxEntries) {
-                            store.delete(entry.key);
-                            publicJsonMemoryCache.delete(entry.key);
-                            removed++;
-                        }
+                    jsonCacheEvictions(entries, now).forEach(entry => {
+                        store.delete(entry.key);
+                        removed++;
                     });
                 };
                 request.onerror = () => reject(request.error);
@@ -300,14 +319,36 @@ export function createCache({
         } catch (_) { return 0; }
     }
 
-    function schedulePublicJsonCachePrune() {
+    function schedulePublicJsonCachePrune(bytes = 0) {
         publicJsonWritesSincePrune++;
-        if (publicJsonWritesSincePrune < 20 || publicJsonPruneTimer) return;
+        publicJsonBytesSincePrune += bytes;
+        if (publicJsonWritesSincePrune < 20 && publicJsonBytesSincePrune < 4 * 1024 * 1024 || publicJsonPruneTimer) return;
         publicJsonPruneTimer = setTimeout(() => {
             publicJsonPruneTimer = null;
             publicJsonWritesSincePrune = 0;
+            publicJsonBytesSincePrune = 0;
             prunePublicJsonCache().catch(() => {});
         }, 1000);
+    }
+
+    async function backfillJsonEntrySize(key, entry) {
+        try {
+            const db = await openIdb();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(IDB_STORE, 'readwrite');
+                const store = tx.objectStore(IDB_STORE), request = store.get(key);
+                let updated = false;
+                request.onsuccess = () => {
+                    const current = request.result;
+                    if (current?.ts === entry.ts && (!Number.isSafeInteger(current.bytes) || current.bytes < 0)) {
+                        store.put({ ...current, bytes: entry.bytes }, key);
+                        updated = true;
+                    }
+                };
+                tx.oncomplete = () => { if (updated) schedulePublicJsonCachePrune(entry.bytes); resolve(); };
+                tx.onabort = tx.onerror = () => reject(tx.error);
+            });
+        } catch (_) {}
     }
 
     function subscribeJsonRequest(record, signal) {
@@ -332,14 +373,35 @@ export function createCache({
         });
     }
 
+    function joinJsonRequest(record, signal, priority, requestPriority) {
+        record.priority.promote(requestPriority?.value || priority);
+        const unsubscribe = requestPriority?.subscribe(next => record.priority.promote(next));
+        return subscribeJsonRequest(record, signal).finally(() => unsubscribe?.());
+    }
+
     async function invalidateJsonCache(url, requestedScope = 'auto') {
         const cache = describeJsonCache(url, requestedScope);
+        revalidationFailures.delete(cache.key);
         if (cache.scope === 'public') {
-            publicJsonMemoryCache.delete(cache.key);
+            deleteJsonMemoryEntry(publicJsonMemoryCache, cache.key);
             return idbDelete(cache.key);
         }
-        if (cache.scope === 'account') accountJsonCache.delete(cache.key);
+        if (cache.scope === 'account') deleteJsonMemoryEntry(accountJsonCache, cache.key);
         return true;
+    }
+
+    function retainRevalidation(record, signal) {
+        if (record.backgroundSignals.has(signal)) return;
+        record.backgroundSignals.add(signal);
+        const lease = new AbortController();
+        // Cancel queued work on navigation; a sent public request can finish and populate the cache.
+        const cancel = () => { if (!record.started) lease.abort(); };
+        signal?.addEventListener('abort', cancel, { once: true });
+        if (signal?.aborted) cancel();
+        subscribeJsonRequest(record, lease.signal).catch(() => {}).finally(() => {
+            signal?.removeEventListener('abort', cancel);
+            record.backgroundSignals.delete(signal);
+        });
     }
 
     // Public JSON persists in IDB; authenticated JSON is memory-only; none bypasses all caches.
@@ -350,6 +412,7 @@ export function createCache({
             priority = 'normal',
             requestPriority = null,
             forceRefresh = false,
+            staleWhileRevalidate = false,
             cachePredicate = null,
             signal,
             ...fetchOptions
@@ -357,8 +420,13 @@ export function createCache({
         if (signal?.aborted) throw transferService.createAbortError();
         const cache = describeJsonCache(url, cacheScope);
         const now = Date.now();
+        const inFlightKey = cache.scope === 'none' ? `json-none|${url}` : cache.key;
+        const preservePublic = forceRefresh
+            && canRevalidateJson(url, cache.scope, { ...fetchOptions, staleWhileRevalidate });
+        const pending = preservePublic ? jsonInFlight.get(inFlightKey) : null;
+        if (pending && !pending.controller.signal.aborted) return joinJsonRequest(pending, signal, priority, requestPriority);
         let entry = null;
-        if (forceRefresh) await invalidateJsonCache(url, cacheScope);
+        if (forceRefresh && !preservePublic) await invalidateJsonCache(url, cacheScope);
 
         if (!forceRefresh && cache.scope === 'public') {
             entry = publicJsonMemoryCache.get(cache.key) || null;
@@ -367,53 +435,82 @@ export function createCache({
             entry = accountJsonCache.get(cache.key) || null;
         }
         if (signal?.aborted) throw transferService.createAbortError();
-        if (entry?.ts && (now - entry.ts) < ttl && isJsonResponseCacheable(entry.data, cachePredicate)) {
-            if (cache.scope === 'public') touchJsonMemoryEntry(publicJsonMemoryCache, cache.key, entry);
-            else if (cache.scope === 'account') touchJsonMemoryEntry(accountJsonCache, cache.key, entry);
-            return entry.data;
+        const valid = entry?.ts > 0 && entry.ts <= now && isJsonResponseCacheable(entry.data, cachePredicate);
+        const age = valid ? now - entry.ts : Infinity;
+        const fresh = valid && age < jsonCacheTtl(ttl, entry.data);
+        const stale = !fresh && !forceRefresh && valid && age <= JSON_CACHE_LIMITS.maxAge
+            && canRevalidateJson(url, cache.scope, { ...fetchOptions, staleWhileRevalidate });
+        if (fresh || stale) {
+            const legacy = !Number.isSafeInteger(entry.bytes) || entry.bytes < 0;
+            touchJsonMemoryEntry(cache.scope === 'public' ? publicJsonMemoryCache : accountJsonCache, cache.key, entry);
+            if (legacy && cache.scope === 'public') void backfillJsonEntrySize(cache.key, entry);
+            if (fresh) return entry.data;
+            const retryAt = revalidationFailures.get(cache.key) || 0;
+            if (retryAt > now || typeof navigator !== 'undefined' && navigator.onLine === false) return entry.data;
+            revalidationFailures.delete(cache.key);
         }
-        if (entry) await invalidateJsonCache(url, cacheScope);
         if (signal?.aborted) throw transferService.createAbortError();
 
-        const inFlightKey = cache.scope === 'none' ? `json-none|${url}` : cache.key;
         const existing = jsonInFlight.get(inFlightKey);
         if (existing && !existing.controller.signal.aborted) {
-            existing.priority.promote(requestPriority?.value || priority);
-            const unsubscribe = requestPriority?.subscribe(next => existing.priority.promote(next));
-            return subscribeJsonRequest(existing, signal).finally(() => unsubscribe?.());
+            if (stale) { retainRevalidation(existing, signal); return entry.data; }
+            return joinJsonRequest(existing, signal, priority, requestPriority);
         }
 
         const controller = new AbortController();
         const record = { key: inFlightKey, controller, consumers: 0, settled: false, promise: null,
-            priority: requestPriority || createRequestPriority(priority) };
+            started: false, backgroundSignals: new Set(),
+            priority: stale ? createRequestPriority('idle') : requestPriority || createRequestPriority(priority) };
+        const timer = stale ? setTimeout(() => controller.abort(), REVALIDATION_TIMEOUT_MS) : null;
         record.promise = Promise.resolve().then(async () => {
             if (controller.signal.aborted) throw transferService.createAbortError();
             const requestOptions = { ...fetchOptions, signal: controller.signal };
-            const resp = useQueue
-                ? await qFetch(url, { ...requestOptions, requestPriority: record.priority })
-                : await fetch(url, requestOptions);
-            if (!resp.ok) {
-                const error = new Error(`HTTP ${resp.status}`);
-                error.status = resp.status;
-                throw error;
-            }
-            const data = await resp.json();
+            const onRequestStart = () => { record.started = true; };
+            const readResponse = async resp => {
+                if (!resp.ok) {
+                    const error = new Error(`HTTP ${resp.status}`);
+                    error.status = resp.status;
+                    throw error;
+                }
+                return resp.json();
+            };
+            const response = useQueue || stale
+                ? qFetch(url, { ...requestOptions, requestPriority: record.priority, onRequestStart, readResponse })
+                : (onRequestStart(), transferService.awaitWithSignal(fetch(url, requestOptions), controller.signal).then(readResponse));
+            const data = await transferService.awaitWithSignal(response, controller.signal);
             if (controller.signal.aborted) throw transferService.createAbortError();
-            if (!isJsonResponseCacheable(data, cachePredicate)) return data;
+            if (!isJsonResponseCacheable(data, cachePredicate)) {
+                if (stale) throw new Error('Invalid cache refresh response');
+                return data;
+            }
+            revalidationFailures.delete(cache.key);
             const nextEntry = { ts: Date.now(), data };
             if (cache.scope === 'public') {
                 touchJsonMemoryEntry(publicJsonMemoryCache, cache.key, nextEntry);
-                await idbSet(cache.key, nextEntry);
-                schedulePublicJsonCachePrune();
+                if (nextEntry.bytes <= JSON_CACHE_LIMITS.diskBytes) {
+                    await idbSet(cache.key, nextEntry);
+                    schedulePublicJsonCachePrune(nextEntry.bytes);
+                } else await idbDelete(cache.key);
             } else if (cache.scope === 'account') {
                 touchJsonMemoryEntry(accountJsonCache, cache.key, nextEntry);
             }
             return data;
+        }).catch(error => {
+            if (stale && (error?.name !== 'AbortError' || record.started)) {
+                revalidationFailures.delete(cache.key);
+                revalidationFailures.set(cache.key, Date.now() + REVALIDATION_COOLDOWN_MS);
+                while (revalidationFailures.size > JSON_CACHE_LIMITS.entries) {
+                    revalidationFailures.delete(revalidationFailures.keys().next().value);
+                }
+            }
+            throw error;
         }).finally(() => {
+            clearTimeout(timer);
             record.settled = true;
             if (jsonInFlight.get(inFlightKey) === record) jsonInFlight.delete(inFlightKey);
         });
         jsonInFlight.set(inFlightKey, record);
+        if (stale) { retainRevalidation(record, signal); return entry.data; }
         return subscribeJsonRequest(record, signal);
     }
 

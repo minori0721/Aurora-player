@@ -6,6 +6,8 @@ export function createDom({} = {}) {
         progBg: document.getElementById('prog-bg'), progLine: document.getElementById('prog-line'), bufferLine: document.getElementById('buffer-line'),
         currTime: document.getElementById('curr-time'), totalTime: document.getElementById('total-time'),
         plContainer: document.getElementById('pl-container'), plSidebar: document.getElementById('playlist-sidebar'),
+        plSearch: document.getElementById('pl-search'), plSearchClear: document.getElementById('pl-search-clear'),
+        plSearchEmpty: document.getElementById('pl-search-empty'),
         plScrollCurrent: document.getElementById('pl-scroll-current'), plScrollTop: document.getElementById('pl-scroll-top'),
         playBtn: document.getElementById('play-btn'),
         effectSel: document.getElementById('effect-select'), canvas: document.getElementById('visual-canvas'),

@@ -131,6 +131,16 @@ test('stream playback begins without a full fetch or PCM decode; pause/resume ke
     assert.equal(f.element.plays, 2); assert.equal(f.player.getCurrentTime(), 27);
 });
 
+test('a rejected native seek does not overwrite the last accepted pause position', async t => {
+    const f = fixture(t); await f.ready;
+    f.player.seekAudio(27);
+    const descriptor = Object.getOwnPropertyDescriptor(f.element, 'currentTime');
+    Object.defineProperty(f.element, 'currentTime', { configurable: true, get: () => 27, set() { throw new Error('seek rejected'); } });
+    assert.throws(() => f.player.seekAudio(60), /seek rejected/);
+    assert.equal(f.player.playbackState.pauseTime, 27);
+    Object.defineProperty(f.element, 'currentTime', descriptor);
+});
+
 test('standard media controls keep the real timeline across stream-to-PCM promotion without a silent element', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const handlers = new Map(), positions = [];

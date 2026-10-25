@@ -332,3 +332,25 @@ test('hidden tabs stop retry work and resume only the current viewport', t => {
     f.env.document.dispatchEvent({ type: 'visibilitychange' }); f.enter(img); f.flush();
     assert.equal(f.requests.length, 2);
 });
+
+test('filtered rows do not request covers until they become visible again', t => {
+    const f = fixture(t), img = f.add(), row = { hidden: true };
+    img.closest = () => row;
+    f.enter(img); f.covers.visibilityChanged(); f.flush();
+    assert.equal(f.requests.length, 0);
+    row.hidden = false; f.enter(img); f.covers.visibilityChanged(); f.flush();
+    assert.equal(f.requests.length, 1);
+    f.requests[0].succeed(); f.flush();
+    assert.equal(img.dataset.coverLoaded, '1');
+});
+
+test('a cover completed during filtering is reused without painting a hidden row', t => {
+    const f = fixture(t), img = f.add(), row = { hidden: false };
+    img.closest = () => row;
+    f.enter(img); f.flush(); row.hidden = true;
+    f.requests[0].succeed(); f.flush();
+    assert.equal(img.dataset.coverLoaded, undefined);
+    row.hidden = false; f.enter(img); f.covers.visibilityChanged(); f.flush();
+    assert.equal(img.dataset.coverLoaded, '1');
+    assert.equal(f.requests.length, 1);
+});

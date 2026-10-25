@@ -14,7 +14,7 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/audio/media.js` | 原生流式播放、缓冲查询、无进展检测和实例释放 |
 | `src/audio/local.js`、`online.js` | 本地/在线音频加载，复用统一播放核心 |
 | `src/audio/prefetch.js`、`transfer.js` | 下一首任务、大小预算、超时和音频传输 |
-| `src/audio/loop.js`、`quality.js`、`metadata.js` | 循环设定、音频格式信息和标签应用 |
+| `src/audio/loop.js`、`quality.js`、`mp3.js`、`metadata.js` | 循环设定、音频格式信息、MP3 文件头解析和标签应用 |
 | `src/playlist/` | 播放队列、目录导入、伴随文件配对、播放列表显示与视口封面调度 |
 | `src/lyrics/` | LRC/YRC/JSON 解析、来源优先级、在线匹配和歌词显示 |
 | `src/netease/` | API、登录、内容浏览、路由、歌单分页、下载 |

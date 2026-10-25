@@ -1,5 +1,6 @@
 import { toHttps } from '../shared/text.js';
 import { createPlaylistCovers } from './covers.js';
+import { matchesPlaylistSearch, normalizePlaylistSearch, playlistSearchKey } from './search.js';
 
 export function createPlaylistView({
     dom: domService,
@@ -13,6 +14,46 @@ export function createPlaylistView({
 
     let activePlaylistRow = null;
     let playlistIndexDigits = 0;
+    let searchQueue = queueService.playlist, searchTerms = [], searchKeys = [], visibleCount = 0;
+    let searchFrame = 0, composing = false, unfilteredScrollTop = 0;
+
+    function updateSearchUI() {
+        const { plSearch, plSearchClear, plSearchEmpty } = domService.el;
+        if (plSearchClear) plSearchClear.disabled = !plSearch?.value;
+        if (plSearchEmpty) {
+            plSearchEmpty.hidden = visibleCount > 0;
+            plSearchEmpty.textContent = searchTerms.length ? '没有匹配的歌曲' : '播放列表为空';
+        }
+    }
+
+    function filterRow(row, track, index) {
+        searchKeys[index] = playlistSearchKey(track);
+        row.hidden = !matchesPlaylistSearch(searchKeys[index], searchTerms);
+        return !row.hidden;
+    }
+
+    function setSearchQuery(value = '', { restore = true } = {}) {
+        window.cancelAnimationFrame(searchFrame); searchFrame = 0;
+        const hadSearch = searchTerms.length > 0;
+        searchTerms = normalizePlaylistSearch(value).split(/\s+/u).filter(Boolean);
+        if (!hadSearch && searchTerms.length) unfilteredScrollTop = domService.el.plSidebar.scrollTop || 0;
+        if (domService.el.plSearch) domService.el.plSearch.value = String(value);
+        visibleCount = 0;
+        const rows = domService.el.plContainer.children;
+        for (let index = 0; index < rows.length; index++) {
+            const match = matchesPlaylistSearch(searchKeys[index] || '', searchTerms);
+            if (rows[index].hidden === match) rows[index].hidden = !match;
+            if (match) visibleCount++;
+        }
+        if (restore) domService.el.plSidebar.scrollTop = searchTerms.length ? 0 : hadSearch ? unfilteredScrollTop : domService.el.plSidebar.scrollTop;
+        updateSearchUI();
+        playlistCovers.visibilityChanged();
+    }
+
+    function scheduleSearch() {
+        if (composing || searchFrame) return;
+        searchFrame = window.requestAnimationFrame(() => { searchFrame = 0; setSearchQuery(domService.el.plSearch?.value || ''); });
+    }
 
     function updatePlaylistActiveItem() {
         const nextRow = domService.el.plContainer.children[queueService.curIdx] || null;
@@ -56,6 +97,10 @@ export function createPlaylistView({
         const row = domService.el.plContainer.children[index];
         const track = queueService.playlist[index];
         if (!row || !track) return;
+        const wasVisible = !row.hidden;
+        const isVisible = filterRow(row, track, index);
+        visibleCount += Number(isVisible) - Number(wasVisible);
+        updateSearchUI();
 
         row.setAttribute('aria-label', track.needsFile
             ? (track.fileHandle ? `授权并播放第 ${index + 1} 首：${track.name}` : `第 ${index + 1} 首：${track.name}，需要重新选择本地文件`)
@@ -71,10 +116,11 @@ export function createPlaylistView({
         if (!coverEl) return;
         const coverUrl = toHttps(track.songData?.album?.picUrl || track.songData?.al?.picUrl || '');
         playlistCovers.bind(coverEl, coverUrl);
+        if (wasVisible !== isVisible) observePlaylistCovers();
     }
 
     function ensurePlaylistRenderedAndActive() {
-        if (domService.el.plContainer.children.length !== queueService.playlist.length) renderPlaylist();
+        if (searchQueue !== queueService.playlist || domService.el.plContainer.children.length !== queueService.playlist.length) renderPlaylist();
         else updatePlaylistActiveItem();
     }
 
@@ -128,19 +174,32 @@ export function createPlaylistView({
             return;
         }
         const digits = Math.max(3, String(queueService.playlist.length).length);
+        domService.el.plContainer.classList.toggle('pl-large', queueService.playlist.length > 500);
         if (digits !== playlistIndexDigits) {
             playlistIndexDigits = digits;
             domService.el.plContainer.style.setProperty('--playlist-index-digits', String(digits));
         }
         const frag = document.createDocumentFragment();
-        for (let i = startIndex; i < queueService.playlist.length; i++) frag.appendChild(createPlaylistRow(queueService.playlist[i], i));
+        for (let i = startIndex; i < queueService.playlist.length; i++) {
+            const row = createPlaylistRow(queueService.playlist[i], i);
+            if (filterRow(row, queueService.playlist[i], i)) visibleCount++;
+            frag.appendChild(row);
+        }
         domService.el.plContainer.appendChild(frag);
         updatePlaylistActiveItem();
         observePlaylistCovers();
+        updateSearchUI();
         persistenceService.schedulePlaylistStateSave(true);
     }
 
     function renderPlaylist() {
+        if (searchQueue !== queueService.playlist) {
+            searchQueue = queueService.playlist;
+            window.cancelAnimationFrame(searchFrame); searchFrame = 0;
+            searchTerms = []; unfilteredScrollTop = 0; composing = false;
+            if (domService.el.plSearch) domService.el.plSearch.value = '';
+        }
+        searchKeys = []; visibleCount = 0;
         playlistCovers.reset();
         domService.el.plContainer.innerHTML = '';
         activePlaylistRow = null;
@@ -152,6 +211,7 @@ export function createPlaylistView({
         if (!domService.el.plSidebar || !queueService.playlist || queueService.playlist.length === 0 || queueService.curIdx < 0) return;
         const active = domService.el.plContainer.querySelector('.pl-item.active');
         if (!active) return; // no current item in list, keep still
+        if (active.hidden) setSearchQuery('', { restore: false });
         active.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -170,10 +230,19 @@ export function createPlaylistView({
         renderPlaylist,
         scrollPlaylistToCurrent,
         scrollPlaylistToTop,
+        setSearchQuery,
         initialize() {
             if (initialized) return;
             initialized = true;
             playlistCovers.initialize();
+            domService.el.plSearch?.addEventListener('input', event => { if (!event.isComposing) scheduleSearch(); });
+            domService.el.plSearch?.addEventListener('compositionstart', () => { composing = true; window.cancelAnimationFrame(searchFrame); searchFrame = 0; });
+            domService.el.plSearch?.addEventListener('compositionend', () => { composing = false; scheduleSearch(); });
+            domService.el.plSearch?.addEventListener('keydown', event => {
+                if (event.key !== 'Escape' || composing || event.isComposing || !domService.el.plSearch.value) return;
+                event.preventDefault(); event.stopPropagation(); setSearchQuery('');
+            });
+            domService.el.plSearchClear?.addEventListener('click', () => { setSearchQuery(''); domService.el.plSearch?.focus(); });
         }
     };
 }

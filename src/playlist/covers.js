@@ -29,6 +29,7 @@ export function createPlaylistCovers({ root, container }, env = window) {
     const isOpen = () => !disposed && root.classList.contains('show') && !env.document.hidden;
     const current = (img, src = img.dataset.coverSrc) => img.isConnected
         && img.dataset.coverGeneration === String(generation) && !!src && img.dataset.coverSrc === src;
+    const filtered = img => !!img.closest?.('.pl-item')?.hidden;
 
     function clearWake() {
         if (wakeTimer !== null) env.clearTimeout(wakeTimer);
@@ -78,7 +79,7 @@ export function createPlaylistCovers({ root, container }, env = window) {
     }
 
     function apply(resource, img) {
-        if (!isOpen() || !current(img, resource.src)) return;
+        if (!isOpen() || !current(img, resource.src) || filtered(img)) return;
         const src = resource.src;
         const reveal = () => {
             if (!current(img, src)) return;
@@ -169,6 +170,7 @@ export function createPlaylistCovers({ root, container }, env = window) {
         // Only the observer's small nearby set needs geometry reads, not the whole playlist.
         for (const img of nearby) {
             if (!current(img) || img.dataset.coverLoaded === '1') { unobserve(img); continue; }
+            if (filtered(img)) { nearby.delete(img); continue; }
             const rect = img.getBoundingClientRect(), gap = distance(rect, bounds);
             if (gap > MARGIN) { nearby.delete(img); continue; }
             const resource = getResource(img.dataset.coverSrc);
@@ -314,5 +316,5 @@ export function createPlaylistCovers({ root, container }, env = window) {
         resources.clear();
     }
 
-    return { bind, observe, suspend, reset, initialize, dispose };
+    return { bind, observe, suspend, reset, initialize, dispose, visibilityChanged: requestUpdate };
 }

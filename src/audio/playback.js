@@ -248,9 +248,9 @@ export function createPlayback({
 
     function seekAudio(offset) {
         const time = Math.max(0, Math.min(Number(offset) || 0, playbackState.duration));
-        playbackState.pauseTime = time;
         if (streamSession) streamSession.media.seek(time);
-        else if (playbackState.isPlaying) startAudio(time);
+        playbackState.pauseTime = time;
+        if (!streamSession && playbackState.isPlaying) startAudio(time);
         mediaSession.sync();
         renderService.scheduleRender?.(true);
         return time;

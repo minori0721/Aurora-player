@@ -3,6 +3,17 @@ import { parseMusicRoute, positiveMusicInteger } from './routes.js';
 import { normalizeMusicAlbum, normalizeMusicArtist, normalizeMusicSong } from './models.js';
 import { createMusicImages } from './images.js';
 
+export function isMusicStaticResponse(path, data) {
+    const endpoint = new URL(path, 'https://music.invalid').pathname;
+    if (endpoint === '/album') return !!data?.album && Array.isArray(data.songs);
+    if (endpoint === '/artists') return !!(data?.artist || data?.data?.artist) || Array.isArray(data?.hotSongs);
+    if (endpoint === '/artist/detail') return !!data?.data?.artist;
+    if (endpoint === '/artist/top/song' || endpoint === '/artist/songs') return Array.isArray(data?.songs);
+    if (endpoint === '/artist/album') return Array.isArray(data?.hotAlbums);
+    if (endpoint === '/artist/mv') return Array.isArray(data?.mvs);
+    return false;
+}
+
 export function createContent({
     api: apiService,
     auth: authService,
@@ -313,6 +324,8 @@ export function createContent({
             useQueue: true,
             priority: options.priority || 'interactive',
             cacheScope: options.cacheScope || 'public',
+            staleWhileRevalidate: true,
+            cachePredicate: data => isMusicStaticResponse(path, data),
             forceRefresh: !!options.forceRefresh
         };
         if (signal) requestOptions.signal = signal;

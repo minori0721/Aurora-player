@@ -179,11 +179,11 @@
 
     <div class="top-bar">
         <div class="tool-group">
-            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件">📂 导入</button>
+            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件" aria-label="导入音乐文件"><svg class="mobile-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg><span>导入</span></button>
             <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
-            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板" aria-expanded="false">☁️ <span class="btn-text">云音乐</span></button>
+            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板" aria-expanded="false"><span class="desktop-only" aria-hidden="true">☁️</span><svg class="mobile-toolbar-icon mobile-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg><span class="btn-text">云音乐</span></button>
             <!-- 移动端下载按钮，放在云音乐右侧 -->
-            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载">⬇️</button>
+            <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
             <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词" aria-label="云词开关" aria-pressed="false">📝 <span class="btn-text">云词</span></button>
             <div class="effect-select-control desktop-only">
                 <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
@@ -193,7 +193,7 @@
                     <option value="waves">🌊 极光波浪</option>
                 </select>
             </div>
-            <!-- Lucide Logs icon (https://lucide.dev), ISC License.
+            <!-- Lucide Logs icon and mobile folder-open/cloud/list/settings icons (https://lucide.dev), ISC License.
             Copyright (c) 2026 Lucide Icons and Contributors
             Permission to use, copy, modify, and/or distribute this software for any
             purpose with or without fee is hereby granted, provided that the above
@@ -213,10 +213,10 @@
         <div class="tool-group">
             <button id="toggle-analyze" class="glass-btn desktop-only" aria-label="打开智能分析" aria-expanded="false">🔍 智能分析</button>
             <button id="toggle-loop-panel" class="glass-btn desktop-only" aria-label="打开循环设定" aria-expanded="false">🔁 循环设定</button>
-            <button id="toggle-list" class="glass-btn" aria-label="打开播放列表" aria-expanded="false">📜 <span class="btn-text">列表</span></button>
+            <button id="toggle-list" class="glass-btn" title="播放列表" aria-label="打开播放列表" aria-expanded="false"><span class="desktop-only" aria-hidden="true">📜</span><svg class="mobile-toolbar-icon mobile-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13"/></svg><span class="btn-text">列表</span></button>
             <!-- 移动端高级菜单 -->
             <div class="advanced-menu-container mobile-only">
-                <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
+                <button id="toggle-advanced" class="glass-btn" title="高级菜单" aria-label="高级菜单"><svg class="mobile-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg><span>高级</span></button>
                 <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
                     <button class="advanced-menu-item" data-action="debug" aria-label="打开日志"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5h1M3 12h1M3 19h1M8 5h1M8 12h1M8 19h1M13 5h8M13 12h8M13 19h8"/></svg></span><span class="advanced-menu-text">Log</span></button>
                     <button class="advanced-menu-item" data-action="analyze"><span class="advanced-menu-icon" aria-hidden="true">🔍</span><span class="advanced-menu-text">智能分析</span></button>
@@ -294,8 +294,16 @@
     </div>
 
     <div class="playlist-sidebar" id="playlist-sidebar" hidden inert aria-hidden="true">
-        <h3 style="margin-top:0;">PLAYLIST</h3>
+        <div class="playlist-header">
+            <h3>PLAYLIST</h3>
+            <div class="playlist-search" role="search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+                <input id="pl-search" type="search" placeholder="搜索" aria-label="搜索播放列表" autocomplete="off" spellcheck="false">
+                <button id="pl-search-clear" type="button" aria-label="清空搜索" title="清空搜索" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            </div>
+        </div>
         <div id="pl-container"></div>
+        <div class="playlist-empty" id="pl-search-empty" role="status" aria-live="polite" hidden>播放列表为空</div>
     </div>
     <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions" hidden inert>
         <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放" aria-label="定位到当前播放">🎯</button>

@@ -1,3 +1,5 @@
+import { parseMp3StreamInfo } from './mp3.js';
+
 function inferAudioTypeFromUrl(url, fallbackType = '') {
     const rawType = String(fallbackType || '').toLowerCase();
     const rawUrl = String(url || '').toLowerCase();
@@ -100,7 +102,7 @@ function parseWavStreamInfoFromBuffer(buffer) {
 
 function describeAudioQualityFromInfo(audioInfo, audioUrl = '', streamInfo = null) {
     const type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
-    const brKbps = audioInfo?.br ? Math.round(audioInfo.br / 1000) : null;
+    const brKbps = streamInfo?.bitrateKbps || (audioInfo?.br ? Math.round(audioInfo.br / 1000) : null);
     const sampleRate = streamInfo?.sampleRate || audioInfo?.sr || null;
     const srText = formatSampleRate(sampleRate);
     let label = type;
@@ -108,6 +110,8 @@ function describeAudioQualityFromInfo(audioInfo, audioUrl = '', streamInfo = nul
         if (type === 'FLAC' && srText && streamInfo?.bitsPerSample) label = `${type} ${srText}/${streamInfo.bitsPerSample}bit`;
         else if (srText) label = `${type} ${srText}`;
         else if (brKbps) label = `${type} ${brKbps}kbps`;
+    } else if (type === 'MP3' && streamInfo?.mode === 'VBR' && !brKbps) {
+        label = 'MP3 VBR';
     } else if (brKbps) {
         label = `${type} ${brKbps}kbps`;
     }
@@ -120,7 +124,8 @@ function createAudioQualityProbe(buffer, audioUrl, audioInfo = {}) {
         type,
         byteLength: Number(buffer?.byteLength || audioInfo?.size || 0),
         flacInfo: type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null,
-        wavInfo: type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null
+        wavInfo: type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null,
+        mp3Info: type === 'MP3' ? parseMp3StreamInfo(buffer) : null
     };
 }
 
@@ -131,7 +136,8 @@ function describeAudioQualityFromBuffer(buffer, audioUrl, decodedBuffer, audioIn
     const byteLength = probe?.byteLength || buffer?.byteLength || audioInfo?.size || 0;
     const averageBitrateKbps = getAverageBitrateKbps(byteLength, duration);
     const apiBitrateKbps = audioInfo?.br ? Math.round(audioInfo.br / 1000) : null;
-    const bitrateKbps = averageBitrateKbps || apiBitrateKbps;
+    const mp3Info = probe?.mp3Info || (type === 'MP3' ? parseMp3StreamInfo(buffer) : null);
+    const bitrateKbps = mp3Info?.bitrateKbps || averageBitrateKbps || apiBitrateKbps;
     const decodedSampleRate = decodedBuffer?.sampleRate || null;
     const channels = decodedBuffer?.numberOfChannels || null;
     const flacInfo = probe?.flacInfo || (type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null);

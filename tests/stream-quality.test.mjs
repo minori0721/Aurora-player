@@ -4,6 +4,7 @@ import { createTransfer } from '../src/audio/transfer.js';
 import { createOnlinePlayback } from '../src/audio/online.js';
 import { describeAudioQualityFromInfo, parseFlacStreamInfoFromBuffer } from '../src/audio/quality.js';
 import { FakeElement } from './helpers/host.mjs';
+import { mp3Fixture } from './helpers/mp3.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const transfer = createTransfer();
@@ -106,10 +107,10 @@ test('header/body stalls and cancellation are bounded and do not retry', async t
     controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
 });
 
-function onlineFixture({ type = 'flac', header = async () => flacHeader(), preloaded = null } = {}) {
+function onlineFixture({ type = 'flac', header = async () => flacHeader(), preloaded = null, br = 320000 } = {}) {
     let token = 0, options, headerCalls = 0, fullCalls = 0, starts = 0;
     const tags = [], errors = [];
-    const resolved = { candidates: [`https://cdn.test/a.${type}`], audioInfo: { type, sr: 44100, br: 320000 } };
+    const resolved = { candidates: [`https://cdn.test/a.${type}`], audioInfo: { type, sr: 44100, br } };
     const playback = {
         get _currentPlayActionToken() { return token; }, playbackPreference: 'stream', playbackWantsPlay: true,
         audioBuffer: null, isStreaming: false,
@@ -165,6 +166,29 @@ test('existing prefetch memory supplies FLAC precision without any extra network
 test('lossy streams never probe or fabricate a bit-depth label', async () => {
     const f = onlineFixture({ type: 'mp3' }); await f.start(); await tick();
     assert.equal(f.metadata.currentAudioQuality, 'MP3 320kbps'); assert.equal(f.headerCalls, 0);
+});
+
+test('match MP3 supplements bitrate asynchronously and reuses existing encoded data', async () => {
+    for (const preloaded of [null, mp3Fixture({ bitrate: 192 })]) {
+        const f = onlineFixture({ type: 'mp3', br: null, preloaded, header: async () => mp3Fixture({ bitrate: 192 }) });
+        await f.start(); await tick();
+        assert.equal(f.metadata.currentAudioQuality, 'MP3 192kbps');
+        assert.equal(f.headerCalls, preloaded ? 0 : 1);
+        assert.equal(f.fullCalls, 0); assert.equal(f.playback.audioBuffer, null);
+        assert.deepEqual(f.errors, []); f.options.dispose();
+    }
+});
+
+test('nonzero range reads validate their exact starting offset and remain bounded', async t => {
+    const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+    globalThis.fetch = async (url, options) => {
+        assert.equal(options.headers.Range, 'bytes=8202-12297');
+        return new Response(mp3Fixture(), { status: 206, headers: { 'content-range': 'bytes 8202-10080/20000' } });
+    };
+    assert.ok(await transfer.fetchAudioHeader('https://cdn.test/a.mp3', { start: 8202 }));
+    globalThis.fetch = async () => partialResponse(mp3Fixture());
+    assert.equal(await transfer.fetchAudioHeader('https://cdn.test/a.mp3', { start: 8202 }), null);
+    await assert.rejects(transfer.fetchAudioHeader('https://cdn.test/a.mp3', { start: -1 }), RangeError);
 });
 
 test('a failed or malformed header leaves the initial label and playback unchanged', async () => {

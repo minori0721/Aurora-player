@@ -115,6 +115,34 @@ test('compiled Log toggles the existing console and native effect changes do not
     assert.equal(f.requests.length, 0);
 });
 
+test('mobile download uses the desktop icon and forwards to the existing download action', async () => {
+    const button = id => built.html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/button>`))?.[1];
+    const desktop = button('download-btn'), mobile = button('download-btn-mobile');
+    assert.ok(desktop?.includes('<svg'));
+    assert.equal(mobile, desktop);
+    assert.match(built.html, /id="download-btn-mobile"[^>]*aria-label="下载"/);
+    const f = boot(); await settle();
+    let calls = 0;
+    f.elements.get('download-btn').onclick = () => { calls++; };
+    f.elements.get('download-btn-mobile').click();
+    assert.equal(calls, 1);
+});
+
+test('mobile toolbar keeps labeled SVG controls and desktop-only legacy icons', async () => {
+    for (const id of ['btn-import', 'toggle-netease-panel', 'toggle-list', 'toggle-advanced']) {
+        const markup = built.html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/button>`))?.[0];
+        assert.ok(markup?.includes('mobile-toolbar-icon'));
+        assert.match(markup, /aria-label="[^"]+"/);
+        assert.match(markup, /<svg[^>]*aria-hidden="true"[^>]*focusable="false"/);
+        if (id === 'toggle-netease-panel' || id === 'toggle-list') assert.ok(markup.includes('class="desktop-only"'));
+    }
+    const f = boot(); await settle();
+    for (const id of ['btn-import', 'toggle-netease-panel', 'toggle-list', 'toggle-advanced']) {
+        const node = f.elements.get(id);
+        assert.ok(typeof node.onclick === 'function' || node.listeners.get('click')?.size > 0, `${id} keeps its action`);
+    }
+});
+
 test('compiled local playback and lyric controls write Chinese logs without translating diagnostic data', async () => {
     const f = boot();
     await settle();
