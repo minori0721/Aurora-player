@@ -68,6 +68,7 @@ export function createCovers({
         const loaded = () => {
             if (!isCurrent() || domService.el.img.getAttribute('src') !== src) return;
             clearPendingTheme();
+            domService.el.coverWrap.classList.add('has-cover');
             renderService.updateTheme(domService.el.img);
             if (onLoad) onLoad();
             try { metadataService.updateMediaSession(); } catch (_) {}
@@ -78,6 +79,7 @@ export function createCovers({
             domService.el.img.style.opacity = 0;
             setMainCover();
         } : null;
+        if (!alreadyLoaded) domService.el.coverWrap.classList.remove('has-cover');
         if (src) {
             if (domService.el.img.getAttribute('src') !== src) domService.el.img.src = src;
         } else {

@@ -186,7 +186,7 @@ export function createImports({
         queueService.playlist.filter(track => track.sliStatus === 'invalid').forEach(track => debugService.log(`SLI 格式无效: ${track.sliAsset?.relativePath || track.name} (${track.sliMessage || '未知原因'})`, 'error'));
         logPaths('LRC 未匹配', stats.lrc.unmatchedAssets, companionRegistry.lrc);
         logPaths('LRC 歧义', stats.lrc.ambiguousAssets, companionRegistry.lrc);
-        errors.forEach(item => debugService.log(`文件读取失败: ${item.path} (${item.error?.message || item.error || 'unknown'})`, 'error'));
+        errors.forEach(item => debugService.log(`文件读取失败: ${item.path} (${item.error?.message || item.error || '未知错误'})`, 'error'));
         if (unsupportedDirectory) debugService.log('当前浏览器无法展开拖入的目录，请改用 Chromium/Safari 或直接选择目录内的全部文件。', 'error');
     }
 

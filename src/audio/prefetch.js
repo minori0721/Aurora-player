@@ -292,7 +292,7 @@ export function createPrefetch({
             nextPreloadRecoveryBudget = null;
             if (resetDetails) songDetailsService?.cancelPrefetch();
         }
-        if (!silent) debugService.log('Next-song preload cancelled');
+        if (!silent) debugService.log('已取消下一首预取');
     }
 
     function getLikelyNextPlaylistIndex() {
@@ -377,13 +377,13 @@ export function createPrefetch({
                         matchSource: result.matchSource || ''
                     };
                     if (!prefetchInProgress) nextPreloadStatus = 'url-ready';
-                    const detail = result.usedMatch ? ` via match${result.matchSource ? `/${result.matchSource}` : ''}` : '';
-                    debugService.log(`Prewarmed next URL: ${nextTrack.name}${detail}`, 'success');
+                    const detail = result.usedMatch ? `（通过 match 接口${result.matchSource ? `/${result.matchSource}` : ''}）` : '';
+                    debugService.log(`下一首音频链接已预热：${nextTrack.name}${detail}`, 'success');
                 } else {
                     nextPreloadStatus = 'failed';
                 }
             }).catch(e => {
-                if (e?.name !== 'AbortError' && !e?.stale) debugService.log('Next URL prewarm failed: ' + (e?.message || 'Unknown error'), 'warn');
+                if (e?.name !== 'AbortError' && !e?.stale) debugService.log('下一首链接预热失败：' + (e?.message || '未知错误'), 'warn');
                 if (isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) nextPreloadStatus = 'failed';
             }).finally(() => {
                 if (nextSongUrlPrewarmPromise === prewarmPromise) nextSongUrlPrewarmPromise = null;
@@ -603,12 +603,12 @@ export function createPrefetch({
                 nextPreloadKind = nextTrack.file ? 'local' : (result.kind === 'raw' ? 'netease' : 'netease-url');
                 nextPreloadStatus = result.kind === 'skipped' ? 'skipped' : (hasPreloaded ? 'ready' : 'url-ready');
                 if (hasPreloaded) {
-                    debugService.log(`Preloaded ${nextTrack.file ? 'local file' : 'Netease audio'}: ${nextTrack.name}`, 'success');
+                    debugService.log(`已预取${nextTrack.file ? '本地文件' : '网易云音频'}：${nextTrack.name}`, 'success');
                 } else {
-                    debugService.log(`Skipped full ${nextTrack.file ? 'local' : 'Netease'} preload for ${nextTrack.name}: ${(result.sizeHint / 1024 / 1024).toFixed(1)}MB exceeds ${(result.maxBytes / 1024 / 1024).toFixed(0)}MB limit`, 'info');
+                    debugService.log(`已跳过${nextTrack.file ? '本地文件' : '网易云音频'}完整预取：${nextTrack.name}，${(result.sizeHint / 1024 / 1024).toFixed(1)}MB 超过 ${(result.maxBytes / 1024 / 1024).toFixed(0)}MB 上限`, 'info');
                 }
             }).catch(error => {
-                if (error?.name !== 'AbortError' && !error?.stale) debugService.log(`Next-song preload failed: ${error?.message || error}`, 'warn');
+                if (error?.name !== 'AbortError' && !error?.stale) debugService.log(`下一首预取失败：${error?.message || error}`, 'warn');
                 if (isNextPreloadSnapshotCurrent(token, queueRef, nextIdx, nextTrack, songId, levelSnapshot, generationSnapshot)) nextPreloadStatus = 'failed';
             }).finally(() => {
                 if (nextSongFetchPromise === work) nextSongFetchPromise = null;
@@ -617,7 +617,7 @@ export function createPrefetch({
                 if (nextPreloadStatus === 'loading') nextPreloadStatus = 'failed';
             });
         } catch (error) {
-            if (error?.name !== 'AbortError' && !error?.stale) debugService.log(`Next-song preload setup failed: ${error?.message || error}`, 'warn');
+            if (error?.name !== 'AbortError' && !error?.stale) debugService.log(`下一首预取任务创建失败：${error?.message || error}`, 'warn');
             prefetchInProgress = false;
         }
     }

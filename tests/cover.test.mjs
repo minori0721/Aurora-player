@@ -5,7 +5,7 @@ import { createCovers, COVER_PENDING_TIMEOUT_MS } from '../src/ui/cover.js';
 function fixture(t) {
     const saved = { setTimeout, clearTimeout, location: globalThis.location, window: globalThis.window };
     let sequence = 0, source = '', assignments = 0;
-    const timers = new Map(), updates = [], events = new Map(), revoked = [], consumers = [];
+    const timers = new Map(), updates = [], events = new Map(), revoked = [], consumers = [], classes = new Set();
     globalThis.setTimeout = (callback, delay) => { const id = ++sequence; timers.set(id, { callback, delay }); return id; };
     globalThis.clearTimeout = id => timers.delete(id);
     globalThis.location = { href: 'https://player.fixture/' };
@@ -18,7 +18,8 @@ function fixture(t) {
         set src(value) { source = value; assignments++; this.complete = false; this.naturalWidth = 0; }
     };
     const queue = { playlist: [{}], curIdx: 0 };
-    const covers = createCovers({ dom: { el: { img: image, coverWrap: {} } }, queue,
+    const coverWrap = { classList: { add: name => classes.add(name), remove: name => classes.delete(name) } };
+    const covers = createCovers({ dom: { el: { img: image, coverWrap } }, queue,
         render: { updateTheme: value => updates.push(value ? image.src : null) },
         content: { updateMusicMiniPlayer() { consumers.push('mini'); } },
         metadata: { updateMediaSession() { consumers.push('media'); } }
@@ -30,7 +31,7 @@ function fixture(t) {
             if (saved[key] === undefined) delete globalThis[key]; else globalThis[key] = saved[key];
         }
     });
-    return { covers, queue, image, timers, updates, revoked, consumers, events, assignments: () => assignments,
+    return { covers, queue, image, timers, updates, revoked, consumers, events, classes, assignments: () => assignments,
         load() { image.complete = true; image.naturalWidth = 512; image.onload?.(); },
         fire(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.callback(); } }
     };
@@ -43,6 +44,32 @@ test('pending metadata preserves the previous background; explicit absence reset
     assert.equal(f.updates.length, 1); assert.equal(f.image.src, '');
     f.covers.setMainCover();
     assert.deepEqual(f.updates.slice(-1), [null]); assert.equal(f.timers.size, 0);
+});
+
+test('the disc hides only after a current cover loads and returns on absence or failure', t => {
+    const f = fixture(t);
+    const hasCover = () => f.classes.has('has-cover');
+    f.covers.setMainCover('https://fixture/one.jpg');
+    assert.equal(hasCover(), false);
+    f.load();
+    assert.equal(hasCover(), true);
+    f.covers.setMainCover('https://fixture/one.jpg');
+    assert.equal(hasCover(), true);
+    f.covers.setMainCover('', { pending: true });
+    assert.equal(hasCover(), false);
+    f.covers.setMainCover('https://fixture/two.jpg'); f.load();
+    assert.equal(hasCover(), true);
+    f.covers.setMainCover('https://fixture/broken.jpg');
+    assert.equal(hasCover(), false);
+    f.image.onerror();
+    assert.equal(hasCover(), false);
+    f.covers.setMainCover('https://fixture/late.jpg');
+    f.fire(COVER_PENDING_TIMEOUT_MS);
+    assert.equal(hasCover(), false);
+    f.load();
+    assert.equal(hasCover(), true);
+    f.covers.setMainCover();
+    assert.equal(hasCover(), false);
 });
 
 test('same loaded URL does not reassign the image and still invokes the new track callback', t => {
@@ -60,6 +87,7 @@ test('old loads, errors and timeout callbacks cannot clear or repaint the next t
     loaded(); failed(); expired();
     assert.deepEqual(f.updates, ['https://fixture/current.jpg']);
     assert.equal(f.image.src, 'https://fixture/current.jpg'); assert.equal(f.timers.size, 0);
+    assert.equal(f.classes.has('has-cover'), true);
 });
 
 test('missing, broken and indefinitely pending images fall back, but a current late load is accepted', t => {

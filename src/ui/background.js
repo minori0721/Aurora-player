@@ -1,4 +1,4 @@
-import { DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS } from './theme.js';
+import { DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS, parseThemeColor } from './theme.js';
 
 import { createSpatialPainter, SPATIAL_TRANSITION_MS, transitionProgress } from './background-field.js';
 
@@ -12,14 +12,11 @@ export function backgroundSize(width, height) {
 }
 
 export function flowTheme(theme = {}) {
-    const base = (theme.base || DEFAULT_THEME_BASE).match(/[\d.]+/g)?.slice(0, 3).map(Number);
-    const fallbackBase = base?.length === 3 ? base : [245, 247, 250];
+    const fallbackBase = parseThemeColor(theme.base || DEFAULT_THEME_BASE);
     const colors = new Float32Array(12), weights = new Float32Array(4);
     for (let i = 0; i < 4; i++) {
         const css = theme.colors?.[i] || DEFAULT_THEME_COLORS[i];
-        const hex = /^#([\da-f]{6})$/i.exec(css);
-        const values = hex ? [0, 2, 4].map(offset => parseInt(hex[1].slice(offset, offset + 2), 16)) : css.match(/[\d.]+/g)?.map(Number);
-        const rgb = values?.length >= 3 && values.slice(0, 3).every(Number.isFinite) ? values : fallbackBase;
+        const rgb = parseThemeColor(css, fallbackBase);
         const alpha = rgb.length > 3 ? Math.max(0, Math.min(1, rgb[3])) : 1;
         for (let channel = 0; channel < 3; channel++) {
             const value = Math.max(0, Math.min(1, (rgb[channel] * alpha + fallbackBase[channel] * (1 - alpha)) / 255));

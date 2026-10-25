@@ -211,7 +211,7 @@ export function createOnlinePlaylist({
         if (data.cancelled || data.tracksLoadIncomplete) {
             playbackService.setPlaybackStatus('paused');
             importsService.showImportSummary(`歌单加载已结束，当前没有可播放的下一首（已加载 ${data.loadedCount}/${data.totalCount} 首）`, false);
-            debugService.log('Playlist advance stopped because the remaining tracks are unavailable', 'warn');
+            debugService.log('剩余歌曲均不可用，已停止自动切歌', 'warn');
             return;
         }
         queueService.handleNext();
@@ -481,7 +481,7 @@ export function createOnlinePlaylist({
         playlistViewService.observePlaylistCovers();
 
         updatePlaylistImportButton(data);
-        debugService.log(`Imported ${queueService.playlist.length}/${data.totalCount} songs${data.loading ? '; background loading continues' : ''}`, 'success');
+        debugService.log(`已导入 ${queueService.playlist.length}/${data.totalCount} 首歌曲${data.loading ? '；正在后台继续加载' : ''}`, 'success');
         importsService.showImportSummary(`已导入 ${queueService.playlist.length}/${data.totalCount} 首${data.loading ? '，剩余歌曲后台加载中' : (data.tracksLoadIncomplete ? '，未加载歌曲已跳过' : '')}`, false);
         // 自动播放第一首
         if (queueService.playlist.length > 0) {

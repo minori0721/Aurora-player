@@ -81,6 +81,8 @@ export function createDom({} = {}) {
     const advancedBtn = document.getElementById('toggle-advanced');
 
     const advancedMenu = document.getElementById('advanced-menu');
+    const cloudLyricsSwitch = document.getElementById('cloud-lyrics-switch');
+    const lyricModeInputs = ['original', 'both', 'roma'].map(mode => document.getElementById(`lyric-mode-${mode}`)).filter(Boolean);
 
     let initialized = false;
     return {
@@ -114,6 +116,8 @@ export function createDom({} = {}) {
         get qualitySelect() { return qualitySelect; },
         get advancedBtn() { return advancedBtn; },
         get advancedMenu() { return advancedMenu; },
+        get cloudLyricsSwitch() { return cloudLyricsSwitch; },
+        get lyricModeInputs() { return lyricModeInputs; },
         initialize() {
             if (initialized) return;
             initialized = true;

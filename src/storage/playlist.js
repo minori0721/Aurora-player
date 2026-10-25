@@ -359,7 +359,7 @@ export function createPersistence({
             contentService.updateMusicMiniPlayer();
             const needsFile = queueService.playlist.filter(track => track.needsFile).length;
             const needsSelection = queueService.playlist.filter(track => track.needsFile && !track.fileHandle).length;
-            debugService.log(`Restored ${queueService.playlist.length} songs from history${needsFile ? `; ${needsFile - needsSelection} local handles available, ${needsSelection} files need re-selection` : ''}`, needsFile ? 'warn' : 'success');
+            debugService.log(`已从历史恢复 ${queueService.playlist.length} 首歌曲${needsFile ? `；${needsFile - needsSelection} 个本地文件可请求访问权限，${needsSelection} 个文件需重新选择` : ''}`, needsFile ? 'warn' : 'success');
         } catch (error) {
             console.warn('Failed to restore playlist:', error);
         }

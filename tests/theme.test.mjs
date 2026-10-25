@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCoverTheme, DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS } from '../src/ui/theme.js';
+import { buildCoverTheme, DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS, parseThemeColor } from '../src/ui/theme.js';
 import { coverThemeKey, createThemeCache } from '../src/ui/theme-cache.js';
 import { createRender } from '../src/ui/render.js';
 
@@ -16,6 +16,19 @@ function pixelsOf(parts, count = 1000) {
 
 const colorPart = (rgb, fraction = 1, alpha = 255) => ({ rgb, fraction, alpha });
 const parseRgb = css => css.match(/\d+/g).slice(0, 3).map(Number);
+
+test('theme colors parse emitted hex and rgb formats with bounded channels and safe fallback', () => {
+    assert.deepEqual(parseThemeColor(DEFAULT_THEME_BASE), [245, 247, 250]);
+    assert.deepEqual(parseThemeColor(' #AbC '), [170, 187, 204]);
+    assert.deepEqual(parseThemeColor('RGB(12, 40, 180)'), [12, 40, 180]);
+    assert.deepEqual(parseThemeColor('rgba(220, 100, 50, 0.4)'), [220, 100, 50, .4]);
+    assert.deepEqual(parseThemeColor('rgba(-4, 270, 12, 2)'), [0, 255, 12, 1]);
+    const fallback = [30, 60, 90];
+    for (const invalid of [null, 5, '', 'bad', '#abcd', 'rgb(NaN,0,0)', 'rgb(,0,0)', 'rgba(1,2,3)', 'rgb(1,2,3,4)']) {
+        assert.deepEqual(parseThemeColor(invalid, fallback), fallback);
+        assert.notEqual(parseThemeColor(invalid, fallback), fallback);
+    }
+});
 
 function lightness(css) {
     const [r, g, b] = parseRgb(css).map(channel => {

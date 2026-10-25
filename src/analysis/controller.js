@@ -1,4 +1,5 @@
 import { findBestMatchByMode, getLoopMatchModeLabel, releaseAnalysisBuffer } from './algorithms.js';
+import { createLoopAnalysisInput, describeLoopAnalysisInput } from './input.js';
 import { LOOP_WORKER_SOURCE } from 'aurora:loop-worker';
 
 export function createAnalysis({
@@ -14,6 +15,8 @@ export function createAnalysis({
 
     let loopAnalysisWorkerAudioId = null;
 
+    let loopAnalysisWorkerWindowKey = null;
+
     const LOOP_ANALYSIS_IDLE_MS = 60_000;
 
     let loopAnalysisIdleTimer = null;
@@ -28,6 +31,8 @@ export function createAnalysis({
 
     let loopAnalysisRun = null;
 
+    let analysisInputRevision = 0;
+
     let previewStopTimer = null;
 
     function cancelPreviewTimer() {
@@ -35,7 +40,7 @@ export function createAnalysis({
         previewStopTimer = null;
     }
 
-    // --- 核心：自动循环匹配算法 (相位窗口 + 接缝评分) ---
+    // --- 核心：自动循环匹配算法 (周期搜索 + 联合接缝精修) ---
     function cancelLoopAnalysisRun() {
         const run = loopAnalysisRun;
         if (!run) return;
@@ -47,14 +52,19 @@ export function createAnalysis({
         domService.el.anaMsg.textContent = '';
     }
 
+    function invalidateAnalysisInput() {
+        analysisInputRevision++;
+        cancelLoopAnalysisRun();
+    }
+
     async function runAnalysis() {
         if (domService.el.anaRun?.disabled) return;
         if (!playbackService.audioBuffer && !playbackService.isStreaming) { domService.el.anaMsg.textContent = "Please load audio first!"; return; }
 
         const roughA = parseFloat(domService.el.anaStart.value);
         const roughB = parseFloat(domService.el.anaEnd.value);
-        if (isNaN(roughA) || isNaN(roughB) || roughB <= roughA) {
-            domService.el.anaMsg.textContent = "Invalid range (A must < B)"; return;
+        if (!Number.isFinite(roughA) || !Number.isFinite(roughB) || roughA < 0 || roughB - roughA < 0.25) {
+            domService.el.anaMsg.textContent = "请输入有效的 A/B 时间，区间至少 0.25 秒"; return;
         }
 
         const mode = domService.el.anaMode?.value || 'balanced';
@@ -70,9 +80,16 @@ export function createAnalysis({
         let sourceBuffer = playbackService.audioBuffer;
         let expectedAudioId = sourceBuffer ? getLoopAnalysisAudioId(sourceBuffer) : null;
         const playToken = playbackService._currentPlayActionToken;
-        const run = { buttonText: runButtonText || "✨ 开始精确匹配", cancelWait: null };
+        const inputRevision = analysisInputRevision;
+        const track = queueService.playlist[queueService.curIdx] || null;
+        const loopEditVersion = loopService.getLoopEditVersion(track);
+        const run = { buttonText: runButtonText || "✨ 开始精确匹配", cancelWait: null, applied: false };
         loopAnalysisRun = run;
         const isCurrent = () => loopAnalysisRun === run && playbackService.isPlaybackActionCurrent(playToken)
+            && inputRevision === analysisInputRevision
+            && parseFloat(domService.el.anaStart.value) === roughA && parseFloat(domService.el.anaEnd.value) === roughB
+            && (domService.el.anaMode?.value || 'balanced') === mode
+            && (run.applied || loopService.getLoopEditVersion(track) === loopEditVersion)
             && (!sourceBuffer || sourceBuffer === playbackService.audioBuffer && expectedAudioId === getLoopAnalysisAudioId(playbackService.audioBuffer));
 
         try {
@@ -103,18 +120,20 @@ export function createAnalysis({
 
             if (confidence >= 80) {
                 loopService.applyLoop(result.start, result.end);
-                domService.el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})`;
+                run.applied = true;
+                domService.el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (匹配评分: ${confidence.toFixed(1)}/100${tookText})`;
                 domService.el.anaMsg.style.color = "#27ae60";
-                debugService.log(`Auto-Loop [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'success');
+                debugService.log(`循环匹配成功 [${modeLabel}]：${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s，评分 ${confidence.toFixed(1)}/100${tookText}`, 'success');
             } else if (confidence >= 30) {
                 loopService.applyLoop(result.start, result.end);
-                domService.el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (置信度: ${confidence.toFixed(1)}%${tookText})，建议先试听。`;
+                run.applied = true;
+                domService.el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (匹配评分: ${confidence.toFixed(1)}/100${tookText})，建议先试听。`;
                 domService.el.anaMsg.style.color = "#f39c12";
-                debugService.log(`Auto-Loop candidate [${modeLabel}]: ${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s, confidence=${confidence.toFixed(1)}%${tookText}`, 'warn');
+                debugService.log(`循环候选 [${modeLabel}]：${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s，评分 ${confidence.toFixed(1)}/100${tookText}`, 'warn');
             } else {
-                domService.el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高: ${confidence.toFixed(1)}%${tookText})，请把 A/B 粗点靠近重复段。`;
+                domService.el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高评分: ${confidence.toFixed(1)}/100${tookText})，请把 A/B 粗点靠近重复段。`;
                 domService.el.anaMsg.style.color = "#e74c3c";
-                debugService.log(`Auto-Loop failed [${modeLabel}]. Best=${confidence.toFixed(1)}%${tookText}`, 'error');
+                debugService.log(`循环匹配未找到可靠接缝 [${modeLabel}]，最高评分 ${confidence.toFixed(1)}/100${tookText}`, 'error');
             }
         } catch (e) {
             if (!isCurrent() || e?.cancelled) return;
@@ -122,6 +141,7 @@ export function createAnalysis({
             console.error(e);
         } finally {
             if (loopAnalysisRun === run && domService.el.anaRun) {
+                if (!isCurrent()) domService.el.anaMsg.textContent = '';
                 loopAnalysisRun = null;
                 domService.el.anaRun.disabled = false;
                 domService.el.anaRun.textContent = run.buttonText;
@@ -170,6 +190,7 @@ export function createAnalysis({
             loopAnalysisWorkerUrl = null;
         }
         loopAnalysisWorkerAudioId = null;
+        loopAnalysisWorkerWindowKey = null;
     }
 
     function resetLoopAnalysisWorkerAudio() {
@@ -217,39 +238,28 @@ export function createAnalysis({
         return loopAnalysisWorker;
     }
 
-    function createLoopAnalysisTransferData(buffer) {
-        const chan0 = buffer.getChannelData(0);
-        // Never transfer a playback channel: transfer only this independent array.
-        const data = new Float32Array(chan0.length);
-        if (buffer.numberOfChannels === 1) {
-            data.set(chan0);
-        } else {
-            const chan1 = buffer.getChannelData(1);
-            for (let i = 0; i < chan0.length; i++) data[i] = (chan0[i] + chan1[i]) * 0.5;
-        }
-        return data;
-    }
-
     function runLoopAnalysisInWorker(buffer, timeA, timeB, mode = 'balanced') {
         const worker = getLoopAnalysisWorker();
         clearLoopAnalysisIdleTimer();
         const audioId = getLoopAnalysisAudioId(buffer);
+        const layout = describeLoopAnalysisInput(buffer, timeA, timeB);
         const jobId = ++loopAnalysisJobId;
         const message = {
             type: 'analyze',
             jobId,
             audioId,
-            sampleRate: buffer.sampleRate,
+            windowKey: layout.key,
             timeA,
             timeB,
             mode
         };
         const transfer = [];
 
-        if (loopAnalysisWorkerAudioId !== audioId) {
-            const data = createLoopAnalysisTransferData(buffer);
-            message.dataBuffer = data.buffer;
-            transfer.push(data.buffer);
+        if (loopAnalysisWorkerAudioId !== audioId || loopAnalysisWorkerWindowKey !== layout.key) {
+            const input = createLoopAnalysisInput(buffer, layout);
+            message.layout = layout;
+            message.channelBuffers = Array.from({ length: input.numberOfChannels }, (_, channel) => input.getChannelData(channel).buffer);
+            transfer.push(...message.channelBuffers);
         }
 
         const promise = new Promise((resolve, reject) => {
@@ -258,7 +268,10 @@ export function createAnalysis({
 
         try {
             worker.postMessage(message, transfer);
-            if (message.dataBuffer) loopAnalysisWorkerAudioId = audioId;
+            if (message.channelBuffers) {
+                loopAnalysisWorkerAudioId = audioId;
+                loopAnalysisWorkerWindowKey = layout.key;
+            }
         } catch (error) {
             loopAnalysisPendingJobs.delete(jobId);
             error.workerError = true;
@@ -269,27 +282,27 @@ export function createAnalysis({
     }
 
     async function findBestMatchByModeAsync(buffer, timeA, timeB, mode = 'balanced') {
+        const startedAt = performance.now();
+        let result;
         try {
-            return await runLoopAnalysisInWorker(buffer, timeA, timeB, mode);
+            result = await runLoopAnalysisInWorker(buffer, timeA, timeB, mode);
         } catch (error) {
             if (error?.cancelled) throw error;
             if (error?.analysisError) throw error;
             failLoopAnalysisWorker(error);
-            debugService.log(`Loop analysis worker unavailable, using main thread fallback: ${error.message}`, 'warn');
+            debugService.log(`循环分析 Worker 不可用，回退主线程：${error.message}`, 'warn');
             try {
-                return findBestMatchByMode(buffer, timeA, timeB, mode);
+                result = findBestMatchByMode(buffer, timeA, timeB, mode);
             } finally {
                 releaseAnalysisBuffer(buffer);
             }
         }
-    }
-
-    function findBestMatch(buffer, timeA, timeB) {
-        return findBestMatchByMode(buffer, timeA, timeB, domService.el.anaMode?.value || 'balanced');
+        return { ...result, algorithmElapsedMs: result.elapsedMs, elapsedMs: performance.now() - startedAt };
     }
 
     // 辅助：捕获当前播放时间
     function capturePoint(type) {
+        invalidateAnalysisInput();
         const t = playbackService.getCurrentTime();
         if(type === 'a') domService.el.anaStart.value = t.toFixed(3);
         else domService.el.anaEnd.value = t.toFixed(3);
@@ -363,7 +376,7 @@ export function createAnalysis({
 
         domService.el.anaMsg.textContent = `已导出: ${fileName}.sli`;
         domService.el.anaMsg.style.color = "#27ae60";
-        debugService.log(`SLI Exported: From=${fromSamples}, To=${toSamples}`, 'success');
+        debugService.log(`SLI 已导出：终点 From=${fromSamples}，起点 To=${toSamples}`, 'success');
     }
 
     let initialized = false;
@@ -378,7 +391,11 @@ export function createAnalysis({
         initialize() {
             if (initialized) return;
             initialized = true;
-
+            for (const control of [domService.el.anaStart, domService.el.anaEnd, domService.el.anaMode,
+                domService.el.loopStart, domService.el.loopEnd, domService.el.loopEnable]) {
+                control.addEventListener('input', invalidateAnalysisInput);
+                control.addEventListener('change', invalidateAnalysisInput);
+            }
         }
     };
 }

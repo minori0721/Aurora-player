@@ -1,4 +1,3 @@
-import { createLyricTimeLookup } from '../lyrics/parser.js';
 import { fmtTime } from '../shared/text.js';
 
 export function createControls({
@@ -165,11 +164,15 @@ export function createControls({
 
             domService.neteaseBtn.onclick = () => {
                 lyricsService.neteaseSearchEnabled = !lyricsService.neteaseSearchEnabled;
-                domService.neteaseBtn.style.background = lyricsService.neteaseSearchEnabled ? '#27ae60' : '';
-                domService.neteaseBtn.style.color = lyricsService.neteaseSearchEnabled ? '#fff' : '';
-                domService.neteaseBtn.setAttribute('aria-pressed', lyricsService.neteaseSearchEnabled ? 'true' : 'false');
-                debugService.log(`Netease lyrics search: ${lyricsService.neteaseSearchEnabled ? 'ON' : 'OFF'}`);
+                debugService.log(`网易云歌词搜索：${lyricsService.neteaseSearchEnabled ? '已开启' : '已关闭'}`);
             };
+            domService.cloudLyricsSwitch?.addEventListener('change', event => {
+                lyricsService.neteaseSearchEnabled = event.target.checked;
+                debugService.log(`网易云歌词搜索：${lyricsService.neteaseSearchEnabled ? '已开启' : '已关闭'}`);
+            });
+            for (const input of domService.lyricModeInputs || []) input.addEventListener('change', () => {
+                if (input.checked) lyricsService.setLyricDisplayMode(input.value);
+            });
 
             if (domService.advancedBtn && domService.advancedMenu) {
                 domService.advancedBtn.addEventListener('click', function(e) {
@@ -194,14 +197,6 @@ export function createControls({
                             panelsService.toggleFloatingPanel('analyze-panel');
                         } else if (action === 'loop') {
                             panelsService.toggleFloatingPanel('loop-panel');
-                        } else if (action === 'netease-lyrics') {
-                            // 切换云词开关
-                            lyricsService.neteaseSearchEnabled = !lyricsService.neteaseSearchEnabled;
-                            domService.neteaseBtn.style.background = lyricsService.neteaseSearchEnabled ? '#27ae60' : '';
-                            domService.neteaseBtn.style.color = lyricsService.neteaseSearchEnabled ? '#fff' : '';
-                            domService.neteaseBtn.setAttribute('aria-pressed', lyricsService.neteaseSearchEnabled ? 'true' : 'false');
-                            debugService.log(`Netease lyrics search: ${lyricsService.neteaseSearchEnabled ? 'ON' : 'OFF'}`);
-                            alert(`云词搜索已${lyricsService.neteaseSearchEnabled ? '开启' : '关闭'}`);
                         } else if (action === 'effects') {
                             // 循环切换特效
                             const options = ['none', 'snow', 'bars', 'waves'];
@@ -211,41 +206,14 @@ export function createControls({
                             domService.el.effectSel.value = options[next];
                             domService.el.effectSel.dispatchEvent(new Event('change'));
                             alert(`特效: ${names[next]}`);
-                        } else if (action === 'lyric-toggle') {
-                            // 优先复用桌面按钮逻辑（如果存在）
-                            if (domService.lyricToggleBtn) {
-                                domService.lyricToggleBtn.click();
-                            } else {
-                                // 备用：直接切换状态并触发渲染/增量更新
-                                lyricsService.lyricDisplayMode = lyricsService.lyricDisplayMode === 'original' ? 'both' : 'original';
-                                localStorage.setItem('lyric_mode', lyricsService.lyricDisplayMode);
-                                const lines = domService.el.lyricBox.querySelectorAll('.lyric-line');
-                                if (lines && lines.length && (lyricsService.originalLyricsArr.some(l=>l.t>=0) || lyricsService.translatedLyricsArr.some(l=>l.t>=0))) {
-                                    if (lyricsService.lyricDisplayMode === 'both') {
-                                        const findTranslation = createLyricTimeLookup(lyricsService.translatedLyricsArr);
-                                        lines.forEach(lineEl => {
-                                            if (lineEl.querySelector('.lyric-translation')) return;
-                                            const t = parseFloat(lineEl.dataset.time || -1);
-                                            if (isNaN(t) || t < 0) return;
-                                            const trans = findTranslation(t);
-                                            if (trans && trans.txt) {
-                                                const tdiv = document.createElement('div');
-                                                tdiv.className = 'lyric-translation';
-                                                tdiv.textContent = trans.txt;
-                                                (lineEl.querySelector('.lyric-visual') || lineEl).appendChild(tdiv);
-                                            }
-                                        });
-                                    } else {
-                                        domService.el.lyricBox.querySelectorAll('.lyric-translation').forEach(n => n.remove());
-                                    }
-                                } else {
-                                    lyricsService.renderLyricsFromArrays();
-                                }
-                                lyricsService.updateLyricToggleUI(!!(lyricsService.translatedLyricsArr && lyricsService.translatedLyricsArr.length));
-                            }
-                            alert('已切换歌词显示模式');
                         }
                     });
+                });
+
+                domService.advancedMenu.addEventListener('keydown', event => {
+                    if (event.key !== 'Escape') return;
+                    event.preventDefault();
+                    panelsService.setFloatingPanel('advanced-menu', false);
                 });
 
                 // 点击其他地方关闭菜单

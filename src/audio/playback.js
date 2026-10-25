@@ -540,12 +540,12 @@ export function createPlayback({
             // 如果是循环模式，onended 不应该触发切歌
             // 但某些浏览器可能在精度问题下意外触发，这里重新启动循环
             if(wasCustomLooping && loopService.loopState.active && playbackState.isPlaying) {
-                debugService.log("Loop interrupted, restarting...", 'warn');
+                debugService.log("自定义循环中断，正在重新播放…", 'warn');
                 startAudio(loopService.loopState.start);
                 return;
             }
             if(wasSingleTrackLooping && queueService.playMode === 2 && playbackState.isPlaying) {
-                debugService.log("Single loop interrupted, restarting...", 'warn');
+                debugService.log("单曲循环中断，正在重新播放…", 'warn');
                 startAudio(0);
                 return;
             }

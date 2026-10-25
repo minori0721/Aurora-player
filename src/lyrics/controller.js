@@ -46,12 +46,13 @@ export function createLyrics({
         yrcData = null;
         _lastActiveLyric = null;
         domService.el.lyricBox.style.transform = 'translateY(0)';
-        updateLyricToggleUI(false);
+        updateLyricToggleUI();
     }
 
     let lyricDisplayMode = localStorage.getItem('lyric_mode') || 'original';
+    if (!['original', 'both', 'roma'].includes(lyricDisplayMode)) lyricDisplayMode = 'original';
 
-    // 'original' or 'both'
+    // The preferred mode survives tracks that temporarily lack its extra text.
     let originalLyricsText = '';
 
     let translatedLyricsText = '';
@@ -68,17 +69,80 @@ export function createLyrics({
 
     let yrcData = null;
 
-    function updateLyricToggleUI(enabled) {
-        if(!domService.lyricToggleBtn) return;
-        domService.lyricToggleBtn.disabled = !enabled;
-        domService.lyricToggleBtn.style.opacity = enabled ? '' : '0.45';
-        if(!enabled) {
-            domService.lyricToggleBtn.title = '暂无更多歌词文本';
-        } else {
-            if (lyricDisplayMode === 'original') domService.lyricToggleBtn.title = '当前：仅原文 (点击切至：+翻译)';
-            else if (lyricDisplayMode === 'both') domService.lyricToggleBtn.title = '当前：原文+翻译 (点击切至：+罗马音)';
-            else domService.lyricToggleBtn.title = '当前：原文+罗马音 (点击切至：仅原文)';
+    function availableLyricModes() {
+        const hasTranslation = translatedLyricsArr.some(line => line.txt.trim());
+        const hasRoman = romanLyricsArr.some(line => line.txt.trim());
+        if (!originalLyricsArr.some(line => line.txt.trim()) && !hasTranslation && !hasRoman) return [];
+        return ['original', ...(hasTranslation ? ['both'] : []), ...(hasRoman ? ['roma'] : [])];
+    }
+
+    function effectiveLyricMode() {
+        return availableLyricModes().includes(lyricDisplayMode) ? lyricDisplayMode : 'original';
+    }
+
+    function updateLyricToggleUI() {
+        const modes = availableLyricModes(), mode = effectiveLyricMode();
+        const names = { original: '仅原文', both: '原文＋翻译', roma: '原文＋罗马音' };
+        const missing = { original: '歌词', both: '翻译', roma: '罗马音' };
+        for (const input of domService.lyricModeInputs || []) {
+            input.disabled = !modes.includes(input.value);
+            input.checked = !input.disabled && input.value === mode;
+            input.title = input.disabled ? `当前歌曲暂无${missing[input.value]}` : names[input.value];
         }
+        const button = domService.lyricToggleBtn;
+        if (!button) return;
+        button.disabled = modes.length < 2;
+        button.style.opacity = button.disabled ? '0.45' : '';
+        button.title = button.disabled ? '暂无更多歌词文本'
+            : `当前：${names[mode]}（点击切至：${names[modes[(modes.indexOf(mode) + 1) % modes.length]]}）`;
+        button.setAttribute('aria-label', button.title);
+    }
+
+    function setNeteaseSearchEnabled(value) {
+        const enabled = Boolean(value), changed = enabled !== neteaseSearchEnabled;
+        neteaseSearchEnabled = enabled;
+        if (domService.cloudLyricsSwitch) domService.cloudLyricsSwitch.checked = enabled;
+        if (domService.neteaseBtn) {
+            domService.neteaseBtn.style.background = enabled ? '#27ae60' : '';
+            domService.neteaseBtn.style.color = enabled ? '#fff' : '';
+            domService.neteaseBtn.setAttribute('aria-pressed', String(enabled));
+        }
+        if (changed && localLyricSession) {
+            if (enabled) updateLocalLyrics(localLyricSession);
+            else cancelLocalLyricSearch(localLyricSession);
+        }
+    }
+
+    function setLyricDisplayMode(mode) {
+        if (!availableLyricModes().includes(mode)) { updateLyricToggleUI(); return false; }
+        const previousMode = effectiveLyricMode();
+        lyricDisplayMode = mode;
+        try { localStorage.setItem('lyric_mode', mode); } catch (_) {}
+        updateLyricToggleUI();
+        if (previousMode === mode) return true;
+        const lines = domService.el.lyricBox.querySelectorAll('.lyric-line');
+        const hasTimedData = originalLyricsArr.some(line => line.t >= 0) || translatedLyricsArr.some(line => line.t >= 0) || romanLyricsArr.some(line => line.t >= 0);
+        if (lines.length && hasTimedData) {
+            domService.el.lyricBox.querySelectorAll('.lyric-translation').forEach(node => node.remove());
+            if (mode !== 'original') {
+                const target = mode === 'both' ? translatedLyricsArr : romanLyricsArr;
+                const exactExtra = new Map(target.map(line => [line.t.toFixed(3), line]));
+                const findExtra = yrcData?.length ? time => exactExtra.get(time.toFixed(3)) : createLyricTimeLookup(target);
+                lines.forEach(line => {
+                    const time = Number.parseFloat(line.dataset.time ?? '-1');
+                    if (!Number.isFinite(time) || time < 0) return;
+                    const extra = findExtra(time);
+                    if (!extra?.txt) return;
+                    const text = document.createElement('div');
+                    text.className = 'lyric-translation';
+                    text.textContent = extra.txt;
+                    (line.querySelector('.lyric-visual') || line).appendChild(text);
+                });
+            }
+            lyricViewport?.relayout();
+            refreshLyricHighlightAndCenter();
+        } else renderLyricsFromArrays();
+        return true;
     }
 
     // Safe set artist tags (avoid duplicate appends)
@@ -108,6 +172,7 @@ export function createLyrics({
 
     // 渲染函数（在切换显示模式时复用）
     function renderLyricsFromArrays(source) {
+        const displayMode = effectiveLyricMode();
         const hasSynced = originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0);
         isSyncedLyrics = hasSynced;
         // 合并时间点（保留三位小数作为key）
@@ -182,8 +247,8 @@ export function createLyrics({
                 }
 
                 // 原文保持同一节点，附属文本只在下面增减。
-                if (lyricDisplayMode !== 'original') {
-                    const subContent = lyricDisplayMode === 'both' ? ttext : rtext;
+                if (displayMode !== 'original') {
+                    const subContent = displayMode === 'both' ? ttext : rtext;
                     if (subContent) {
                         const subDiv = document.createElement('div');
                         subDiv.className = 'lyric-translation';
@@ -204,16 +269,16 @@ export function createLyrics({
             const metaOnlyHtml = metaText
                 ? `<div class="lyric-line active" style="margin-top:100px; cursor:default;"><div>🎵 纯音乐，无歌词</div><div class="lyric-translation" style="white-space:pre-wrap;">${escapeHtml(metaText)}</div></div>`
                 : `<div class="lyric-line active" style="margin-top:100px; cursor:default;">暂无歌词</div>`;
-            if(lyricDisplayMode === 'original') {
+            if(displayMode === 'original') {
                 if (origText || transText || romaText) {
-                    domService.el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${escapeHtml(origText || transText || romaText)}</div>`;
+                    domService.el.lyricBox.innerHTML = `<div class="lyric-original" style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.8;">${escapeHtml(origText || transText || romaText)}</div>`;
                 } else {
                     domService.el.lyricBox.innerHTML = metaOnlyHtml;
                 }
             } else {
-                const subText = lyricDisplayMode === 'both' ? transText : romaText;
+                const subText = displayMode === 'both' ? transText : romaText;
                 if (origText || subText) {
-                    domService.el.lyricBox.innerHTML = `<div style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${escapeHtml(origText)}</div><div style="padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${escapeHtml(subText)}</div>`;
+                    domService.el.lyricBox.innerHTML = `<div class="lyric-original" style="padding:20px; text-align:center; white-space:pre-wrap; color:var(--text-main); font-size:1rem; line-height:1.4;">${escapeHtml(origText)}</div><div class="lyric-translation" style="margin:0;padding:8px 20px;text-align:center;white-space:pre-wrap;color:var(--text-sub);font-size:0.95rem;line-height:1.6;">${escapeHtml(subText)}</div>`;
                 } else {
                     domService.el.lyricBox.innerHTML = metaOnlyHtml;
                 }
@@ -359,7 +424,7 @@ export function createLyrics({
                 }
             }
 
-            debugService.log(`Searching lyrics: "${searchSong}" by "${searchArtist}"`);
+            debugService.log(`正在搜索歌词：歌曲「${searchSong}」，歌手「${searchArtist}」`);
 
             let bestMatch = null;
             const matchPath = `/search/match?title=${encodeURIComponent(searchSong)}&album=${encodeURIComponent(album || '')}&artist=${encodeURIComponent(searchArtist)}&duration=${encodeURIComponent(Number(duration || 0).toFixed(3))}`;
@@ -382,7 +447,7 @@ export function createLyrics({
                 if (!isCurrent()) return false;
                 const songs = searchData?.result?.songs || [];
                 if (searchData?.code !== 200 || !songs.length) {
-                    debugService.log('No songs found on Netease', 'error');
+                    debugService.log('网易云未找到匹配歌曲', 'error');
                     if (!options.preserveLyrics) domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">未找到匹配歌曲</div>';
                     return false;
                 }
@@ -390,10 +455,10 @@ export function createLyrics({
                 bestMatch = chooseNeteaseSongMatch(songs, { name: searchSong, artist: searchArtist, album, duration });
             }
             if (!bestMatch?.id) throw new Error('没有可用的歌曲匹配结果');
-            debugService.log(`Selected: "${bestMatch.name}" by ${getNeteaseSongArtists(bestMatch)[0] || '?'}`);
+            debugService.log(`已选中：${bestMatch.name} - ${getNeteaseSongArtists(bestMatch)[0] || '未知歌手'}`);
 
             const songId = bestMatch.id;
-            debugService.log(`Found song ID: ${songId} - ${bestMatch.name}`);
+            debugService.log(`匹配歌曲 ID：${songId} - ${bestMatch.name}`);
 
             // 获取歌词
             const lyricResp = await fetch(apiService.buildApiUrl(`/lyric/new?id=${songId}`), { signal: options.signal });
@@ -406,13 +471,13 @@ export function createLyrics({
             const tracks = selectNeteaseLyricTracks(lyricData);
             const { wordLyrics } = tracks;
             if (tracks.original || wordLyrics) {
-                debugService.log('Netease lyrics loaded!', 'success');
-                if (wordLyrics) debugService.log(`YRC word-sync loaded: ${wordLyrics.length} lines`, 'success');
+                debugService.log('网易云歌词已加载', 'success');
+                if (wordLyrics) debugService.log(`YRC 逐字歌词已加载：${wordLyrics.length} 行`, 'success');
                 const commit = options.onLyrics || parseAndRenderLyrics;
                 if (!commit(tracks.original, '网易云', tracks.translated, tracks.roman, wordLyrics)) throw new Error('没有可用歌词');
                 return true;
             } else if (lyricData?.nolyric || lyricData?.uncollected) {
-                debugService.log('Song has no lyrics (instrumental)', 'warn');
+                debugService.log('歌曲无歌词（纯音乐）', 'warn');
                 if (!options.preserveLyrics) {
                     resetTrackLyrics();
                     domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🎵 纯音乐，无歌词</div>';
@@ -420,11 +485,11 @@ export function createLyrics({
                 }
                 return false;
             } else {
-                throw new Error('No lyrics in response');
+                throw new Error('接口未返回歌词');
             }
         } catch (e) {
             if (!isCurrent() || e?.name === 'AbortError') return false;
-            debugService.log('Netease search error: ' + e.message, 'error');
+            debugService.log('网易云歌词搜索失败：' + e.message, 'error');
             if (!options.preserveLyrics) {
                 domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词搜索失败</div>';
                 setArtistTag('网易云', metadataService.currentAudioQuality);
@@ -461,8 +526,8 @@ export function createLyrics({
                 const tracks = selectNeteaseLyricTracks(data);
                 const { wordLyrics } = tracks;
                 if (tracks.original || wordLyrics) {
-                    debugService.log('Lyrics loaded!', 'success');
-                    if (wordLyrics) debugService.log(`YRC word-sync loaded: ${wordLyrics.length} lines`, 'success');
+                    debugService.log('歌词已加载', 'success');
+                    if (wordLyrics) debugService.log(`YRC 逐字歌词已加载：${wordLyrics.length} 行`, 'success');
                     parseAndRenderLyrics(tracks.original, '网易云', tracks.translated, tracks.roman, wordLyrics);
                     return true;
                 } else if (data?.nolyric || data?.uncollected) {
@@ -481,7 +546,7 @@ export function createLyrics({
                 // 切歌时中断，UI 将被重置，无需设置标签
                 return false;
             }
-            debugService.log('Lyric fetch error: ' + e.message, 'error');
+            debugService.log('歌词获取失败：' + e.message, 'error');
             domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">歌词获取失败</div>';
             setArtistTag('网易云', metadataService.currentAudioQuality); // 失败也显示标签
             return false;
@@ -510,13 +575,10 @@ export function createLyrics({
         romanLyricsArr = payload.romanArr;
         lyricMetadataArr = payload.metadata;
 
-        const hasTranslation = translatedLyricsArr.length > 0;
-        const hasRoman = romanLyricsArr.length > 0;
-        // 如果检测到翻译或罗马音可用，启用切换按钮
-        updateLyricToggleUI(hasTranslation || hasRoman);
+        updateLyricToggleUI();
 
         renderLyricsFromArrays(source);
-        debugService.log(`Lyrics parsed. Original: ${originalLyricsArr.length}, Trans: ${translatedLyricsArr.length}, Roma: ${romanLyricsArr.length}${lyricMetadataArr.length ? `, Meta: ${lyricMetadataArr.length}` : ''}`, 'success');
+        debugService.log(`歌词解析完成：原文 ${originalLyricsArr.length} 行，翻译 ${translatedLyricsArr.length} 行，注音 ${romanLyricsArr.length} 行${lyricMetadataArr.length ? `，歌曲信息 ${lyricMetadataArr.length} 行` : ''}`, 'success');
         return true;
     }
 
@@ -595,10 +657,12 @@ export function createLyrics({
     return {
         get localLyricSession() { return localLyricSession; },
         get neteaseSearchEnabled() { return neteaseSearchEnabled; },
-        set neteaseSearchEnabled(value) { neteaseSearchEnabled = value; },
+        set neteaseSearchEnabled(value) { setNeteaseSearchEnabled(value); },
         resetTrackLyrics,
         get lyricDisplayMode() { return lyricDisplayMode; },
-        set lyricDisplayMode(value) { lyricDisplayMode = value; },
+        set lyricDisplayMode(value) { if (['original', 'both', 'roma'].includes(value)) lyricDisplayMode = value; },
+        setLyricDisplayMode,
+        get effectiveLyricDisplayMode() { return effectiveLyricMode(); },
         get originalLyricsArr() { return originalLyricsArr; },
         get translatedLyricsArr() { return translatedLyricsArr; },
         updateLyricToggleUI,
@@ -644,48 +708,13 @@ export function createLyrics({
             if (_lastActiveLyric) wordMotion.activate(_lastActiveLyric);
             if(domService.lyricToggleBtn) {
                 domService.lyricToggleBtn.onclick = () => {
-                    // 三段式循环：original -> both (translation) -> roma (romanization)
-                    if (lyricDisplayMode === 'original') lyricDisplayMode = 'both';
-                    else if (lyricDisplayMode === 'both') lyricDisplayMode = 'roma';
-                    else lyricDisplayMode = 'original';
-
-                    localStorage.setItem('lyric_mode', lyricDisplayMode);
-
-                    // If lyrics are time-synced, perform incremental DOM update to avoid layout jitter
-                    const lines = domService.el.lyricBox.querySelectorAll('.lyric-line');
-                    const hasExtraData = originalLyricsArr.some(l=>l.t>=0) || translatedLyricsArr.some(l=>l.t>=0) || romanLyricsArr.some(l=>l.t>=0);
-                    if (lines && lines.length && hasExtraData) {
-                        // 清除旧的附加行
-                        domService.el.lyricBox.querySelectorAll('.lyric-translation').forEach(n => n.remove());
-
-                        if (lyricDisplayMode !== 'original') {
-                            const targetArr = lyricDisplayMode === 'both' ? translatedLyricsArr : romanLyricsArr;
-                            const exactExtra = new Map(targetArr.map(line => [line.t, line]));
-                            const findExtra = yrcData?.length ? t => exactExtra.get(t) : createLyricTimeLookup(targetArr);
-                            lines.forEach(lineEl => {
-                                const t = parseFloat(lineEl.dataset.time || -1);
-                                if (isNaN(t) || t < 0) return;
-                                const sub = findExtra(t);
-                                if (sub && sub.txt) {
-                                    const sdiv = document.createElement('div');
-                                    sdiv.className = 'lyric-translation';
-                                    sdiv.textContent = sub.txt;
-                                    (lineEl.querySelector('.lyric-visual') || lineEl).appendChild(sdiv);
-                                }
-                            });
-                        }
-                        updateLyricToggleUI(true);
-                        lyricViewport.relayout();
-                        refreshLyricHighlightAndCenter();
-                        return;
-                    }
-
-                    // Fallback: non-synced or no existing DOM lines — rebuild
-                    renderLyricsFromArrays();
-                    updateLyricToggleUI(true);
+                    const modes = availableLyricModes(), current = effectiveLyricMode();
+                    if (modes.length < 2) return;
+                    setLyricDisplayMode(modes[(modes.indexOf(current) + 1) % modes.length]);
                 };
-                updateLyricToggleUI(false);
             }
+            updateLyricToggleUI();
+            setNeteaseSearchEnabled(neteaseSearchEnabled);
         }
     };
 }

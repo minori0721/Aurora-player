@@ -1,5 +1,6 @@
 import { fmtTime } from '../shared/text.js';
 import { createLyricMotion, LYRIC_SCROLL_DURATION_MS, LYRIC_SCROLL_EASING } from './motion.js';
+import { createLyricWrapping } from './wrapping.js';
 
 export const LYRIC_RESUME_DELAY_MS = 6000;
 const SCROLL_SETTLE_MS = 180;
@@ -21,6 +22,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     const maxScroll = () => Math.max(0, (viewport.scrollHeight || 0) - height());
     const scrollMotion = createLyricMotion(viewport, { environment, document: doc, isReduced: () => reduced.matches });
     const layoutShifts = new Map();
+    const wrapping = createLyricWrapping(content, { environment, document: doc });
     let followPoint = height() / 2;
     const listen = (target, type, callback, options) => {
         target?.addEventListener?.(type, callback, options);
@@ -134,7 +136,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
 
     function settled() {
         clearSettle();
-        if (browsing) { schedulePaint(); armResume(); }
+        if (browsing) { scheduleLayout(); schedulePaint(); armResume(); }
     }
 
     function beginBrowsing() {
@@ -180,6 +182,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         const paddingBottom = lines.length ? `${visibleHeight - followPoint}px` : '0px';
         if (content.style.paddingTop !== paddingTop) content.style.paddingTop = paddingTop;
         if (content.style.paddingBottom !== paddingBottom) content.style.paddingBottom = paddingBottom;
+        wrapping.layout(lines[index >= 0 ? index : anticipated >= 0 ? anticipated : active]);
         // Read geometry together, then update only changed transform anchors.
         const next = lines.map(measureLine);
         if (pendingReflow) compensateReflow(geometry, next);
@@ -207,6 +210,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     }
 
     function reset() {
+        wrapping.reset();
         generation++; clearResume(); clearSettle();
         cancelFollowing(); cancelLayoutShifts();
         scrollMotion.reset();
@@ -326,7 +330,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         if (!doc.hidden) relayout();
     });
     listen(environment, 'resize', () => { cancelFollowing(); cancelLayoutShifts(); followTarget = null; scheduleLayout(); });
-    listen(doc.fonts, 'loadingdone', scheduleLayout);
+    listen(doc.fonts, 'loadingdone', () => { wrapping.invalidate(); scheduleLayout(); });
     const observer = environment.ResizeObserver ? new environment.ResizeObserver(scheduleLayout) : null;
     observer?.observe(viewport); observer?.observe(content);
     if (alignmentTarget) {
@@ -338,14 +342,14 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     }
 
     return {
-        reset, relayout, syncPlayback, returnToCurrent,
-        setLines(next) { reset(); lines = [...next]; relayout(); },
+        reset, relayout(smooth = false) { wrapping.refresh(lines); relayout(smooth); }, syncPlayback, returnToCurrent,
+        setLines(next) { reset(); lines = [...next]; wrapping.refresh(lines); relayout(); },
         anticipate(index) {
             if (disposed || browsing || blocked() || reduced.matches || !isPlaying() || active < 0 || index !== active + 1
                 || !Number.isFinite(centers[index])) return false;
             if (anticipated === index) return true;
             anticipated = index;
-            if (layoutFrame || geometryChanged(active) || geometryChanged(index)) relayout(true);
+            if (wrapping.layout(lines[index]) || layoutFrame || geometryChanged(active) || geometryChanged(index)) relayout(true);
             else align();
             return true;
         },
@@ -357,7 +361,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
             if (changed || force) anticipated = -1;
             active = index;
             if (!changed && !force) return;
-            if (layoutFrame || geometryChanged(previous) || geometryChanged(index)) {
+            if (wrapping.layout(lines[index]) || layoutFrame || geometryChanged(previous) || geometryChanged(index)) {
                 pendingReflow = pendingReflow || previous >= 0 && changed;
                 // Apply the changed row geometry before this frame paints, not one frame later.
                 if (doc.hidden) scheduleLayout(previous >= 0);

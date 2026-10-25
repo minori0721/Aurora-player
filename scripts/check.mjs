@@ -10,7 +10,7 @@ const globals = new Set(`window document navigator localStorage sessionStorage i
     AudioContext ColorThief jsmediatags Image File FileReader Blob Worker URL URLSearchParams ResizeObserver
     IntersectionObserver HTMLElement Element Event MediaMetadata AbortController AbortSignal DOMException TextDecoder
     ReadableStream Response Request Headers
-    Uint8Array Uint16Array Uint32Array Float32Array Float64Array ArrayBuffer DataView WeakMap WeakSet Map Set
+    Uint8Array Uint16Array Uint32Array Int16Array Float32Array Float64Array ArrayBuffer DataView WeakMap WeakSet Map Set
     Object Reflect Array String Number Boolean Math Date Promise Error TypeError RangeError JSON RegExp Symbol Infinity
     NaN undefined globalThis fetch alert confirm matchMedia setTimeout clearTimeout setInterval clearInterval requestAnimationFrame
     cancelAnimationFrame encodeURIComponent decodeURIComponent btoa atob parseFloat parseInt isNaN self`.split(/\s+/));
@@ -20,7 +20,7 @@ export async function sourceFiles(directory = path.join(ROOT, 'src')) {
     for (const item of await fs.readdir(directory, { withFileTypes: true })) {
         const file = path.join(directory, item.name);
         if (item.isDirectory()) result.push(...await sourceFiles(file));
-        else if (item.name.endsWith('.js')) result.push(file);
+        else if (/\.m?js$/.test(item.name)) result.push(file);
     }
     return result;
 }
@@ -31,7 +31,8 @@ export async function checkSource() {
     const files = await sourceFiles();
     for (const file of files) {
         const code = await fs.readFile(file, 'utf8');
-        if (file.includes(`${path.sep}vendor${path.sep}`) || file.endsWith(`${path.sep}preferences.js`)) {
+        const classicVendor = file.includes(`${path.sep}vendor${path.sep}`) && file.endsWith('.js');
+        if (classicVendor || file.endsWith(`${path.sep}preferences.js`)) {
             new vm.Script(code, { filename: file });
             continue;
         }

@@ -12,6 +12,30 @@ export function createLoop({
     // 网易云歌词搜索开关，默认关闭
     let loopState = { active: false, start: 0, end: 0, source: null };
     let preparingLoop = false, pendingLoopVersion = 0;
+    let preciseInputs = null;
+
+    function writeLoopInputs(start, end) {
+        const startText = start.toFixed(3), endText = end.toFixed(3);
+        domService.el.loopStart.value = startText;
+        domService.el.loopEnd.value = endText;
+        preciseInputs = { token: playbackService._currentPlayActionToken,
+            start: { value: start, text: startText, edited: false },
+            end: { value: end, text: endText, edited: false } };
+    }
+
+    function readLoopInput(point) {
+        const control = point === 'start' ? domService.el.loopStart : domService.el.loopEnd;
+        const saved = preciseInputs?.[point];
+        // Rounded display text is not a replacement for an untouched sample-accurate endpoint.
+        if (saved && preciseInputs.token === playbackService._currentPlayActionToken
+            && !saved.edited && control.value === saved.text) return saved.value;
+        return parseFloat(control.value);
+    }
+
+    function markLoopInputEdit(point) {
+        if (preciseInputs) preciseInputs[point].edited = true;
+        markLoopUserEdit();
+    }
 
     function getLoopEditVersion(track) {
         return track ? loopEditVersions.get(track) || 0 : 0;
@@ -103,6 +127,7 @@ export function createLoop({
         const duration = Number(playbackService.audioBuffer?.duration || playbackService.playbackState.duration || 0);
         const isValid = Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e > s && (!duration || e <= duration);
         if(!isValid) {
+            preciseInputs = null;
             loopState = { active: false, start: Number(s) || 0, end: Number(e) || 0, source: null };
             domService.el.loopEnable.checked = false;
             domService.el.loopMsg.textContent = '循环区间无效';
@@ -128,7 +153,7 @@ export function createLoop({
             });
             return false;
         }
-        domService.el.loopStart.value = s.toFixed(3); domService.el.loopEnd.value = e.toFixed(3);
+        writeLoopInputs(s, e);
         domService.el.loopEnable.checked = true; loopState = { active: true, start: s, end: e, source };
         domService.el.loopMsg.textContent = '';
         updateLoopMarkers();
@@ -139,11 +164,12 @@ export function createLoop({
 
     const setLoopPoint = function(t) {
         const now = playbackService.getCurrentTime();
+        if (preciseInputs) preciseInputs[t === 'a' ? 'start' : 'end'].edited = true;
         if(t==='a') domService.el.loopStart.value=now.toFixed(3); else domService.el.loopEnd.value=now.toFixed(3);
         domService.el.loopEnable.checked = true; domService.el.loopEnable.dispatchEvent(new Event('change'));
     };
 
-    function resetLoopUI() { pendingLoopVersion++; preparingLoop=false; loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
+    function resetLoopUI() { pendingLoopVersion++; preparingLoop=false; preciseInputs=null; loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
 
     function updateLoopMarkers() {
         if(!loopState.active) { domService.el.markerA.style.display='none'; domService.el.markerB.style.display='none'; document.getElementById('loop-status').style.display='none'; return; }
@@ -165,11 +191,11 @@ export function createLoop({
         initialize() {
             if (initialized) return;
             initialized = true;
-            domService.el.loopStart.addEventListener('input', markLoopUserEdit);
-            domService.el.loopEnd.addEventListener('input', markLoopUserEdit);
+            domService.el.loopStart.addEventListener('input', () => markLoopInputEdit('start'));
+            domService.el.loopEnd.addEventListener('input', () => markLoopInputEdit('end'));
             domService.el.loopEnable.addEventListener('change', e => {
                 if(e.target.checked) {
-                    const s = parseFloat(domService.el.loopStart.value), e_val = parseFloat(domService.el.loopEnd.value);
+                    const s = readLoopInput('start'), e_val = readLoopInput('end');
                     applyLoop(s, e_val);
                 } else {
                     markLoopUserEdit();

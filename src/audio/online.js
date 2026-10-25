@@ -88,7 +88,7 @@ export function createOnlinePlayback({
             try { prefetchService.cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false }); } catch (_) {}
         }
 
-        debugService.log(`Playing: ${songName} - ${artists}`);
+        debugService.log(`正在播放：${songName} - ${artists}`);
 
         if (cover) {
             coversService.setMainCover(cover, { onLoad: () => {
@@ -278,7 +278,7 @@ export function createOnlinePlayback({
                         const preloadedQuality = describeAudioQualityFromBuffer(ab, consumed.audioUrl || '', decodedBuffer, { ...(consumed.audioInfo || {}), _qualityProbe: preloadedProbe });
                         metadataService.currentAudioQuality = preloadedQuality.label;
                         lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
-                        debugService.log(`Audio: ${metadataService.currentAudioQuality}`, 'success');
+                        debugService.log(`音质：${metadataService.currentAudioQuality}`, 'success');
                         domService.el.bufferLine.style.width = '100%';
                         playbackService.playbackState.duration = playbackService.audioBuffer.duration;
                         domService.el.totalTime.textContent = fmtTime(playbackService.playbackState.duration);
@@ -314,7 +314,7 @@ export function createOnlinePlayback({
                 if (!playbackService.isPlaybackActionCurrent(myPlayToken) || signal.aborted) return;
                 if (e.stale || e.message === 'stale') return;
                 if (e.code === 'AUDIO_STALLED') recoveryBudget.stallRecoveryUsed = true;
-                debugService.log('Prefetch reuse error, fallback: ' + (e && e.message), 'warn');
+                debugService.log('预取数据复用失败，回退正常加载：' + (e && e.message), 'warn');
                 try { prefetchService.cancelNextPreload(); } catch(e) {}
             }
 
@@ -352,7 +352,7 @@ export function createOnlinePlayback({
                 return;
             }
             let audioUrl = audioCandidates[0];
-            debugService.log(`Audio URL: ${audioCandidates[0]}`);
+            debugService.log(`音频链接：${audioCandidates[0]}`);
 
             domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 加载音频...</div>';
             domService.el.bufferLine.style.width = '30%';
@@ -406,7 +406,7 @@ export function createOnlinePlayback({
             const actualQuality = describeAudioQualityFromBuffer(ab, audioUrl, decodedBuffer, { ...(audioInfo || {}), _qualityProbe: actualProbe });
             metadataService.currentAudioQuality = actualQuality.label;
             lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
-            debugService.log(`Audio: ${metadataService.currentAudioQuality}`, 'success');
+            debugService.log(`音质：${metadataService.currentAudioQuality}`, 'success');
             domService.el.bufferLine.style.width = '100%';
             playbackService.playbackState.duration = playbackService.audioBuffer.duration;
             domService.el.totalTime.textContent = fmtTime(playbackService.playbackState.duration);
@@ -435,10 +435,10 @@ export function createOnlinePlayback({
             if (!playbackService.isPlaybackActionCurrent(myPlayToken)) return;
             if (e.message === 'stale' || (e.name === 'AbortError' && !e.timeout)) {
                 // 过期或被取消，不记录为错误
-                debugService.log('Play request aborted/stale');
+                debugService.log('播放请求已取消或失效');
                 return;
             }
-            debugService.log('Play error: ' + e.message, 'error');
+            debugService.log('播放失败：' + e.message, 'error');
             domService.el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${escapeHtml(e?.message || String(e))}</div>`;
             playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
         } finally {

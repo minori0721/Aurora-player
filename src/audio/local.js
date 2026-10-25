@@ -100,7 +100,7 @@ export function createLocalPlayback({
         contentService.setMainMusicEntityLinks(null);
         domService.el.title.textContent = track.name; domService.el.artist.textContent = "Loading...";
         domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
-        debugService.log(`Track: ${track.name}`);
+        debugService.log(`本地曲目：${track.name}`);
 
         try {
             let ab = null;
@@ -122,7 +122,7 @@ export function createLocalPlayback({
                     const preloaded = prefetchService.takeNextPreloadedRawData(i, track);
                     if (preloaded?.ab) {
                         ab = preloaded.ab;
-                        debugService.log('Using preloaded raw data for local track', 'success');
+                        debugService.log('正在复用本地曲目的预取数据', 'success');
                     } else {
                         ab = await track.file.arrayBuffer();
                         playbackService.assertPlaybackActionCurrent(myPlayToken, track);
@@ -130,7 +130,7 @@ export function createLocalPlayback({
                 } catch (e) {
                     if (!isCurrent()) return;
                     if (e.stale || e.message === 'stale') throw e;
-                    debugService.log('Error while attempting to use preloaded local data, fallback: ' + (e && e.message), 'warn');
+                    debugService.log('本地预取数据复用失败，回退正常读取：' + (e && e.message), 'warn');
                     try { prefetchService.cancelNextPreload(); } catch(_) {}
                     ab = await track.file.arrayBuffer();
                     playbackService.assertPlaybackActionCurrent(myPlayToken, track);
@@ -143,7 +143,7 @@ export function createLocalPlayback({
             domService.el.bufferLine.style.width = '30%';
             let meta = null;
             if(track.file.name.toLowerCase().endsWith('.flac')) {
-                debugService.log("Detect FLAC. Using Native Parser...");
+                debugService.log("检测到 FLAC，正在解析文件元数据…");
                 meta = parseFlacTagsFromArrayBuffer(ab, undefined, debugService.log);
                 playbackService.assertPlaybackActionCurrent(myPlayToken, track);
                 // 计算FLAC比特率（文件大小 / 时长）
@@ -198,7 +198,7 @@ export function createLocalPlayback({
                     { type: ext.toLowerCase(), size: metadataService.pendingQualityInfo.size, _qualityProbe: localQualityProbe }
                 );
                 metadataService.currentAudioQuality = localQuality.label;
-                debugService.log(`Audio: ${metadataService.currentAudioQuality}`);
+                debugService.log(`音质：${metadataService.currentAudioQuality}`);
                 metadataService.pendingQualityInfo = null;
             }
 
@@ -217,8 +217,8 @@ export function createLocalPlayback({
             domService.el.artist.textContent = '无法播放';
             domService.el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${escapeHtml(e?.message || String(e))}</div>`;
             playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
-            debugService.log("Err: " + e, 'error');
-            alert("播放失败，请查看Debug窗口");
+            debugService.log("本地播放失败：" + e, 'error');
+            alert("播放失败，请查看日志面板");
         } finally {
             playbackService.releasePlaybackLoad(load);
         }

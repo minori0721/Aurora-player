@@ -20,7 +20,9 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/netease/` | API、登录、内容浏览、路由、歌单分页、下载 |
 | `src/netease/song-details.js` | 歌曲详情前瞻、按 ID 共享请求、优先级提升与账号隔离 |
 | `src/netease/images.js` | 云音乐缩略图近屏加载、可见失败重试和迷你封面复用 |
-| `src/analysis/algorithms.js` | 三档循环匹配算法，不依赖页面或播放控制器 |
+| `src/analysis/algorithms.js` | 三档周期搜索、原采样率精修和联合接缝选点，不依赖页面或播放控制器 |
+| `src/analysis/signal.js` | 低通降采样、FFT 相关曲线及多声道频谱特征 |
+| `src/analysis/input.js` | A/B 局部声道窗口、原始采样位置映射与 Worker 数据准备 |
 | `src/analysis/worker.js`、`controller.js` | Worker 消息处理、任务生命周期、分析面板 |
 | `src/storage/` | 请求缓存、IndexedDB、播放列表持久化与数据迁移 |
 | `src/ui/`、`src/styles/` | 页面元素、弹层、控件、封面、渲染调度与样式 |
@@ -56,7 +58,7 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 
 歌曲详情由 `song-details.js` 按 ID 共享并调度，音频预取仍由 `audio/prefetch.js` 单独管理；歌词预取只保存原始数据，不在后台渲染。窗口、预算与生命周期见 [技术说明](technical.md)。
 
-样式按原有顺序合并，第三方库作为独立内联脚本保留原有全局加载行为和许可证，最后内联主程序。构建只读取 `API_BASE_URL`、`DOWNLOAD_PROXY_URL` 两个公开地址；环境变量的其他值不会注入 HTML。版本号来自 `package.json`，模板中的 `{{VERSION}}` 不手动替换。
+样式按原有顺序合并，标签和取色库作为独立内联脚本保留原有全局加载行为和许可证，最后内联主程序。`src/vendor/fft.mjs` 固定为 fft.js 4.0.4，仅适配 ESM 导出，计算内核不变；它随分析模块打包进 Worker 和主线程回退，保留 MIT 许可证，不新增旁置脚本或运行时依赖。构建只读取 `API_BASE_URL`、`DOWNLOAD_PROXY_URL` 两个公开地址；环境变量的其他值不会注入 HTML。版本号来自 `package.json`，模板中的 `{{VERSION}}` 不手动替换。
 
 ## 检查与发布
 

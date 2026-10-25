@@ -17,7 +17,7 @@
 </head>
 <body id="body">
 
-    <div id="debug-console"><div>> Debugger Ready.</div></div>
+    <div id="debug-console"><div>> 日志已就绪。</div></div>
     <canvas id="background-canvas" aria-hidden="true" hidden></canvas>
     <canvas id="visual-canvas"></canvas>
     <div class="drag-mask"><h1 id="drag-mask-title">投喂音乐</h1><p id="drag-mask-detail">MP3 / FLAC / OGG / SLI</p></div>
@@ -185,13 +185,30 @@
             <!-- 移动端下载按钮，放在云音乐右侧 -->
             <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载">⬇️</button>
             <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词" aria-label="云词开关" aria-pressed="false">📝 <span class="btn-text">云词</span></button>
-            <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
-                <option value="none">✨ 无特效</option>
-                <option value="snow">❄️ 凛冬飞雪</option>
-                <option value="bars">📊 律动频谱</option>
-                <option value="waves">🌊 极光波浪</option>
-            </select>
-            <button id="toggle-debug" class="glass-btn desktop-only" aria-label="打开调试控制台">🐞 Debug</button>
+            <div class="effect-select-control desktop-only">
+                <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
+                    <option value="none">✨ 无特效</option>
+                    <option value="snow">❄️ 凛冬飞雪</option>
+                    <option value="bars">📊 律动频谱</option>
+                    <option value="waves">🌊 极光波浪</option>
+                </select>
+            </div>
+            <!-- Lucide Logs icon (https://lucide.dev), ISC License.
+            Copyright (c) 2026 Lucide Icons and Contributors
+            Permission to use, copy, modify, and/or distribute this software for any
+            purpose with or without fee is hereby granted, provided that the above
+            copyright notice and this permission notice appear in all copies.
+            THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+            WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+            MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+            ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+            WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+            ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+            OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. -->
+            <button id="toggle-debug" class="glass-btn desktop-only" title="打开日志" aria-label="打开日志">
+                <svg class="tool-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5h1M3 12h1M3 19h1M8 5h1M8 12h1M8 19h1M13 5h8M13 12h8M13 19h8"/></svg>
+                <span>Log</span>
+            </button>
         </div>
         <div class="tool-group">
             <button id="toggle-analyze" class="glass-btn desktop-only" aria-label="打开智能分析" aria-expanded="false">🔍 智能分析</button>
@@ -201,12 +218,25 @@
             <div class="advanced-menu-container mobile-only">
                 <button id="toggle-advanced" class="glass-btn">⚙️ 高级</button>
                 <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
-                    <button class="advanced-menu-item" data-action="debug">🐞 Debug</button>
-                    <button class="advanced-menu-item" data-action="analyze">🔍 智能分析</button>
-                    <button class="advanced-menu-item" data-action="loop">🔁 循环设定</button>
-                    <button class="advanced-menu-item" data-action="netease-lyrics">📝 云词开关</button>
-                    <button class="advanced-menu-item" data-action="lyric-toggle">🈂️ 切换歌词翻译</button>
-                    <button class="advanced-menu-item" data-action="effects">✨ 视觉特效</button>
+                    <button class="advanced-menu-item" data-action="debug" aria-label="打开日志"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5h1M3 12h1M3 19h1M8 5h1M8 12h1M8 19h1M13 5h8M13 12h8M13 19h8"/></svg></span><span class="advanced-menu-text">Log</span></button>
+                    <button class="advanced-menu-item" data-action="analyze"><span class="advanced-menu-icon" aria-hidden="true">🔍</span><span class="advanced-menu-text">智能分析</span></button>
+                    <button class="advanced-menu-item" data-action="loop"><span class="advanced-menu-icon" aria-hidden="true">🔁</span><span class="advanced-menu-text">循环设定</span></button>
+                    <label class="advanced-setting">
+                        <span class="advanced-setting-name"><span class="advanced-menu-icon" aria-hidden="true">📝</span><span class="advanced-menu-text">云词搜索</span></span>
+                        <span class="settings-switch">
+                            <input id="cloud-lyrics-switch" type="checkbox" role="switch" aria-label="本地歌曲自动匹配云词">
+                            <span class="settings-switch-track" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                    <div class="advanced-setting">
+                        <span class="advanced-setting-name" id="lyric-mode-label"><span class="advanced-menu-icon" aria-hidden="true">🈂️</span><span class="advanced-menu-text">歌词</span></span>
+                        <div class="lyric-mode-control" role="radiogroup" aria-labelledby="lyric-mode-label">
+                            <label title="仅原文"><input id="lyric-mode-original" type="radio" name="lyric-display-mode" value="original" aria-label="仅原文" disabled><span>词</span></label>
+                            <label title="原文＋翻译"><input id="lyric-mode-both" type="radio" name="lyric-display-mode" value="both" aria-label="原文加翻译" disabled><span>译</span></label>
+                            <label title="原文＋罗马音"><input id="lyric-mode-roma" type="radio" name="lyric-display-mode" value="roma" aria-label="原文加罗马音" disabled><span>音</span></label>
+                        </div>
+                    </div>
+                    <button class="advanced-menu-item" data-action="effects"><span class="advanced-menu-icon" aria-hidden="true">✨</span><span class="advanced-menu-text">视觉特效</span></button>
                 </div>
             </div>
         </div>

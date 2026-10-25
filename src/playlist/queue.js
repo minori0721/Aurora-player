@@ -27,7 +27,7 @@ export function createQueue({
 
         // 仅在自动触发且为单曲循环时，直接重放内存中的已解码音频（瞬时，无网络/解码开销）
         if (isAuto && playMode === 2 && playbackService.audioBuffer) {
-            debugService.log('Single Loop: Auto Replay ⚡️');
+            debugService.log('单曲循环：自动重播');
             playbackService.startAudio(0);
             return;
         }
@@ -43,7 +43,7 @@ export function createQueue({
             onlinePlaylistService.currentPlaylistData.pendingAdvance = true;
             playbackService.stopAudio('loading');
             importsService.showImportSummary('正在等待歌单继续加载下一首…', false);
-            debugService.log('Playlist reached loaded end; waiting for the next batch', 'success');
+            debugService.log('已播放到当前加载末尾，正在等待下一批歌曲', 'success');
             return;
         }
         // 确定目标下一首索引（在决定后再评估是否取消预取，以便在手动切歌时复用预加载）
@@ -148,7 +148,7 @@ export function createQueue({
                 if (e?.name === 'AbortError') return;
                 if (!coverKnown) coversService.setMainCover();
                 playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
-                debugService.log('Error: ' + e.message, 'error');
+                debugService.log('播放失败：' + e.message, 'error');
             } finally {
                 playbackService.releasePlaybackLoad(load);
             }

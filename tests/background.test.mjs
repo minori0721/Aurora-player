@@ -23,6 +23,13 @@ test('flow themes contain only bounded linear colors and normalized weights', ()
     }
 });
 
+test('hex base colors are honored when compositing transparent theme colors', () => {
+    const colors = Array(4).fill('rgba(255,0,0,0)');
+    assert.deepEqual(flowTheme({ base: '#123456', colors }), flowTheme({ base: 'rgb(18,52,86)', colors }));
+    assert.deepEqual(flowTheme({ base: '#123', colors }), flowTheme({ base: 'rgb(17,34,51)', colors }));
+    assert.notDeepEqual(flowTheme({ base: '#123456', colors }), flowTheme({ colors }));
+});
+
 function clocked(run) {
     const saved = Object.fromEntries(['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'].map(key => [key, globalThis[key]]));
     const originalNow = performance.now;

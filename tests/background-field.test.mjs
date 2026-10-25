@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildSpatialCover,sampleSpatialCover,meshPoint,createSpatialPainter,transitionProgress,mapCoverLightness,SPATIAL_TRANSITION_MS} from '../src/ui/background-field.js';
 import { sameSpatialCover } from '../src/ui/background-field.js';
+import { DEFAULT_THEME_BASE, DEFAULT_THEME_COLORS } from '../src/ui/theme.js';
 
 function fixture(color,width=96,height=96){return Uint8Array.from({length:width*height*4},(_,i)=>{const p=Math.floor(i/4),x=p%width,y=Math.floor(p/width);return color(x,y)[i%4];});}
 
@@ -116,8 +117,8 @@ test('main-thread sampling copies only 16KiB and leaves blur for the Worker',()=
     source.fill(0);assert.equal(result.data[2],90);assert.equal(result.data.at(-1),255);
 });
 
-test('only two textures are allocated; rapid changes blend from the visible image and do not upload per frame',()=>{
-    const constants=new Map(),uploaded=[],deleted=[];let seed=1,slot=0,images=0,subImages=0,draws=0,now=0;
+function painterFixture() {
+    const constants=new Map(),uploaded=[],deleted=[];let seed=1,slot=0,images=0,subImages=0,draws=0;
     const gl=new Proxy({createShader:()=>({}),shaderSource(){},compileShader(){},getShaderParameter:()=>true,
         createProgram:()=>({}),attachShader(){},linkProgram(){},getProgramParameter:()=>true,useProgram(){},
         createBuffer:()=>({}),bindBuffer(){},bufferData(){},getAttribLocation:()=>0,enableVertexAttribArray(){},vertexAttribPointer(){},
@@ -126,15 +127,83 @@ test('only two textures are allocated; rapid changes blend from the visible imag
         deleteBuffer:()=>deleted.push('buffer'),deleteTexture:()=>deleted.push('texture'),deleteShader:()=>deleted.push('shader'),deleteProgram:()=>deleted.push('program')
     },{get(target,name){if(name in target)return target[name];if(!constants.has(name))constants.set(name,seed++);return constants.get(name);}});
     const painter=createSpatialPainter({getContext:()=>gl,width:512,height:320});assert.ok(painter);assert.equal(images,2);
+    return { painter, uploaded, deleted, counts: () => ({ images, subImages, draws }) };
+}
+
+test('coverless backgrounds retain all four default colors instead of a solid near-white texture', () => {
+    const { painter, uploaded, counts } = painterFixture();
+    const theme = { base: DEFAULT_THEME_BASE, colors: DEFAULT_THEME_COLORS };
+    try {
+        painter.setTheme(theme, 0);
+        const data = new Uint8Array(uploaded[1]);
+        assert.equal(data.byteLength, 16384);
+        const at = (x, y) => [...data.slice((y * 64 + x) * 4, (y * 64 + x) * 4 + 3)];
+        const linear = value => {
+            const x = value / 255;
+            return Math.round((x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4) * 255);
+        };
+        for (const [index, [x, y]] of [[0, [0, 0]], [1, [63, 0]], [2, [63, 63]], [3, [0, 63]]]) {
+            const hex = DEFAULT_THEME_COLORS[index].slice(1);
+            assert.deepEqual(at(x, y), [0, 2, 4].map(offset => linear(parseInt(hex.slice(offset, offset + 2), 16))));
+        }
+        const unique = new Set();
+        for (let i = 0; i < data.length; i += 4) {
+            unique.add([...data.slice(i, i + 3)].join(','));
+            assert.equal(data[i + 3], 255);
+        }
+        assert.ok(unique.size > 100);
+        const uploads = counts().subImages;
+        for (let i = 0; i < 20; i++) painter.setTheme({ ...theme, colors: [...theme.colors] }, i * 100);
+        assert.equal(counts().subImages, uploads);
+        for (let i = 0; i < 100; i++) painter.draw(null, null, i / 30);
+        assert.equal(counts().subImages, uploads);
+        assert.equal(counts().images, 2);
+        assert.equal(painter.getStats().rawTextureBytes, 32768);
+    } finally { painter.dispose(); }
+});
+
+test('fallback palettes honor transparent colors and hexadecimal base colors without duplicating uploads', () => {
+    const { painter, uploaded, counts } = painterFixture();
+    try {
+        painter.setTheme({ base: '#123456', colors: Array(4).fill('rgba(255,0,0,0)') }, 0);
+        const expected = new Uint8Array(uploaded[1]);
+        painter.setTheme({ base: 'rgb(18,52,86)', colors: Array(4).fill('rgba(0,255,0,0)') }, 1000);
+        assert.equal(counts().subImages, 2);
+        assert.deepEqual(uploaded[1], expected);
+        painter.setTheme({ colors: Array(4).fill('#ff0000') }, 2000);
+        assert.notDeepEqual(uploaded[1], expected);
+        assert.deepEqual([...uploaded[1].slice(0, 4)], [255, 0, 0, 255]);
+    } finally { painter.dispose(); }
+});
+
+test('real white and black covers stay neutral; returning to no cover restores the default gradient', () => {
+    const { painter, uploaded } = painterFixture();
+    try {
+        painter.setTheme({}, 0);
+        const fallback = new Uint8Array(uploaded[1]);
+        for (const gray of [255, 0]) {
+            const spatial = sampleSpatialCover(fixture(() => [gray, gray, gray, 255]), 96, 96);
+            painter.setTheme({ colors: DEFAULT_THEME_COLORS, spatial }, 2000);
+            assert.deepEqual(uploaded[1], buildSpatialCover(spatial.data, 64, 64).data);
+            assert.notDeepEqual(uploaded[1], fallback);
+            painter.setTheme({}, 4000);
+            assert.deepEqual(uploaded[1], fallback);
+        }
+    } finally { painter.dispose(); }
+});
+
+test('only two textures are allocated; rapid changes blend from the visible image and do not upload per frame',()=>{
+    const { painter, uploaded, deleted, counts } = painterFixture();
+    let now = 0;
     const cover=value=>{const data=new Uint8Array(16384).fill(value);for(let i=3;i<data.length;i+=4)data[i]=255;return{spatial:{width:64,height:64,data,format:'linear-rgba8'}};};
     const original=performance.now;performance.now=()=>now;
     try{
         painter.setTheme(cover(100),0);now=100;painter.setTheme(cover(200),100);
         now=600;painter.setTheme(cover(50),600);assert.equal(uploaded[0][0],150);assert.equal(uploaded[1][0],50);
         for(let i=0;i<100;i++)painter.draw(null,null,i/30);
-        assert.equal(images,2);assert.equal(subImages,6);assert.equal(draws,100);
+        assert.deepEqual(counts(), { images: 2, subImages: 6, draws: 100 });
         assert.equal(painter.getStats().rawTextureBytes,32768);
-        painter.finishTransition();painter.dispose();painter.setTheme(cover(80));assert.equal(subImages,6);
+        painter.finishTransition();painter.dispose();painter.setTheme(cover(80));assert.equal(counts().subImages,6);
         assert.equal(deleted.filter(name=>name==='texture').length,2);assert.equal(deleted.filter(name=>name==='buffer').length,2);assert.equal(deleted.filter(name=>name==='shader').length,2);
     }finally{performance.now=original;}
 });

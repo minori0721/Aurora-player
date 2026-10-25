@@ -163,7 +163,7 @@ export function createAuth({
             if (Number.isSafeInteger(Number(json.data?.profile?.userId)) && Number(json.data.profile.userId) > 0) {
                 neteaseUser = json.data.profile;
                 refreshVipInfo(snapshot);
-                debugService.log(`Logged in as: ${neteaseUser.nickname}`, 'success');
+                debugService.log(`已登录：${neteaseUser.nickname}`, 'success');
                 const currentRoute = parseMusicRoute();
                 if (currentRoute?.kind === 'playlist-mine' && domService.neteasePanel.classList.contains('show')) {
                     void myPlaylistsService.loadMyPlaylists();
@@ -174,7 +174,7 @@ export function createAuth({
             neteaseVipType = 0;
             updateUserUI();
         } catch (e) {
-            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('Login check failed: ' + e.message, 'error');
+            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('登录状态检查失败：' + e.message, 'error');
         }
         return false;
     }
@@ -204,7 +204,7 @@ export function createAuth({
             localStorage.setItem('netease_quality', neteaseQuality);
             return true;
         } catch (e) {
-            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('VIP info fetch failed', 'warn');
+            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('会员信息获取失败', 'warn');
         }
         return false;
     }
@@ -260,7 +260,7 @@ export function createAuth({
         if (window.location.hash.startsWith(MUSIC_ROUTE_PREFIX) && domService.neteasePanel.classList.contains('show')) {
             browserService.renderMusicRoute(parseMusicRoute(), domService.neteaseBrowserScroll.scrollTop);
         }
-        debugService.log('Logged out');
+        debugService.log('已退出登录');
     };
 
     let initialized = false;

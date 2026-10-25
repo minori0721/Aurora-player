@@ -1,6 +1,23 @@
 export const DEFAULT_THEME_COLORS = Object.freeze(['#e0c3fc', '#8ec5fc', '#a2d9ff', '#dcd6f7']);
 export const DEFAULT_THEME_BASE = '#f5f7fa';
 
+export function parseThemeColor(css, fallback = [245, 247, 250]) {
+    const text = typeof css === 'string' ? css.trim() : '';
+    const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(text);
+    if (hex) {
+        const digits = hex[1].length === 3 ? [...hex[1]].map(value => value + value).join('') : hex[1];
+        return [0, 2, 4].map(offset => parseInt(digits.slice(offset, offset + 2), 16));
+    }
+    const match = /^(rgb|rgba)\(([^)]+)\)$/i.exec(text);
+    const parts = match?.[2].split(',').map(value => value.trim());
+    const values = parts?.map(Number);
+    if (values && values.length === (match[1].toLowerCase() === 'rgba' ? 4 : 3)
+        && parts.every(Boolean) && values.every(Number.isFinite)) {
+        return values.map((value, index) => Math.max(0, Math.min(index === 3 ? 1 : 255, value)));
+    }
+    return [...fallback];
+}
+
 const linearRgb = Float64Array.from({ length: 256 }, (_, value) => {
     const channel = value / 255;
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;

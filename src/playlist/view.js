@@ -12,6 +12,7 @@ export function createPlaylistView({
     const pausePlaylistCovers = () => playlistCovers.suspend();
 
     let activePlaylistRow = null;
+    let playlistIndexDigits = 0;
 
     function updatePlaylistActiveItem() {
         const nextRow = domService.el.plContainer.children[queueService.curIdx] || null;
@@ -125,6 +126,11 @@ export function createPlaylistView({
         if (!force && domService.el.plContainer.children.length !== startIndex) {
             renderPlaylist();
             return;
+        }
+        const digits = Math.max(3, String(queueService.playlist.length).length);
+        if (digits !== playlistIndexDigits) {
+            playlistIndexDigits = digits;
+            domService.el.plContainer.style.setProperty('--playlist-index-digits', String(digits));
         }
         const frag = document.createDocumentFragment();
         for (let i = startIndex; i < queueService.playlist.length; i++) frag.appendChild(createPlaylistRow(queueService.playlist[i], i));

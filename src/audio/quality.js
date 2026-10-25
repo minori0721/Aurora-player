@@ -167,7 +167,7 @@ function parseFlacTagsFromArrayBuffer(buffer, maxPictureBytes = 12 * 1024 * 1024
     const tags = {};
     const ensure = (offset, length, limit = view.byteLength) => {
         if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0 || offset + length > limit) {
-            throw new RangeError('FLAC metadata is truncated');
+            throw new RangeError('FLAC 元数据被截断');
         }
     };
     const readU32 = (offset, littleEndian, limit) => {
@@ -207,7 +207,7 @@ function parseFlacTagsFromArrayBuffer(buffer, maxPictureBytes = 12 * 1024 * 1024
                 pos += vendorLen;
                 const commentCount = readU32(pos, true, blockEnd);
                 pos += 4;
-                if (commentCount > 10000) throw new RangeError('FLAC comment count is unreasonable');
+                if (commentCount > 10000) throw new RangeError('FLAC 标签数量异常');
                 for (let i = 0; i < commentCount; i++) {
                     const commentLen = readU32(pos, true, blockEnd);
                     pos += 4;
@@ -242,7 +242,7 @@ function parseFlacTagsFromArrayBuffer(buffer, maxPictureBytes = 12 * 1024 * 1024
                 pos += 4;
                 ensure(pos, pictureLen, blockEnd);
                 if (pictureLen > maxPictureBytes) {
-                    onWarning(`FLAC cover skipped: ${Math.ceil(pictureLen / 1024 / 1024)}MB is too large`, 'warn');
+                    onWarning(`已跳过 FLAC 封面：${Math.ceil(pictureLen / 1024 / 1024)}MB 超出大小上限`, 'warn');
                 } else if (/^image\/(?:jpeg|png|gif|webp)$/i.test(mimeType)) {
                     tags.picture = { format: mimeType, data: new Uint8Array(buffer.slice(pos, pos + pictureLen)) };
                 }
@@ -252,7 +252,7 @@ function parseFlacTagsFromArrayBuffer(buffer, maxPictureBytes = 12 * 1024 * 1024
             if (isLast) break;
         }
     } catch (error) {
-        onWarning(`FLAC metadata ignored: ${error.message}`, 'warn');
+        onWarning(`已忽略损坏的 FLAC 元数据：${error.message}`, 'warn');
     }
     return Object.keys(tags).length ? tags : null;
 }

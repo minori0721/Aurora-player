@@ -1,3 +1,5 @@
+import { DEFAULT_THEME_COLORS, parseThemeColor } from './theme.js';
+
 export const SPATIAL_SIZE = 64;
 export const SPATIAL_TRANSITION_MS = 1000;
 const CELLS = 12;
@@ -140,15 +142,32 @@ export function transitionProgress(elapsedMs) {
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+let fallbackKey = '', fallbackField = null;
+
 function fallbackCover(theme) {
-    const values = String(theme?.base || 'rgb(245,247,250)').match(/[\d.]+/g)?.slice(0, 3).map(Number);
-    const rgb = values?.length === 3 ? values : [245, 247, 250];
+    const base = parseThemeColor(theme?.base);
+    const colors = Array.from({ length: 4 }, (_, index) => {
+        const rgb = parseThemeColor(theme?.colors?.[index] || DEFAULT_THEME_COLORS[index], base);
+        const alpha = rgb[3] ?? 1;
+        return rgb.slice(0, 3).map((value, channel) => linear[Math.round(value * alpha + base[channel] * (1 - alpha))]);
+    });
+    const key = colors.flat().join(',');
+    if (key === fallbackKey && fallbackField) return fallbackField;
     const data = new Uint8Array(SPATIAL_SIZE * SPATIAL_SIZE * 4);
-    for (let offset = 0; offset < data.length; offset += 4) {
-        for (let c = 0; c < 3; c++) data[offset + c] = Math.round(linear[Math.round(clamp(rgb[c], 0, 255))] * 255);
+    // A cached four-corner field also gives coverless tracks something to deform.
+    for (let y = 0; y < SPATIAL_SIZE; y++) for (let x = 0; x < SPATIAL_SIZE; x++) {
+        const u = x / (SPATIAL_SIZE - 1), v = y / (SPATIAL_SIZE - 1);
+        const offset = (y * SPATIAL_SIZE + x) * 4;
+        for (let c = 0; c < 3; c++) {
+            const top = colors[0][c] * (1 - u) + colors[1][c] * u;
+            const bottom = colors[3][c] * (1 - u) + colors[2][c] * u;
+            data[offset + c] = Math.round((top * (1 - v) + bottom * v) * 255);
+        }
         data[offset + 3] = 255;
     }
-    return { width: SPATIAL_SIZE, height: SPATIAL_SIZE, data };
+    fallbackKey = key;
+    fallbackField = { width: SPATIAL_SIZE, height: SPATIAL_SIZE, data };
+    return fallbackField;
 }
 
 export function createSpatialPainter(canvas) {
