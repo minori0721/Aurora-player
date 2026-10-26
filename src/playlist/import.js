@@ -1,6 +1,7 @@
 import { AUDIO_FILE_EXTENSIONS, COMPANION_FILE_EXTENSIONS, createImportPathFields, normalizeImportPath } from './paths.js';
 import { findCompanionBindings } from './matching.js';
 import { parseSliFile } from './sli.js';
+import { createImportPicker } from './file-picker.js';
 
 export function createImports({
     analysis: analysisService,
@@ -310,7 +311,19 @@ export function createImports({
 
             document.body.addEventListener('drop', handleDrop);
 
-            document.getElementById('btn-import').addEventListener('click', () => domService.fileInput.click());
+            const picker = createImportPicker({
+                input: domService.fileInput,
+                onSelect: handles => enqueueImport(async () => {
+                    const records = [], errors = [];
+                    for (const handle of handles) await walkFileSystemHandle(handle, '', records, errors);
+                    return { records, errors, unsupportedDirectory: false };
+                }),
+                onFallback: error => {
+                    debugService.log(`系统文件选择器不可用 (${error?.name || 'Error'})，下次导入将使用兼容方式`, 'warn');
+                    showImportSummary('无法打开系统文件选择器，请再次点击导入，使用兼容文件选择。', true);
+                }
+            });
+            document.getElementById('btn-import').addEventListener('click', () => picker.open());
 
             domService.fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) handleFiles(Array.from(e.target.files));

@@ -11,6 +11,13 @@ class LyricElement extends FakeElement {
         else { child.parentElement = this; this.children.push(child); }
         return child;
     }
+    insertBefore(child, reference) {
+        const index = this.children.indexOf(reference);
+        if (index < 0) return this.appendChild(child);
+        child.parentElement = this;
+        this.children.splice(index, 0, child);
+        return child;
+    }
     remove() { this.parentElement?.removeChild(this); super.remove(); }
 }
 
@@ -27,22 +34,56 @@ function fixture(t, preference = 'original') {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);
         else delete globalThis[key];
     } });
-    const box = new LyricElement(), cloud = new FakeElement(), desktop = new FakeElement();
+    const box = new LyricElement(), artist = new LyricElement(), cloud = new FakeElement(), desktop = new FakeElement();
     const inputs = ['original', 'both', 'roma'].map(value => Object.assign(new FakeElement(), { value }));
     const requests = [], pending = [];
     const lyrics = createLyrics({
-        dom: { el: { lyricBox: box, artist: new FakeElement(), title: new FakeElement() }, cloudLyricsSwitch: cloud, neteaseBtn: desktop, lyricModeInputs: inputs },
+        dom: { el: { lyricBox: box, artist, title: new FakeElement() }, cloudLyricsSwitch: cloud, neteaseBtn: desktop, lyricModeInputs: inputs },
         playback: { getCurrentTime: () => 0, playbackState: { duration: 120, isPlaying: false } }, metadata: {}, debug: { log() {} },
         api: { buildApiUrl: path => `https://fixture.invalid${path}` },
         cache: { cachedFetchJson(url, options) { requests.push({ url, options }); return new Promise(resolve => pending.push(resolve)); } }
     });
     t.after(() => lyrics.cancelLocalLyricSession());
-    return { lyrics, box, cloud, desktop, inputs, host, requests, pending };
+    return { lyrics, box, artist, cloud, desktop, inputs, host, requests, pending };
 }
 
 const original = '[00:00.000]original\n[00:02.000]next';
 const translated = '[00:00.000]translation\n[00:02.000]next translation';
 const roman = '[00:00.000]roman\n[00:02.000]next roman';
+
+test('quality supplementation reuses badges and does not accumulate whitespace or replace artist links', t => {
+    const f = fixture(t), link = new LyricElement();
+    link.className = 'music-link'; link.textContent = 'Example';
+    f.artist.appendChild(link);
+    f.lyrics.setArtistTag('source', 'MP3');
+    const source = f.artist.querySelector('.tag-source'), quality = f.artist.querySelector('.tag-quality');
+    for (let i = 0; i < 100; i++) f.lyrics.setArtistTag('source', 'MP3 320kbps');
+    assert.deepEqual(f.artist.children, [link, source, quality]);
+    assert.equal(quality.textContent, 'MP3 320kbps');
+    assert.equal(quality.title, 'MP3 320kbps');
+    assert.equal(source.title, 'source');
+    f.lyrics.setArtistTag('', 'MP3 320kbps');
+    assert.deepEqual(f.artist.children, [link, quality]);
+    f.lyrics.setArtistTag('new source', 'FLAC 192kHz/24bit');
+    assert.deepEqual(f.artist.children.map(node => node.className), ['music-link', 'tag-source', 'tag-quality']);
+    assert.equal(f.artist.children[2], quality);
+    assert.equal(quality.title, 'FLAC 192kHz/24bit');
+    f.lyrics.setArtistTag('', '');
+    assert.deepEqual(f.artist.children, [link]);
+});
+
+test('replacing artist contents recreates only the new track badges and accepts empty values', t => {
+    const f = fixture(t);
+    f.lyrics.setArtistTag(null, undefined);
+    assert.equal(f.artist.children.length, 0);
+    f.lyrics.setArtistTag('first source', 'MP3');
+    const previous = f.artist.querySelector('.tag-quality');
+    f.artist.replaceChildren();
+    f.lyrics.setArtistTag('second source', 'FLAC 44.1kHz/16bit');
+    assert.equal(f.artist.children.length, 2);
+    assert.notEqual(f.artist.querySelector('.tag-quality'), previous);
+    assert.equal(f.artist.querySelector('.tag-quality').textContent, 'FLAC 44.1kHz/16bit');
+});
 
 test('empty lyrics disable every mode and unavailable selections cannot change the preference', t => {
     const f = fixture(t, 'roma');

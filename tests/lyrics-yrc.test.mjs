@@ -70,10 +70,10 @@ test('earlier ordinary timestamps are paired in either direction, not added as r
     assert.deepEqual(result.translated, [{ t: .93, txt: 'new one' }, { t: 7.4, txt: 'new two' }]);
 });
 
-test('full-track agreement handles isolated large offsets and variant spellings without affecting word timing', () => {
-    const original = [0, 5, 10, 15, 20].map((t, i) => ({ t, txt: `phrase ${i}` }));
+test('anchored agreement handles isolated large offsets and minor spelling variants without affecting word timing', () => {
+    const original = [0, 5, 10, 15, 20].map((t, i) => ({ t, txt: `unique phrase ${i}` }));
     const words = original.map((line, i) => ({ t: i === 4 ? 29 : line.t + .1, dur: 1000,
-        words: [{ txt: i === 2 ? 'variant phrase' : line.txt, start: (i === 4 ? 29 : line.t + .1) * 1000, dur: 1000 }] }));
+        words: [{ txt: i === 2 ? 'unique phraze 2' : line.txt, start: (i === 4 ? 29 : line.t + .1) * 1000, dur: 1000 }] }));
     const result = alignWordLyricTimeline(original, [], [], words);
     assert.deepEqual(result.original.map(line => line.t), [.1, 5.1, 10.1, 15.1, 29]);
     assert.equal(result.original.length, words.length);
@@ -143,7 +143,7 @@ test('identical full text with different line breaks uses the YRC layout without
     assert.deepEqual(result.translated, [{ t: .93, txt: 'whole translation' }], 'do not invent a translation split or duplicate it');
 });
 
-test('merging ordinary fragments preserves all fallback translation and romanization text in order', () => {
+test('native sentences containing ordinary fragments keep their layout and all fallback subtitles', () => {
     const result = fromResponse({ lrc: { lyric: '[00:01.000]one\n[00:02.000]two' },
         tlyric: { lyric: '[00:01.000]first translation\n[00:02.000]second translation' },
         romalrc: { lyric: '[00:01.000]first roman\n[00:02.000]second roman' },

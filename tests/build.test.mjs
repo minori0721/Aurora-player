@@ -13,8 +13,9 @@ import { createLoopAnalysisInput, describeLoopAnalysisInput } from '../src/analy
 
 const built = await buildHtml({ env: {} });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
-function boot() {
+function boot(overrides = {}) {
     const fixture = createHost(built.html);
+    Object.assign(fixture.host, overrides);
     const context = vm.createContext(fixture.host);
     for (const script of built.html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]).runInContext(context, { timeout: 5000 });
     return { ...fixture, audio: FakeAudioContext.instances.at(-1) };
@@ -253,6 +254,100 @@ test('compiled import applies only the matching SLI and clears it on the next lo
     assert.equal(fixture.audio.decodeCalls.length, 2);
     assert.equal(fixture.audio.sources.at(-1).loop, false);
     assert.equal(fixture.requests.length, 0);
+});
+
+test('compiled Android document import preserves multi-selection, Chinese names, LRC and SLI without extra audio reads', async () => {
+    let pickerCalls = 0, firstReads = 0, secondReads = 0, fileReads = 0;
+    const files = [
+        localFile('01-测试.flac', async () => { firstReads++; return new ArrayBuffer(4); }),
+        localFile('02-下一首.flac', async () => { secondReads++; return new ArrayBuffer(4); }),
+        { name: '01-测试.flac.sli', type: '', size: 30, lastModified: 1, text: async () => 'From=441000; To=44100;' },
+        { name: '01-测试.LRC', type: '', size: 30, lastModified: 1, text: async () => '[00:01.00]测试歌词' },
+        { name: '说明.txt', type: 'text/plain', size: 10, lastModified: 1 }
+    ];
+    const f = boot({
+        navigator: { userAgent: 'Android', mediaDevices: { getUserMedia() { assert.fail('import must not request a microphone'); } } },
+        isSecureContext: true,
+        async showOpenFilePicker(options) {
+            pickerCalls++;
+            assert.equal(options.multiple, true);
+            assert.equal(options.types, undefined);
+            return files.map(file => ({ kind: 'file', name: file.name, async getFile() { fileReads++; return file; } }));
+        }
+    });
+    f.elements.get('file-input').click = () => assert.fail('must not open the media chooser');
+    f.elements.get('btn-import').click();
+    await settle();
+    assert.equal(pickerCalls, 1);
+    assert.equal(fileReads, files.length);
+    assert.equal(f.elements.get('pl-container').children.length, 2);
+    assert.equal(f.elements.get('track-title').textContent, '01-测试');
+    assert.equal(firstReads, 1);
+    assert.equal(secondReads, 0, 'selecting files does not read every audio body');
+    assert.equal(f.audio.decodeCalls.length, 1);
+    assert.equal(f.audio.sources.at(-1).loopStart, 1);
+    assert.equal(f.audio.sources.at(-1).loopEnd, 10);
+    assert.equal(f.elements.get('lyrics-content').querySelector('.lyric-original')?.textContent, '测试歌词');
+    assert.equal(f.requests.length, 0);
+});
+
+test('compiled Android picker cancellation leaves the playing track and queue untouched', async () => {
+    const f = boot({ navigator: { userAgent: 'Android' }, isSecureContext: true,
+        showOpenFilePicker: async () => { throw new DOMException('Cancelled', 'AbortError'); } });
+    importFiles(f, [localFile('keep.flac')]);
+    await settle();
+    const source = f.audio.sources.at(-1), rows = f.elements.get('pl-container').children;
+    f.elements.get('file-input').click = () => assert.fail('cancelling must not open fallback');
+    f.elements.get('btn-import').click();
+    await settle();
+    assert.equal(f.elements.get('track-title').textContent, 'keep');
+    assert.equal(f.elements.get('pl-container').children, rows);
+    assert.equal(f.audio.sources.at(-1), source);
+    assert.equal(source.stopped, undefined);
+    assert.equal(f.elements.get('import-summary').classList.contains('warn'), false);
+});
+
+test('compiled Android picker failure waits for a new click and compatibility input still imports normally', async () => {
+    let pickerCalls = 0, inputClicks = 0;
+    const f = boot({ navigator: { userAgent: 'Android' }, isSecureContext: true,
+        async showOpenFilePicker() { pickerCalls++; throw new DOMException('Unavailable', 'SecurityError'); } });
+    importFiles(f, [localFile('keep.flac')]);
+    await settle();
+    const source = f.audio.sources.at(-1);
+    f.elements.get('file-input').click = () => { inputClicks++; };
+    f.elements.get('btn-import').click();
+    await settle();
+    assert.equal(inputClicks, 0);
+    assert.equal(f.elements.get('track-title').textContent, 'keep');
+    assert.equal(source.stopped, undefined);
+    assert.ok(f.elements.get('import-summary').textContent.includes('再次点击导入'));
+    f.elements.get('btn-import').click();
+    assert.equal(inputClicks, 1);
+    assert.equal(pickerCalls, 1);
+    assert.equal(f.elements.get('file-input').accept, 'application/octet-stream');
+    importFiles(f, [localFile('replacement.flac')]);
+    await settle();
+    assert.equal(f.elements.get('track-title').textContent, 'replacement');
+    assert.equal(f.elements.get('file-input').value, '');
+});
+
+test('compiled Android document read failures and unsupported files do not replace existing audio', async () => {
+    let selection = [{ kind: 'file', name: 'unreadable.mp3', getFile: async () => { throw new Error('Unavailable'); } }];
+    const f = boot({ navigator: { userAgent: 'Android' }, isSecureContext: true,
+        showOpenFilePicker: async () => selection });
+    importFiles(f, [localFile('keep.flac')]);
+    await settle();
+    const source = f.audio.sources.at(-1);
+    f.elements.get('btn-import').click();
+    await settle();
+    assert.equal(f.elements.get('track-title').textContent, 'keep');
+    assert.equal(source.stopped, undefined);
+    selection = [{ kind: 'file', name: 'picture.png', getFile: async () => ({ name: 'picture.png', type: 'image/png', size: 20 }) }];
+    f.elements.get('btn-import').click();
+    await settle();
+    assert.equal(f.elements.get('track-title').textContent, 'keep');
+    assert.equal(f.audio.decodeCalls.length, 1);
+    assert.equal(source.stopped, undefined);
 });
 
 test('compiled import replacement discards an earlier pending local read', async () => {

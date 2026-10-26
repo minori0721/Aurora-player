@@ -8,7 +8,7 @@ import { createHost, FakeElement } from './helpers/host.mjs';
 
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
 const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
-const payload = () => ({ code: 200, lrc: { lyric: '[00:00.000]first\n[00:02.000]second' },
+const payload = () => ({ code: 200, lrc: { lyric: '[00:00.000]windsound\n[00:02.000]second' },
     tlyric: { lyric: '[00:00.000]translation' }, romalrc: { lyric: '[00:00.000]romanization' },
     yrc: { lyric: '[0,2000,0](0,900,0)wind(900,1100,0)sound' } });
 const transfer = createTransfer();
