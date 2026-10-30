@@ -158,6 +158,7 @@ export function createDownload({
                             let data = null;
                             let useMatchForVip = false;
                             let matchSource = '';
+                            let matchFailure = null;
 
                             // 1. 优先尝试官方客户端下载接口；如果只有试听或没有链接，再交给 match 兜底。
                             try {
@@ -175,8 +176,9 @@ export function createDownload({
                             if (!data || !data.url) {
                                 useMatchForVip = true;
                                 try {
-                                    const matchResult = await resolverService.fetchNeteaseMatchAudio(songId, cookieParam, probeOptions, 30_000, resolverService.getNeteaseMatchStrategy(level));
+                                    const matchResult = await resolverService.fetchNeteaseMatchAudio(songId, probeOptions, 30_000, resolverService.getNeteaseMatchStrategy(level), level);
                                     if (!probeIsCurrent()) return;
+                                    matchFailure = matchResult.error || null;
                                     if (matchResult.audioUrl) {
                                         const matchUrl = matchResult.audioUrl;
                                         let matchExt = inferAudioTypeFromUrl(matchUrl);
@@ -207,9 +209,11 @@ export function createDownload({
 
                                 // 2. 智能推断真实格式
                                 const urlLower = data.url.toLowerCase();
-                                const br = data.br || detail?.br || 0;
-                                const size = data.size || detail?.size || 0;
-                                const sampleRate = data.sr || detail?.sr || 0;
+                                // 官方档位描述不一定属于 match 返回的实际文件。
+                                const fallbackDetail = useMatchForVip ? null : detail;
+                                const br = data.br || fallbackDetail?.br || 0;
+                                const size = data.size || fallbackDetail?.size || 0;
+                                const sampleRate = data.sr || fallbackDetail?.sr || 0;
 
                                 let realExt = 'mp3'; // 默认格式
                                 let isLossless = false;
@@ -289,7 +293,9 @@ export function createDownload({
                                 it.classList.add('disabled');
 
                                 // 2. 更新文本提示
-                                metaEl.textContent = '暂无资源 / 需VIP';
+                                metaEl.textContent = matchFailure?.failures?.some(failure => !['empty', 'trial'].includes(failure.kind))
+                                    ? '音源暂不可用，请稍后重试' : '暂无完整音频资源';
+                                metaEl.title = matchFailure?.message || '';
                                 metaEl.style.color = 'var(--text-sub)'; // 恢复默认颜色
 
                                 // 3. 显示不可用按钮

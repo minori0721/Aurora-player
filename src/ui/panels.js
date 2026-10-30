@@ -1,4 +1,5 @@
 export function createPanels({
+    controls: controlsService,
     dom: domService,
     playlistView: playlistViewService
 } = {}) {
@@ -93,12 +94,13 @@ export function createPanels({
         open(overlay, closeHandler) {
             if (this.active === overlay) return;
             if (this.active && this.closeHandler) this.closeHandler();
+            controlsService?.syncToolbarVisibility?.();
             this.active = overlay;
             this.closeHandler = closeHandler;
             this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             this.inertState = [];
             Array.from(document.body.children).forEach(node => {
-                if (!(node instanceof HTMLElement) || node === overlay || node.tagName === 'SCRIPT') return;
+                if (!(node instanceof HTMLElement) || node === overlay || node.tagName === 'SCRIPT' || node.tagName === 'DIALOG') return;
                 this.inertState.push([node, node.inert]);
                 node.inert = true;
             });
@@ -126,6 +128,7 @@ export function createPanels({
             this.active = null;
             this.closeHandler = null;
             this.previousFocus = null;
+            controlsService?.syncToolbarVisibility?.();
             if (restoreFocus && focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
         },
         getFocusable(overlay) {
@@ -146,10 +149,16 @@ export function createPanels({
             document.getElementById('playlist-fab-group').hidden = true;
 
             document.addEventListener('keydown', event => {
+                if (document.querySelector('dialog[open]')) return;
                 const overlay = modalController.active;
                 if (!overlay) return;
                 if (event.key === 'Escape') {
                     event.preventDefault();
+                    const menu = event.target.closest?.('.music-song-menu[open]');
+                    if (menu && overlay.contains(menu)) {
+                        event.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus();
+                        return;
+                    }
                     modalController.closeHandler?.();
                     return;
                 }

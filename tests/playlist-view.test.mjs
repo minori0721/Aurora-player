@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlaylistView } from '../src/playlist/view.js';
 import { createHost } from './helpers/host.mjs';
+import { PlaybackPlan } from '../src/playlist/plan.js';
 
 function fixture(t, count) {
-    const { host, elements, requests, frames } = createHost('<div id="root"></div><div id="rows"></div><input id="search"><button id="clear"></button><div id="empty"></div>');
+    const { host, elements, requests, frames } = createHost('<div id="root"></div><div id="rows"></div><input id="search"><button id="clear"></button><div id="empty"></div><section id="temporary"><div id="manual-rows"></div></section><div id="base-label"></div><button id="clear-manual"></button>');
     const saved = { window: globalThis.window, document: globalThis.document };
     globalThis.window = host;
     globalThis.document = host.document;
@@ -16,6 +17,8 @@ function fixture(t, count) {
         playTrackFromPlaylist: index => plays.push(index) };
     const view = createPlaylistView({
         dom: { el: { plSidebar: elements.get('root'), plContainer: container,
+            plTemporary: elements.get('temporary'), plTemporaryContainer: elements.get('manual-rows'),
+            plBaseLabel: elements.get('base-label'), plClearTemporary: elements.get('clear-manual'),
             plSearch: elements.get('search'), plSearchClear: elements.get('clear'), plSearchEmpty: elements.get('empty') } },
         queue,
         persistence: { schedulePlaylistStateSave() {}, schedulePlaylistTrackSave() {} },
@@ -130,4 +133,29 @@ test('selection and refresh preserve the shared width; replacing a long playlist
     assert.equal(f.digits(), '3');
     assert.equal(f.container.children.length, 2);
     assert.equal(f.writes.length, 2);
+});
+
+test('manual queue updates keep every base row and cover, and search includes both sections', t => {
+    const f = fixture(t, 1000), model = new PlaybackPlan(); model.reset(f.queue.playlist); model.select(2);
+    Object.defineProperties(f.queue, {
+        playlist: { get: () => model.items }, basePlaylist: { get: () => model.base },
+        curIdx: { get: () => model.index }, temporaryEntries: { get: () => model.temporary },
+        manualState: { get: () => ({ pending: model.pending }) }
+    });
+    f.queue.indexOfTrack = track => model.indexOf(track);
+    f.view.renderPlaylist(); const original = f.container.children.slice(), cover = original[2].children[1];
+    model.playNow({ name: 'Manual title', netease: true });
+    model.enqueue([{ name: 'Next title', netease: true }]);
+    f.view.ensurePlaylistRenderedAndActive();
+    assert.deepEqual(f.container.children, original); assert.equal(f.container.children[2].children[1], cover);
+    const manual = f.elements.get('manual-rows');
+    assert.equal(manual.children.length, 2); assert.equal(manual.children[0].getAttribute('aria-current'), 'true');
+    f.view.refreshPlaylistItem(model.index);
+    assert.equal(manual.children[0].getAttribute('aria-label'), '播放临时点播第 1 首：Manual title');
+    f.view.setSearchQuery('manual');
+    assert.ok(f.container.children.every(row => row.hidden));
+    assert.deepEqual(manual.children.map(row => row.hidden), [false, true]);
+    model.clearPending(); f.view.ensurePlaylistRenderedAndActive();
+    assert.equal(manual.children.length, 1); assert.equal(f.elements.get('clear-manual').disabled, true);
+    assert.equal(f.requests.length, 0);
 });

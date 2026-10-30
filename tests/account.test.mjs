@@ -10,9 +10,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 const response = data => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
 function deferred() { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; }
 
-function fixture(t) {
+function fixture(t, cookie = 'MUSIC_U=synthetic') {
     const { host, elements, timers } = createHost(html), handlers = new Map(), requests = [], mutations = [];
-    host.localStorage.setItem('netease_cookie', 'MUSIC_U=synthetic');
+    host.localStorage.setItem('netease_cookie', cookie);
     const globals = { window: host, document: host.document, localStorage: host.localStorage,
         fetch: async (url, options) => {
             const path = new URL(url).pathname; requests.push({ path, options });
@@ -104,4 +104,20 @@ test('malformed profiles never restore an identity or request VIP data', async t
     const f = fixture(t); f.on('/login/status', () => response({ data: { profile: { userId: 'bad' } } }));
     f.auth.initialize(); await flush(); await flush();
     assert.equal(f.auth.neteaseUser, null); assert.equal(f.requests.length, 1);
+});
+
+test('restored duplicate cookies migrate once before any account request', async t => {
+    const f = fixture(t, 'MUSIC_U=old; ; Path=/; MUSIC_U=synthetic==; custom=a=b; HttpOnly');
+    f.auth.initialize(); await flush(); await flush();
+    const expected = 'MUSIC_U=synthetic==; custom=a=b';
+    assert.equal(f.auth.neteaseCookie, expected);
+    assert.equal(f.host.localStorage.getItem('netease_cookie'), expected);
+    assert.equal(JSON.parse(f.requests[0].options.body).cookie, expected);
+    assert.equal(f.auth.authGeneration, 0); assert.deepEqual(f.mutations, []);
+});
+
+test('an attribute-only stored cookie is removed without issuing an account request', async t => {
+    const f = fixture(t, 'Secure; Path=/; ; HttpOnly'); f.auth.initialize(); await flush();
+    assert.equal(f.auth.neteaseCookie, ''); assert.equal(f.host.localStorage.getItem('netease_cookie'), null);
+    assert.equal(f.requests.length, 0);
 });

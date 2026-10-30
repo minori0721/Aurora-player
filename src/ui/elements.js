@@ -1,11 +1,14 @@
 export function createDom({} = {}) {
     const el = {
-        img: document.getElementById('album-img'), coverWrap: document.getElementById('cover-wrap'),
+        img: document.getElementById('album-img'), coverWrap: document.getElementById('cover-wrap'), coverImages: document.getElementById('cover-images'),
         title: document.getElementById('track-title'), artist: document.getElementById('track-artist'),
         lyricBox: document.getElementById('lyrics-content'),
         progBg: document.getElementById('prog-bg'), progLine: document.getElementById('prog-line'), bufferLine: document.getElementById('buffer-line'),
         currTime: document.getElementById('curr-time'), totalTime: document.getElementById('total-time'),
         plContainer: document.getElementById('pl-container'), plSidebar: document.getElementById('playlist-sidebar'),
+        plItems: document.getElementById('playlist-items'), plTemporary: document.getElementById('pl-temporary'),
+        plTemporaryContainer: document.getElementById('pl-temporary-container'), plBaseLabel: document.getElementById('pl-base-label'),
+        plClearTemporary: document.getElementById('pl-clear-temporary'),
         plSearch: document.getElementById('pl-search'), plSearchClear: document.getElementById('pl-search-clear'),
         plSearchEmpty: document.getElementById('pl-search-empty'),
         plScrollCurrent: document.getElementById('pl-scroll-current'), plScrollTop: document.getElementById('pl-scroll-top'),

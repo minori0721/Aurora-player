@@ -163,7 +163,7 @@ export function createOnlinePlayback({
                                     resolved = await resolverService.resolveNeteaseAudioUrlWithTimeout(songId, cookieParam, level,
                                         { signal, useQueue: true, cacheScope: 'none' }, 0, resolverService.getNeteaseMatchStrategy(level));
                                     guard();
-                                    if (!resolved.candidates?.length) throw new Error('NO_URL_FROM_OFFICIAL');
+                                    if (!resolved.candidates?.length) throw resolved.error || new Error('NO_URL_FROM_OFFICIAL');
                                     continue;
                                 }
                                 if (!recoveryBudget.stallRecoveryUsed && error.code === 'AUDIO_STALLED') {
@@ -348,7 +348,7 @@ export function createOnlinePlayback({
             let audioInfo = resolved.audioInfo || null;
             let audioCandidates = resolved.candidates || [];
             if (!audioInfo || !audioCandidates.length) {
-                throw new Error('NO_URL_FROM_OFFICIAL');
+                throw resolved.error || new Error('NO_URL_FROM_OFFICIAL');
             }
             if (preferStream) {
                 await useStream(resolved, null, prewarmedMedia);
@@ -383,7 +383,7 @@ export function createOnlinePlayback({
                         playbackService.assertPlaybackActionCurrent(myPlayToken);
                         audioInfo = resolved.audioInfo || null;
                         audioCandidates = resolved.candidates || [];
-                        if (!audioInfo || !audioCandidates.length) throw new Error('NO_URL_FROM_OFFICIAL');
+                        if (!audioInfo || !audioCandidates.length) throw resolved.error || new Error('NO_URL_FROM_OFFICIAL');
                         continue;
                     }
                     if (audioError.code === 'AUDIO_STALLED' && !recoveryBudget.stallRecoveryUsed) {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import fs from 'node:fs/promises';
 import { buildHtml } from '../scripts/build.mjs';
 import { checkHtml, checkSource } from '../scripts/check.mjs';
 import { readPublicConfig } from '../scripts/config.mjs';
@@ -38,6 +39,58 @@ test('source dependencies are explicit and acyclic; output is one standalone HTM
     assert.ok(built.html.includes('fft.js 4.0.4'));
     assert.ok(built.html.includes('Copyright Fedor Indutny, 2017.'));
     assert.ok(built.workerSource.includes('Copyright Fedor Indutny, 2017.'));
+});
+
+test('favicon uses the two committed transparent PNGs inline, with accurate sizes and no sidecar URL', async () => {
+    const icons = [...built.html.matchAll(/<link\b[^>]*\brel="icon"[^>]*>/g)].map(match => match[0]);
+    assert.equal(icons.length, 2);
+    for (const [index, size] of [32, 48].entries()) {
+        assert.ok(icons[index].includes('type="image/png"'));
+        assert.ok(icons[index].includes(`sizes="${size}x${size}"`));
+        const encoded = icons[index].match(/href="data:image\/png;base64,([A-Za-z0-9+/=]+)"/)?.[1];
+        assert.ok(encoded, 'favicon must not depend on an external image');
+        const png = Buffer.from(encoded, 'base64');
+        const source = await fs.readFile(new URL(`../src/assets/favicon-${size}.png`, import.meta.url));
+        assert.deepEqual(png, source);
+        assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+        assert.equal(png.subarray(12, 16).toString('ascii'), 'IHDR');
+        assert.equal(png.readUInt32BE(16), size);
+        assert.equal(png.readUInt32BE(20), size);
+        assert.equal(png[25], 6, 'PNG must retain an RGBA alpha channel');
+    }
+    assert.equal(built.html.includes('href="data:,"'), false);
+    assert.equal(built.html.includes('src/assets/'), false);
+    assert.equal(checkHtml(built.html, built.version), 5);
+});
+
+test('standalone HTML embeds the complete third-party notices without changing its script count', async () => {
+    const notices = (await fs.readFile(new URL('../THIRD_PARTY_NOTICES.txt', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+    const block = `<!-- Aurora Player third-party notices\n${notices}\n-->`;
+    assert.equal(notices.includes('--'), false, 'notices must not terminate or invalidate an HTML comment');
+    assert.equal(built.html.split(block).length, 2, 'include the complete document exactly once');
+    for (const text of [
+        'jsmediatags 3.9.5', 'Copyright (c) 2009 Opera Software ASA',
+        'Color Thief 2.4.0', 'Copyright (c) 2015 Lokesh Dhakar',
+        '@lokesh.dhakar/quantize 1.3.0', 'quantize.js Copyright 2008 Nick Rabinowitz',
+        'Copyright (c) 2014 Olivier Lesnicki', 'Copyright (c) 2010, Stanford Visualization Group',
+        'Neither the name of Stanford University', 'fft.js 4.0.4', 'Copyright Fedor Indutny, 2017.',
+        'ISC License', 'Copyright (c) 2026 Lucide Icons and Contributors',
+        'Google Material Icons', 'Apache License', 'Version 2.0, January 2004',
+        '9. Accepting Warranty or Additional Liability.', 'END OF TERMS AND CONDITIONS'
+    ]) assert.ok(notices.includes(text), `missing notice: ${text}`);
+    assert.equal(checkHtml(built.html, built.version), 5);
+    const development = await buildHtml({ env: {}, minify: false });
+    assert.ok(development.html.includes(block), 'development builds must carry the same notices');
+});
+
+test('Color Thief retains nested source licenses and icon sources reference their attribution', async () => {
+    const vendor = await fs.readFile(new URL('../src/vendor/color-thief.js', import.meta.url), 'utf8');
+    for (const text of ['quantize.js Copyright 2008 Nick Rabinowitz', 'Copyright (c) 2014 Olivier Lesnicki',
+        'Copyright (c) 2010, Stanford Visualization Group', 'Neither the name of Stanford University']) {
+        assert.ok(vendor.includes(text), `missing nested vendor notice: ${text}`);
+    }
+    const template = await fs.readFile(new URL('../src/index.html', import.meta.url), 'utf8');
+    assert.match(template, /Material Icons SVGs are adapted[\s\S]*?THIRD_PARTY_NOTICES\.txt/);
 });
 
 test('production build is deterministic and environment injection is public/allowlisted', async () => {

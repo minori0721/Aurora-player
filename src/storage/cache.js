@@ -470,6 +470,12 @@ export function createCache({
                 if (!resp.ok) {
                     const error = new Error(`HTTP ${resp.status}`);
                     error.status = resp.status;
+                    const retryAfter = resp.headers?.get?.('Retry-After')?.trim();
+                    if (retryAfter) {
+                        const wait = /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
+                        if (Number.isSafeInteger(wait) && wait >= 0) error.retryAfterMs = wait;
+                    }
+                    try { Promise.resolve(resp.body?.cancel?.()).catch(() => {}); } catch (_) {}
                     throw error;
                 }
                 return resp.json();

@@ -139,8 +139,8 @@ export function createPrefetch({
 
     function isNextPreloadSnapshotCurrent(token, queueRef, index, track, songId = 0, level = '', generation = authService.authGeneration) {
         if (token !== nextPreloadToken || queueRef !== queueService.playlist) return false;
-        if (!hasLockedNextPreloadTarget(queueRef, index, track)) return false;
-        if (nextPreloadTrack !== track || queueRef[index] !== track) return false;
+        if (!hasLockedNextPreloadTarget(queueRef, nextPreloadIndex, track)) return false;
+        if (nextPreloadTrack !== track) return false;
         if (nextPreloadKind.startsWith('netease')) {
             return nextPreloadSongId === Number(songId)
                 && nextPreloadLevel === level
@@ -297,6 +297,8 @@ export function createPrefetch({
 
     function getLikelyNextPlaylistIndex() {
         if (!queueService.playlist || queueService.playlist.length === 0 || queueService.curIdx < 0 || queueService.playMode === 2) return null;
+        if (queueService.getNextPlaylistIndex) return queueService.getNextPlaylistIndex(
+            hasLockedNextPreloadTarget(queueService.playlist, nextPreloadIndex) ? nextPreloadIndex : null);
         if (queueService.playMode === 1) {
             if (queueService.playlist.length === 1) return null;
             if (hasLockedNextPreloadTarget(queueService.playlist, nextPreloadIndex) && nextPreloadIndex !== queueService.curIdx) return nextPreloadIndex;
@@ -305,6 +307,13 @@ export function createPrefetch({
             return nextIdx;
         }
         return queueService.curIdx + 1 >= queueService.playlist.length ? 0 : queueService.curIdx + 1;
+    }
+
+    function retargetNextPreload() {
+        if (nextPreloadKind === 'none') return;
+        const index = queueService.indexOfTrack ? queueService.indexOfTrack(nextPreloadTrack) : queueService.playlist.indexOf(nextPreloadTrack);
+        if (nextPreloadQueueRef !== queueService.playlist || index < 0) cancelNextPreload({ resetDetails: false });
+        else nextPreloadIndex = index;
     }
 
     function applyNeteaseSongDetailToPlaylist(song, queueRef = queueService.playlist) {
@@ -381,6 +390,7 @@ export function createPrefetch({
                     debugService.log(`下一首音频链接已预热：${nextTrack.name}${detail}`, 'success');
                 } else {
                     nextPreloadStatus = 'failed';
+                    if (result?.error) debugService.log(`下一首链接预热失败：${result.error.message}`, 'warn');
                 }
             }).catch(e => {
                 if (e?.name !== 'AbortError' && !e?.stale) debugService.log('下一首链接预热失败：' + (e?.message || '未知错误'), 'warn');
@@ -435,7 +445,7 @@ export function createPrefetch({
             }
             let audioInfo = resolved.audioInfo || null;
             let candidates = resolved.candidates || [];
-            if (!audioInfo || !candidates.length) throw new Error('NO_URL_FROM_PREFETCH');
+            if (!audioInfo || !candidates.length) throw resolved.error || new Error('NO_URL_FROM_PREFETCH');
 
             // The API size is available before the CDN GET in most cases.
             // Avoid opening a full body request for files that cannot safely
@@ -654,6 +664,7 @@ export function createPrefetch({
         waitForPrefetchCompletion,
         cancelNextPreload,
         getLikelyNextPlaylistIndex,
+        retargetNextPreload,
         applyNeteaseSongDetailToPlaylist,
         prefetchUpcomingNeteaseDetails,
         prewarmNextNeteaseSongUrl,

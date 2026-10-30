@@ -109,7 +109,7 @@ test('header/body stalls and cancellation are bounded and do not retry', async t
 
 function onlineFixture({ type = 'flac', header = async () => flacHeader(), preloaded = null, br = 320000 } = {}) {
     let token = 0, options, headerCalls = 0, fullCalls = 0, starts = 0;
-    const tags = [], errors = [];
+    const tags = [], errors = [], logs = [];
     const resolved = { candidates: [`https://cdn.test/a.${type}`], audioInfo: { type, sr: 44100, br } };
     const playback = {
         get _currentPlayActionToken() { return token; }, playbackPreference: 'stream', playbackWantsPlay: true,
@@ -132,16 +132,25 @@ function onlineFixture({ type = 'flac', header = async () => flacHeader(), prelo
         queue: { playlist: [{ songId: 1 }], curIdx: 0, playMode: 0 },
         dom: { el: Object.fromEntries(['title', 'img', 'lyricBox'].map(key => [key, new FakeElement()])) },
         analysis: { resetLoopAnalysisWorkerAudio() {} }, loop: { resetLoopUI() {} }, covers: { setMainCover() {} },
-        content: { setMainMusicEntityLinks() {} }, debug: { log() {} },
+        content: { setMainMusicEntityLinks() {} }, debug: { log(message) { logs.push(message); } },
         lyrics: { resetTrackLyrics() {}, takePrefetchedLyric() {}, fetchLyricById() {}, setArtistTag(source, label) { tags.push(label); } },
         resolver: { getNeteaseMatchStrategy() {}, resolveNeteaseAudioUrlWithTimeout: async () => resolved },
         transfer: { async fetchAudioHeader(url, request) { headerCalls++; return header(url, request); },
             fetchAudioDataWithFallback() { fullCalls++; throw new Error('Unexpected full download'); } }
     });
     const start = () => online.playNeteaseSong({ id: 1, name: 'Test', ar: [], al: { picUrl: 'https://cdn.test/cover.jpg' } });
-    return { start, playback, auth, metadata, tags, errors, get options() { return options; },
+    return { start, playback, auth, metadata, tags, errors, logs, resolved, get options() { return options; },
         get headerCalls() { return headerCalls; }, get fullCalls() { return fullCalls; }, get starts() { return starts; } };
 }
+
+test('playback exposes safe matching failure details instead of a generic missing URL code', async () => {
+    const f = onlineFixture(); f.resolved.candidates = [];
+    f.resolved.error = Object.assign(new Error('备用音源暂不可用（bikonoo: HTTP 500）'), { code: 'AUDIO_URL_UNAVAILABLE' });
+    await f.start();
+    assert.deepEqual(f.errors, ['error']); assert.equal(f.starts, 0);
+    assert.ok(f.logs.some(message => message.includes('bikonoo: HTTP 500')));
+    assert.ok(!f.logs.some(message => message.includes('NO_URL_FROM_OFFICIAL')));
+});
 
 test('FLAC labels update asynchronously without delaying playback or decoding a full file', async () => {
     let finish;

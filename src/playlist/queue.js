@@ -1,4 +1,5 @@
 import { normalizeMusicSong } from '../netease/models.js';
+import { PlaybackPlan } from './plan.js';
 
 export function createQueue({
     content: contentService,
@@ -15,7 +16,62 @@ export function createQueue({
     prefetch: prefetchService,
     songDetails: songDetailsService
 } = {}) {
-    let playlist = [], curIdx = -1, playMode = 0;
+    const plan = new PlaybackPlan();
+    let playlist = plan.items, playMode = 0;
+    let replacePrompt = null, replaceVersion = 0;
+
+    function changed() {
+        prefetchService.retargetNextPreload?.();
+        const locked = prefetchService.hasLockedNextPreloadTarget(playlist, prefetchService.nextPreloadIndex)
+            ? prefetchService.nextPreloadIndex : null;
+        const next = plan.nextIndex(playMode, locked);
+        if (locked !== null && locked !== next) prefetchService.cancelNextPreload({ resetDetails: false });
+        playlistViewService.ensurePlaylistRenderedAndActive();
+        persistenceService.schedulePlaylistStateSave(true);
+        contentService.updateMusicMiniPlayer();
+    }
+
+    function enqueueTemporary(tracks, next = false) {
+        if (!tracks.length) return;
+        plan.enqueue(tracks, next);
+        changed();
+        prefetchService.prefetchUpcomingNeteaseDetails?.();
+    }
+
+    async function playTemporaryNow(track) {
+        const index = plan.playNow(track);
+        changed();
+        return playTrackFromPlaylist(index, false);
+    }
+
+    function reconcileBasePlaylist(baseIndex = plan.baseIndex) {
+        plan.reconcile(baseIndex);
+        prefetchService.retargetNextPreload?.();
+    }
+
+    function clearTemporaryQueue() {
+        plan.clearPending();
+        changed();
+    }
+
+    async function confirmReplaceQueue() {
+        const version = ++replaceVersion, queueRef = playlist;
+        if (!plan.pending.length) return true;
+        const dialog = document.getElementById('queue-replace-dialog');
+        if (typeof dialog?.showModal !== 'function') return confirm('切换播放列表会清空临时待播歌曲。是否继续？');
+        if (!replacePrompt) {
+            replacePrompt = new Promise(resolve => {
+                dialog.returnValue = '';
+                dialog.addEventListener('close', () => {
+                    replacePrompt = null;
+                    resolve(dialog.returnValue === 'replace');
+                }, { once: true });
+                dialog.showModal();
+            });
+        }
+        const accepted = await replacePrompt;
+        return accepted && version === replaceVersion && queueRef === playlist;
+    }
 
     function handleNext(e) {
         if (playlist.length === 0) {
@@ -32,12 +88,14 @@ export function createQueue({
             return;
         }
 
+        if (!plan.pending.length && !plan.forward.length && onlinePlaylistService.finishSyncedEmptyQueue?.()) return;
+
         const loadingImportedPlaylist = onlinePlaylistService.currentPlaylistData?.imported
             && onlinePlaylistService.currentPlaylistData.importToken === activePlaylistQueueToken
-            && onlinePlaylistService.currentPlaylistData.queueRef === playlist
+            && onlinePlaylistService.currentPlaylistData.queueRef === plan.base
             && onlinePlaylistService.currentPlaylistData.loading
             && playMode === 0
-            && curIdx >= playlist.length - 1;
+            && !plan.pending.length && !plan.forward.length && plan.baseIndex >= plan.base.length - 1;
         if (loadingImportedPlaylist) {
             playlistPendingAdvance = true;
             onlinePlaylistService.currentPlaylistData.pendingAdvance = true;
@@ -48,21 +106,15 @@ export function createQueue({
         }
         // 确定目标下一首索引（在决定后再评估是否取消预取，以便在手动切歌时复用预加载）
         let nextIdx;
-        if (playMode === 1) {
-            if (playlist.length === 1) {
+        if (playMode === 1 && plan.base.length === 1 && !plan.isTemporary && !plan.pending.length && !plan.forward.length) {
                 if (playbackService.audioBuffer || playbackService.isStreaming) playbackService.startAudio(0);
                 else playTrackFromPlaylist(0);
                 return;
-            }
-            // 随机目标一旦被预热或完整预加载就锁定，自动切歌必须使用同一个目标。
-            if (prefetchService.hasLockedNextPreloadTarget(playlist, prefetchService.nextPreloadIndex) && prefetchService.nextPreloadIndex !== curIdx) nextIdx = prefetchService.nextPreloadIndex;
-            else {
-                nextIdx = Math.floor(Math.random() * playlist.length);
-                if (nextIdx === curIdx) nextIdx = (nextIdx + 1) % playlist.length;
-            }
-        } else {
-            nextIdx = curIdx + 1 >= playlist.length ? 0 : curIdx + 1;
         }
+        const locked = prefetchService.hasLockedNextPreloadTarget(playlist, prefetchService.nextPreloadIndex)
+            ? prefetchService.nextPreloadIndex : null;
+        nextIdx = plan.nextIndex(playMode, locked);
+        if (nextIdx === null) { playbackService.stopAudio('idle'); return; }
 
         // 目标改变时无论手动还是自动都取消旧预取；目标一致时保留以复用。
         const prefetchMatchesTarget = prefetchService.hasLockedNextPreloadTarget(playlist, prefetchService.nextPreloadIndex)
@@ -81,18 +133,20 @@ export function createQueue({
     let playlistPendingAdvance = false;
 
     // 从播放列表播放（支持本地和网易云）
-    async function playTrackFromPlaylist(i) {
+    async function playTrackFromPlaylist(i, remember = true) {
+        if (i < plan.base.length) i = onlinePlaylistService.resolveSyncedSelection?.(i) ?? i;
         if (i < 0 || i >= playlist.length) return;
+        i = plan.select(i, remember);
+        prefetchService.retargetNextPreload?.();
         const track = playlist[i];
         const selectionToken = playbackService.beginPlaybackAction();
         const importedQueue = onlinePlaylistService.currentPlaylistData?.imported
             && onlinePlaylistService.currentPlaylistData.importToken === activePlaylistQueueToken
-            && onlinePlaylistService.currentPlaylistData.queueRef === playlist;
+            && onlinePlaylistService.currentPlaylistData.queueRef === plan.base;
         if (importedQueue) {
             playlistPendingAdvance = false;
             onlinePlaylistService.currentPlaylistData.pendingAdvance = false;
         }
-        curIdx = i;
         playlistViewService.ensurePlaylistRenderedAndActive();
 
         let coverKnown = false;
@@ -185,7 +239,7 @@ export function createQueue({
         if(playbackService.audioBuffer && playbackService.playbackState.isPlaying && !hasCustomLoop && singleLoopModeChanged) {
             playbackService.startAudio(currentTime);
         }
-        if (playlist[curIdx]?.netease && playMode !== 2) prefetchService.prewarmNextNeteaseSongUrl();
+        if (plan.current?.netease && playMode !== 2) prefetchService.prewarmNextNeteaseSongUrl();
         prefetchService.prefetchUpcomingNeteaseDetails?.();
         if (playMode === 2 && playbackService.isStreaming && !hasCustomLoop) {
             try {
@@ -205,9 +259,25 @@ export function createQueue({
     let initialized = false;
     return {
         get playlist() { return playlist; },
-        set playlist(value) { playlist = value; },
-        get curIdx() { return curIdx; },
-        set curIdx(value) { curIdx = value; },
+        set playlist(value) { plan.reset(value); playlist = plan.items; },
+        get curIdx() { return plan.index; },
+        set curIdx(value) { plan.setIndex(value); },
+        get basePlaylist() { return plan.base; },
+        get baseCurIdx() { return plan.baseIndex; },
+        get isTemporary() { return plan.isTemporary; },
+        get temporaryEntries() { return plan.temporary; },
+        get queueRevision() { return plan.revision; },
+        get hasTemporaryState() { return plan.isTemporary || plan.pending.length > 0; },
+        get manualState() { return { current: plan.isTemporary ? plan.current : null, pending: plan.pending.slice() }; },
+        indexOfTrack(track) { return plan.indexOf(track); },
+        restoreManualState(state) { plan.restoreManual(state); },
+        reconcileBasePlaylist,
+        enqueueTemporary,
+        playTemporaryNow,
+        clearTemporaryQueue,
+        confirmReplaceQueue,
+        getNextPlaylistIndex(lockedIndex = null) { return plan.nextIndex(playMode, lockedIndex); },
+        getDetailEntries(lockedIndex = null, loading = false) { return plan.detailEntries(playMode, lockedIndex, loading); },
         get playMode() { return playMode; },
         handleNext,
         get activePlaylistQueueToken() { return activePlaylistQueueToken; },
@@ -222,7 +292,8 @@ export function createQueue({
             document.getElementById('prev-btn').onclick = () => {
                 if (playlist.length === 0) return;
                 try { prefetchService.cancelNextPreload(); } catch(e) {}
-                playTrackFromPlaylist(curIdx - 1 < 0 ? playlist.length - 1 : curIdx - 1);
+                const index = plan.previousIndex();
+                if (index !== null) playTrackFromPlaylist(index, false);
             };
 
             document.getElementById('next-btn').onclick = handleNext;

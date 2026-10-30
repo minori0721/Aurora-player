@@ -1,22 +1,40 @@
 import { cleanCookie, escapeHtml, toHttps } from '../shared/text.js';
 import { positiveMusicInteger } from './routes.js';
 import { normalizeMusicSong } from './models.js';
+import { createPlaylistSync } from './playlist-sync.js';
 
 export function createOnlinePlaylist({
     api: apiService,
     auth: authService,
     browser: browserService,
+    cache: cacheService,
     content: contentService,
+    covers: coversService,
     debug: debugService,
     dom: domService,
     imports: importsService,
+    lyrics: lyricsService,
+    metadata: metadataService,
     panels: panelsService,
+    persistence: persistenceService,
     playback: playbackService,
     playlistView: playlistViewService,
     queue: queueService,
     prefetch: prefetchService,
     transfer: transferService
 } = {}) {
+    const queueSync = createPlaylistSync({ api: apiService, auth: authService, cache: cacheService,
+        content: contentService, covers: coversService, debug: debugService, dom: domService,
+        lyrics: lyricsService, metadata: metadataService, persistence: persistenceService,
+        playback: playbackService, playlistView: playlistViewService, prefetch: prefetchService,
+        queue: queueService, transfer: transferService });
+
+    function rememberImportedSource(data) {
+        if (data?.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist || queueService.playlist)) {
+            queueSync.remember({ type: 'netease-playlist', id: data.playlistId,
+                loadedCount: data.loadedCount, totalCount: data.totalCount, loading: data.loading }, data.queueRef);
+        }
+    }
     let _currentPlaylistLoadToken = 0;
 
     let _playlistLoadTokenSeed = 0;
@@ -59,7 +77,7 @@ export function createOnlinePlaylist({
             data.loading = false;
             data.cancelled = outcome !== 'completed';
             data.tracksLoadIncomplete = data.loadedCount < data.totalCount || data.failedBatches.length > 0;
-            const ownsQueue = data.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === queueService.playlist;
+            const ownsQueue = data.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist || queueService.playlist);
             if (data.cancelled && ownsQueue) {
                 const wasWaiting = queueService.playlistPendingAdvance || !!data.pendingAdvance;
                 data.pendingAdvance = false;
@@ -140,6 +158,7 @@ export function createOnlinePlaylist({
             netease: true,
             songId: normalized.id,
             songData: normalized.songData,
+            detailCheckedAt: Date.now(),
             playlistSlot: slotIndex
         };
     }
@@ -189,14 +208,15 @@ export function createOnlinePlaylist({
     }
 
     function settlePlaylistAdvance(data) {
-        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== queueService.playlist) return;
+        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist || queueService.playlist)) return;
         const waiting = queueService.playlistPendingAdvance || !!data.pendingAdvance;
         if (!waiting) return;
 
-        if (queueService.curIdx + 1 < queueService.playlist.length) {
+        const baseIndex = queueService.baseCurIdx ?? queueService.curIdx;
+        if (baseIndex + 1 < data.queueRef.length) {
             queueService.playlistPendingAdvance = false;
             data.pendingAdvance = false;
-            queueService.playTrackFromPlaylist(queueService.curIdx + 1);
+            queueService.playTrackFromPlaylist(baseIndex + 1);
             return;
         }
 
@@ -218,22 +238,24 @@ export function createOnlinePlaylist({
     }
 
     function appendLoadedTracksToImportedQueue(data) {
-        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== queueService.playlist) return;
-        const previousLength = queueService.playlist.length;
+        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist || queueService.playlist)) return;
+        const previousLength = data.queueRef.length;
         while (data.nextQueueSlot < data.tracks.length) {
             const song = data.tracks[data.nextQueueSlot];
             if (!song && data.loading) break;
-            if (song) queueService.playlist.push(createOnlinePlaylistEntry(song, data.nextQueueSlot));
+            if (song) data.queueRef.push(createOnlinePlaylistEntry(song, data.nextQueueSlot));
             data.nextQueueSlot++;
         }
-        if (queueService.playlist.length === previousLength) {
+        queueService.reconcileBasePlaylist?.();
+        rememberImportedSource(data);
+        if (data.queueRef.length === previousLength) {
             settlePlaylistAdvance(data);
             return;
         }
 
         if (domService.el.plContainer.children.length === previousLength) playlistViewService.appendPlaylistRows(previousLength);
         else playlistViewService.renderPlaylist();
-        debugService.log(`歌单后台追加 ${queueService.playlist.length - previousLength} 首，当前 ${queueService.playlist.length}/${data.totalCount} 首`, 'success');
+        debugService.log(`歌单后台追加 ${data.queueRef.length - previousLength} 首，当前 ${data.queueRef.length}/${data.totalCount} 首`, 'success');
         updatePlaylistImportButton(data);
         prefetchService.prefetchUpcomingNeteaseDetails();
         settlePlaylistAdvance(data);
@@ -463,17 +485,21 @@ export function createOnlinePlaylist({
             return;
         }
 
+        if (queueService.confirmReplaceQueue && !await queueService.confirmReplaceQueue()) return;
+
         const importToken = `playlist-${data.loadToken}-${Date.now()}`;
         queueService.playlist = [];
         for (let slot = 0; slot < importWindow.endSlot; slot++) {
-            if (data.tracks[slot]) queueService.playlist.push(createOnlinePlaylistEntry(data.tracks[slot], slot));
+            if (data.tracks[slot]) (queueService.basePlaylist || queueService.playlist).push(createOnlinePlaylistEntry(data.tracks[slot], slot));
         }
+        queueService.reconcileBasePlaylist?.();
         queueService.activePlaylistQueueToken = importToken;
         queueService.playlistPendingAdvance = false;
         data.imported = true;
         data.importToken = importToken;
-        data.queueRef = queueService.playlist;
+        data.queueRef = queueService.basePlaylist || queueService.playlist;
         data.nextQueueSlot = importWindow.endSlot;
+        rememberImportedSource(data);
         queueService.curIdx = -1;
         playlistViewService.renderPlaylist();
         browserService.closeMusicBrowser();
@@ -502,6 +528,10 @@ export function createOnlinePlaylist({
         get currentPlaylistData() { return currentPlaylistData; },
         cancelPlaylistLoad,
         settlePlaylistAdvance,
+        getPersistedQueueSource: queueSync.getSource,
+        restoreQueueSource: queueSync.restore,
+        resolveSyncedSelection: queueSync.resolveSelection,
+        finishSyncedEmptyQueue: queueSync.finishEmptyQueue,
         initialize() {
             if (initialized) return;
             initialized = true;

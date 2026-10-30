@@ -10,6 +10,8 @@ const read = async file => (await fs.readFile(path.join(ROOT, file), 'utf8')).re
 export async function buildHtml({ env = process.env, minify = true } = {}) {
     const pkg = JSON.parse(await read('package.json'));
     const config = readPublicConfig(env);
+    const notices = await read('THIRD_PARTY_NOTICES.txt');
+    if (notices.includes('--')) throw new Error('Third-party notices must be safe inside an HTML comment');
     const common = { absWorkingDir: ROOT, bundle: true, write: false, minify, target: ['es2020'], legalComments: 'inline', charset: 'utf8', logLevel: 'silent' };
     const worker = await bundle({ ...common, entryPoints: ['src/analysis/worker.js'], format: 'iife', platform: 'browser' });
     const backgroundWorker = await bundle({ ...common, entryPoints: ['src/ui/background-worker.js'], format: 'iife', platform: 'browser' });
@@ -34,11 +36,17 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
         }]
     });
     const css = await bundle({ ...common, entryPoints: ['src/styles/index.css'], loader: { '.css': 'css' } });
+    const iconTags = [];
+    for (const size of [32, 48]) {
+        const png = await fs.readFile(path.join(ROOT, `src/assets/favicon-${size}.png`));
+        iconTags.push(`<link rel="icon" type="image/png" sizes="${size}x${size}" href="data:image/png;base64,${png.toString('base64')}">`);
+    }
     const vendors = ['src/vendor/jsmediatags.js', 'src/vendor/color-thief.js'];
     const vendorTags = [];
     for (const vendor of vendors) vendorTags.push(`<script data-vendor="${path.basename(vendor, '.js')}">\n${inlineScript(await read(vendor))}</script>`);
     const replacements = {
-        license: `<!-- Aurora Player v${pkg.version}\n${await read('LICENSE')}\n-->`,
+        license: `<!-- Aurora Player v${pkg.version}\n${await read('LICENSE')}\n-->\n<!-- Aurora Player third-party notices\n${notices}\n-->`,
+        icons: iconTags.join('\n    '),
         vendors: vendorTags.join('\n'),
         config: `<script data-aurora="config">${inlineScript(Object.entries(config).map(([key, value]) => `window.${key}=${JSON.stringify(value)};`).join(''))}</script>`,
         preferences: `<script data-aurora="preferences">\n${inlineScript(await read('src/ui/preferences.js'))}\n</script>`,

@@ -1,4 +1,5 @@
 import { fmtTime } from '../shared/text.js';
+import { createToolbarVisibility } from './toolbar-visibility.js';
 
 export function createControls({
     analysis: analysisService,
@@ -12,6 +13,7 @@ export function createControls({
     render: renderService
 } = {}) {
     let volTimer = null;
+    let toolbarVisibility = null;
 
     // 进度条拖动支持
     let isDraggingProgress = false;
@@ -72,10 +74,31 @@ export function createControls({
     let initialized = false;
     return {
         cancelProgressDrag,
+        syncToolbarVisibility() { toolbarVisibility?.sync(); },
         initialize() {
             if (initialized) return;
             initialized = true;
+            const toolbar = document.querySelector('.top-bar');
+            if (toolbar) toolbarVisibility = createToolbarVisibility({ toolbar,
+                readStatus: () => playbackService.playbackState.status,
+                isBlocked: () => isDraggingProgress || !!document.querySelector('.panel-float.show, .playlist-sidebar.show, .advanced-menu.show, .netease-panel.show, .download-modal.show, dialog[open]')
+                    || document.getElementById('debug-console')?.style.display === 'block'
+            });
             domService.el.playBtn.onclick = playbackService.togglePlayback;
+
+            const progressSection = domService.el.progBg.closest('.progress-section');
+            progressSection?.addEventListener('pointerdown', event => {
+                if (event.button !== undefined && event.button !== 0) return;
+                const selection = document.getSelection?.();
+                if (!selection?.rangeCount) return;
+                // Preserve lyrics, input and mixed selections outside this control.
+                for (let index = 0; index < selection.rangeCount; index++) {
+                    const range = selection.getRangeAt(index);
+                    if (!progressSection.contains(range.startContainer)
+                        || !progressSection.contains(range.endContainer)) return;
+                }
+                selection.removeAllRanges();
+            }, { capture: true });
 
             domService.el.progBg.addEventListener('pointerdown', e => {
                 if(!playbackService.playbackState.duration) return;

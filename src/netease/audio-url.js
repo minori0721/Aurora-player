@@ -46,6 +46,9 @@ export function createResolver({
     const NETEASE_RESOLVED_AUDIO_CACHE_MAX_ENTRIES = 200;
 
     const neteaseResolvedAudioCache = new Map();
+    const matchFailures = new Map();
+    const MATCH_FAILURE_COOLDOWN_MS = 30_000;
+    let cacheGeneration = 0;
 
     function getNeteaseMatchStrategy(level = authService.neteaseQuality) {
         return (level === 'lossless' || level === 'hires') ? 'lossless' : 'balanced';
@@ -57,7 +60,9 @@ export function createResolver({
     }
 
     function clearNeteaseResolvedAudioCache() {
+        cacheGeneration++;
         neteaseResolvedAudioCache.clear();
+        matchFailures.clear();
     }
 
     function pruneNeteaseResolvedAudioCache(now = Date.now()) {
@@ -70,19 +75,19 @@ export function createResolver({
     }
 
     async function invalidateNeteaseResolvedAudioCache(songId, level = authService.neteaseQuality, cookie = authService.neteaseCookie) {
-        neteaseResolvedAudioCache.delete(getNeteaseResolvedAudioCacheKey(songId, level));
+        neteaseResolvedAudioCache.delete(getNeteaseResolvedAudioCacheKey(songId, level, cookie));
         const cookieParam = cookie ? `&cookie=${encodeURIComponent(cleanCookie(cookie))}` : '';
         const urls = [apiService.buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`)];
         for (const source of getNeteaseMatchSources(getNeteaseMatchStrategy(level))) {
             const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
-            urls.push(apiService.buildApiUrl(`/song/url/match?id=${songId}${sourceParam}${cookieParam}`));
+            urls.push(apiService.buildApiUrl(`/song/url/match?id=${songId}${sourceParam}`));
         }
         await Promise.all(urls.map(url => cacheService.invalidateJsonCache(url)));
     }
 
-    function getNeteaseResolvedAudioCacheKey(songId, level = authService.neteaseQuality) {
-        const authScope = authService.neteaseCookie ? hashCacheScope(cleanCookie(authService.neteaseCookie)) : 'anon';
-        return `${songId}|${level}|${authScope}`;
+    function getNeteaseResolvedAudioCacheKey(songId, level = authService.neteaseQuality, cookie = authService.neteaseCookie) {
+        const authScope = cookie ? hashCacheScope(cleanCookie(cookie)) : 'anon';
+        return `${songId}|${level}|${authService.authGeneration || 0}|${authScope}`;
     }
 
     function isLikelyTrialAudioUrl(url) {
@@ -96,19 +101,64 @@ export function createResolver({
                decoded.includes('/musicrep-ts/');
     }
 
-    async function fetchNeteaseMatchAudio(songId, cookieParam = '', options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy()) {
+    function describeMatchFailure(source, error) {
+        const status = Number(error?.status) || 0;
+        const apiCode = Number(error?.apiCode) || 0;
+        const kind = status === 429 || apiCode === 429 ? 'rate-limit'
+            : error?.timeout || error?.name === 'TimeoutError' ? 'timeout'
+            : status ? 'http' : apiCode ? 'api' : error?.name === 'SyntaxError' ? 'response' : 'network';
+        return { source: source || 'auto', kind, status, apiCode };
+    }
+
+    function matchError(failures, skippedTrial) {
+        const descriptions = failures.slice(0, 3).map(failure => {
+            const detail = failure.coolingDown ? `${failure.status ? `HTTP ${failure.status}，` : ''}${Math.ceil(failure.retryAfterMs / 1000)}秒后可重试`
+                : failure.status ? `HTTP ${failure.status}` : failure.apiCode ? `接口错误 ${failure.apiCode}`
+                : ({ timeout: '请求超时', network: '网络错误', response: '响应格式异常', empty: '没有完整链接', trial: '仅试听' }[failure.kind] || '暂不可用');
+            return `${failure.source}: ${detail}`;
+        });
+        const unavailable = failures.some(failure => !['empty', 'trial'].includes(failure.kind));
+        const message = unavailable ? '备用音源暂不可用' : skippedTrial ? '仅获取到试听片段，没有完整音频' : '没有找到可播放的完整音频';
+        return Object.assign(new Error(`${message}${descriptions.length ? `（${descriptions.join('；')}${failures.length > 3 ? '；…' : ''}）` : ''}`), {
+            code: 'AUDIO_URL_UNAVAILABLE', failures
+        });
+    }
+
+    async function fetchNeteaseMatchAudio(songId, options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy(), level = authService.neteaseQuality) {
         let skippedTrial = false;
-        let lastError = null;
+        const failures = [];
+        const generation = cacheGeneration;
+        const accountKey = getNeteaseResolvedAudioCacheKey(songId, level);
+        const canCommit = () => generation === cacheGeneration && accountKey === getNeteaseResolvedAudioCacheKey(songId, level);
+        const assertActive = () => {
+            if (options.signal?.aborted) throw options.signal.reason || new DOMException('Cancelled', 'AbortError');
+        };
+        for (const [key, entry] of matchFailures) if (entry.until <= Date.now()) matchFailures.delete(key);
 
         for (const source of getNeteaseMatchSources(strategy)) {
+            assertActive();
+            const failureKey = `${accountKey}|${source || 'auto'}`;
+            let previous = matchFailures.get(failureKey);
+            if (previous?.until <= Date.now()) { matchFailures.delete(failureKey); previous = null; }
+            if (previous && (options.priority === 'idle' || previous.failure.kind === 'rate-limit')) {
+                failures.push({ ...previous.failure, coolingDown: true, retryAfterMs: Math.max(0, previous.until - Date.now()) });
+                continue;
+            }
             const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
             try {
-                const matchJson = await cacheService.cachedFetchJson(apiService.buildApiUrl(`/song/url/match?id=${songId}${sourceParam}${cookieParam}`), options, ttl);
-                const dataUrl = matchJson?.code === 200 ? toHttps(matchJson.data) : '';
-                const proxyUrl = matchJson?.code === 200 ? toHttps(matchJson.proxyUrl) : '';
+                // This endpoint does not consume account cookies; keep its short public cache shared.
+                const matchJson = await cacheService.cachedFetchJson(apiService.buildApiUrl(`/song/url/match?id=${songId}${sourceParam}`), options, ttl);
+                assertActive();
+                if (Number(matchJson?.code) !== 200) {
+                    const apiCode = Number(matchJson?.code);
+                    throw Object.assign(new Error('匹配接口响应异常'), { apiCode: Number.isSafeInteger(apiCode) ? apiCode : 0, name: apiCode ? 'Error' : 'SyntaxError' });
+                }
+                const dataUrl = typeof matchJson.data === 'string' ? toHttps(matchJson.data) : '';
+                const proxyUrl = typeof matchJson.proxyUrl === 'string' ? toHttps(matchJson.proxyUrl) : '';
                 const dataIsTrial = isLikelyTrialAudioUrl(dataUrl);
                 const proxyIsTrial = isLikelyTrialAudioUrl(proxyUrl);
                 if (dataIsTrial || proxyIsTrial) skippedTrial = true;
+                if (canCommit()) matchFailures.delete(failureKey);
 
                 if (dataUrl && !dataIsTrial) {
                     return {
@@ -126,17 +176,28 @@ export function createResolver({
                         skippedTrial
                     };
                 }
+                failures.push({ source: source || 'auto', kind: dataIsTrial || proxyIsTrial ? 'trial' : 'empty', status: 0, apiCode: 0 });
             } catch (e) {
+                assertActive();
                 if (e.name === 'AbortError') throw e;
-                lastError = e;
+                const failure = describeMatchFailure(source, e);
+                failures.push(failure);
+                if (canCommit() && (['rate-limit', 'timeout', 'network', 'response'].includes(failure.kind)
+                    || failure.status >= 500 && failure.status < 600 || failure.apiCode >= 500 && failure.apiCode < 600)) {
+                    const wait = failure.kind === 'rate-limit' && Number.isSafeInteger(e.retryAfterMs) && e.retryAfterMs >= 0 ? e.retryAfterMs : MATCH_FAILURE_COOLDOWN_MS;
+                    matchFailures.delete(failureKey);
+                    matchFailures.set(failureKey, { until: Date.now() + wait, failure });
+                    while (matchFailures.size > NETEASE_RESOLVED_AUDIO_CACHE_MAX_ENTRIES) matchFailures.delete(matchFailures.keys().next().value);
+                }
             }
         }
 
-        return { audioUrl: '', proxyUrl: '', source: '', skippedTrial, error: lastError };
+        return { audioUrl: '', proxyUrl: '', source: '', skippedTrial, error: matchError(failures, skippedTrial) };
     }
 
     async function resolveNeteaseAudioUrl(songId, cookieParam = '', level = authService.neteaseQuality, options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy(level)) {
         const cacheKey = getNeteaseResolvedAudioCacheKey(songId, level);
+        const generation = cacheGeneration;
         const now = Date.now();
         const cached = neteaseResolvedAudioCache.get(cacheKey);
         if (cached && (now - cached.ts) < NETEASE_RESOLVED_AUDIO_CACHE_TTL) {
@@ -154,7 +215,7 @@ export function createResolver({
         const json = await cacheService.cachedFetchJson(apiUrl, options, ttl);
         if (!json || json.code !== 200) throw new Error('获取音频失败');
 
-        let audioInfo = json?.data?.[0] || null;
+        let audioInfo = json?.data?.[0] ? { ...json.data[0] } : null;
         let audioUrl = audioInfo?.url ? toHttps(audioInfo.url) : '';
         let proxyUrl = audioInfo?.proxyUrl ? toHttps(audioInfo.proxyUrl) : '';
         const trialOnly = isNeteaseTrialOnly(audioInfo);
@@ -162,12 +223,14 @@ export function createResolver({
         let usedMatch = false;
         let matchSource = '';
         let skippedTrial = false;
+        let resolutionError = null;
 
         if (needsUnblock) {
             audioUrl = '';
             proxyUrl = '';
-            const matchResult = await fetchNeteaseMatchAudio(songId, cookieParam, options, ttl, strategy);
+            const matchResult = await fetchNeteaseMatchAudio(songId, options, ttl, strategy, level);
             skippedTrial = !!matchResult.skippedTrial;
+            resolutionError = matchResult.error || null;
             if (matchResult.audioUrl) {
                 usedMatch = true;
                 matchSource = matchResult.source || '';
@@ -193,10 +256,11 @@ export function createResolver({
             needsUnblock,
             usedMatch,
             matchSource,
-            skippedTrial
+            skippedTrial,
+            error: resolutionError
         };
 
-        if (candidates.length) {
+        if (candidates.length && generation === cacheGeneration && cacheKey === getNeteaseResolvedAudioCacheKey(songId, level) && !options.signal?.aborted) {
             neteaseResolvedAudioCache.set(cacheKey, {
                 ts: Date.now(),
                 value: {

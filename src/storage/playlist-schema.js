@@ -16,6 +16,7 @@ function createCompactPlaylistState(state) {
         savedAt: state.savedAt,
         selectedIndex: state.selectedIndex,
         source: state.source,
+        ...(state.manual ? { manual: state.manual } : {}),
         tracks: state.tracks.map(track => {
             const compact = { ...track };
             delete compact.handle;
@@ -34,10 +35,10 @@ function pickPlaylistSelectedIndex(state, ...selections) {
 }
 
 function normalizePersistedPlaylistState(state) {
-    if (!state || !Array.isArray(state.tracks) || !state.tracks.length) return null;
+    if (!state || !Array.isArray(state.tracks)) return null;
     const schema = Number(state.schema || 0);
     if (schema !== 2 && schema !== PLAYER_STATE_SCHEMA) return null;
-    const tracks = state.tracks.map(item => {
+    const normalizeTrack = item => {
         if (schema === PLAYER_STATE_SCHEMA && item?.type === 'local') {
             return { ...item, type: 'local' };
         }
@@ -48,6 +49,8 @@ function normalizePersistedPlaylistState(state) {
             id: positiveMusicInteger(item?.id, 0),
             title,
             displayName: String(item?.displayName || item?.name || title),
+            ...(Number.isFinite(item?.durationMs) && item.durationMs > 0 ? { durationMs: item.durationMs } : {}),
+            ...(Number.isFinite(item?.detailCheckedAt) && item.detailCheckedAt > 0 ? { detailCheckedAt: item.detailCheckedAt } : {}),
             artists,
             album: {
                 id: positiveMusicInteger(item?.album?.id || item?.al?.id, 0),
@@ -55,7 +58,15 @@ function normalizePersistedPlaylistState(state) {
                 picUrl: toHttps(item?.album?.picUrl || item?.al?.picUrl || '')
             }
         };
-    });
+    };
+    const tracks = state.tracks.map(normalizeTrack);
+    const validManual = item => item?.type === 'netease' && positiveMusicInteger(item.id, 0);
+    const manual = state.manual ? {
+        current: validManual(state.manual.current) ? normalizeTrack(state.manual.current) : null,
+        pending: (Array.isArray(state.manual.pending) ? state.manual.pending : []).filter(validManual).map(normalizeTrack)
+    } : null;
+    if (!tracks.length && !(manual?.current || manual?.pending.length)
+        && !(schema === PLAYER_STATE_SCHEMA && state.source?.type === 'netease-playlist' && positiveMusicInteger(state.source.id, 0))) return null;
     const normalized = {
         ...state,
         schema: PLAYER_STATE_SCHEMA,
@@ -63,6 +74,7 @@ function normalizePersistedPlaylistState(state) {
         savedAt: Number(state.savedAt || Date.now()),
         selectedIndex: Math.max(0, Math.min(tracks.length - 1, Number(state.selectedIndex) || 0)),
         source: state.source || null,
+        manual,
         tracks
     };
     if (schema !== PLAYER_STATE_SCHEMA) {

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Aurora Player</title>
+  <desc id="desc">A musical note grows out of folded green and blue aurora curtains on a transparent background.</desc>
+  <defs>
+    <linearGradient id="curtain" x1="230" y1="87" x2="267" y2="337" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#74DAB5" stop-opacity=".08"/>
+      <stop offset=".36" stop-color="#38B88E" stop-opacity=".42"/>
+      <stop offset=".74" stop-color="#1FA986" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#087C70"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="208" y1="235" x2="314" y2="221" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#AAEFCE" stop-opacity=".12"/>
+      <stop offset=".53" stop-color="#B1F2CD" stop-opacity=".65"/>
+      <stop offset="1" stop-color="#087C70" stop-opacity=".05"/>
+    </linearGradient>
+    <linearGradient id="front" x1="242" y1="213" x2="266" y2="364" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6A8BCE" stop-opacity=".07"/>
+      <stop offset=".4" stop-color="#369BAB" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#278BA1" stop-opacity=".9"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="89" y1="349" x2="423" y2="289" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#208D7D"/>
+      <stop offset=".42" stop-color="#279F98"/>
+      <stop offset=".75" stop-color="#3C97B1"/>
+      <stop offset="1" stop-color="#8B81C8"/>
+    </linearGradient>
+    <linearGradient id="note" x1="137" y1="236" x2="98" y2="388" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#239C85" stop-opacity=".5"/>
+      <stop offset=".55" stop-color="#239F98" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#217F91"/>
+    </linearGradient>
+    <filter id="bloom" x="-20%" y="-30%" width="140%" height="160%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <clipPath id="rays">
+      <path d="M77 334c39-43 66-65 97-109 29-40 35-81 67-87 32-6 52 49 73 91 24 49 61 51 119 12v-94c-57 34-81 53-107 20-31-42-44-85-80-81-43 3-54 55-81 95-30 45-62 66-88 82Z"/>
+    </clipPath>
+  </defs>
+  <g transform="translate(0 18)">
+    <path fill="url(#note)" d="M128 252c0-8 6-13 15-15l-3 112c-1 19-24 37-48 39-19 2-35-6-35-22 0-15 16-28 34-32 15-3 27-1 35 6Z"/>
+    <path fill="url(#curtain)" d="M77 334c39-43 66-65 97-109 29-40 35-81 67-87 32-6 52 49 73 91 24 49 61 51 119 12v-94c-57 34-81 53-107 20-31-42-44-85-80-81-43 3-54 55-81 95-30 45-62 66-88 82Z"/>
+    <path fill="url(#fold)" d="M174 225c29-40 35-81 67-87 32-6 52 49 73 91l12-62c-31-42-44-85-80-81-43 3-54 55-81 95Z"/>
+    <g clip-path="url(#rays)" stroke="#DBFCE7" stroke-opacity=".32" fill="none" stroke-width="2">
+      <path d="m109 145-9 190m35-190-10 190m35-220-10 200m36-244-11 230m33-252-8 230m29-248-6 230m27-230-4 260m27-230-2 260m25-200v220m24-210 2 210m22-210 4 210m21-230 7 230m18-240 10 230m15-250 13 230"/>
+    </g>
+    <path d="M77 334c39-43 66-65 97-109 29-40 35-81 67-87 32-6 52 49 73 91 24 49 61 51 119 12" fill="none" stroke="#42BB91" stroke-width="10" stroke-opacity=".2" filter="url(#bloom)"/>
+    <path d="M77 334c39-43 66-65 97-109 29-40 35-81 67-87 32-6 52 49 73 91 24 49 61 51 119 12" fill="none" stroke="#158D70" stroke-width="3.5" stroke-opacity=".88"/>
+    <path fill="url(#front)" d="M91 363c42-13 74-62 126-76 52-14 65 49 116 44 34-3 52-37 91-49v-65c-38 9-63 50-91 50-42 0-62-54-115-41-53 13-81 64-127 77Z"/>
+    <path d="M91 363c42-13 74-62 126-76 52-14 65 49 116 44 34-3 52-37 91-49" fill="none" stroke="url(#edge)" stroke-width="8" stroke-opacity=".32" filter="url(#bloom)"/>
+    <path d="M91 363c42-13 74-62 126-76 52-14 65 49 116 44 34-3 52-37 91-49" fill="none" stroke="url(#edge)" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

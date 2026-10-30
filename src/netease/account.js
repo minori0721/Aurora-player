@@ -19,7 +19,8 @@ export function createAuth({
     // ========== 网易云登录系统 ==========
     let neteaseUser = null;
 
-    let neteaseCookie = localStorage.getItem('netease_cookie') || '';
+    let storedNeteaseCookie = localStorage.getItem('netease_cookie') || '';
+    let neteaseCookie = cleanCookie(storedNeteaseCookie);
 
     // 当前播放音质
     let neteaseVipType = 0;
@@ -138,7 +139,7 @@ export function createAuth({
     function commitLogin(cookie, profile, isCurrent) {
         if (!isCurrent()) return null;
         advanceAuthGeneration();
-        neteaseCookie = cookie;
+        neteaseCookie = cleanCookie(cookie);
         neteaseUser = profile;
         try { localStorage.setItem('netease_cookie', neteaseCookie); }
         catch (_) { debugService.log('登录状态无法保存，关闭网页后需重新登录', 'warn'); }
@@ -280,6 +281,13 @@ export function createAuth({
         initialize() {
             if (initialized) return;
             initialized = true;
+            if (storedNeteaseCookie !== neteaseCookie) {
+                try {
+                    if (neteaseCookie) localStorage.setItem('netease_cookie', neteaseCookie);
+                    else localStorage.removeItem('netease_cookie');
+                } catch (_) { debugService.log('登录凭据已规范化，但无法保存到本地', 'warn'); }
+            }
+            storedNeteaseCookie = '';
             loginPage.initialize();
             domService.qualitySelect.value = neteaseQuality;
 

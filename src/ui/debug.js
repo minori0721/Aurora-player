@@ -1,3 +1,5 @@
+import { redactDiagnosticText } from '../shared/text.js';
+
 export function createDebug({} = {}) {
     const debugConsole = document.getElementById('debug-console');
 
@@ -14,6 +16,7 @@ export function createDebug({} = {}) {
     }
 
     function log(msg, type='') {
+        msg = redactDiagnosticText(msg);
         console.log(msg);
         const div = document.createElement('div');
         div.className = `log-item ${type==='error'?'log-err':(type==='success'?'log-suc':'')}`;

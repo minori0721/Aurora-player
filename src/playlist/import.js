@@ -217,6 +217,7 @@ export function createImports({
         }
 
         if (audioAssets.length) {
+            if (queueService.confirmReplaceQueue && !await queueService.confirmReplaceQueue()) return;
             const importPlayToken = playbackService.invalidatePlaybackAction();
             try { prefetchService.cancelNextPreload(); } catch (_) {}
             playbackService.stopAudio();
@@ -233,7 +234,8 @@ export function createImports({
                 name: asset.name.replace(/\.[^.]+$/, ''),
                 lrcFile: null, sliFile: null, lrcStatus: 'none', sliStatus: 'none', sliData: null
             }));
-            queueService.playlist.sort((a, b) => a.asset.relativePath.localeCompare(b.asset.relativePath, undefined, { numeric: true, sensitivity: 'base' }));
+            (queueService.basePlaylist || queueService.playlist).sort((a, b) => a.asset.relativePath.localeCompare(b.asset.relativePath, undefined, { numeric: true, sensitivity: 'base' }));
+            queueService.reconcileBasePlaylist?.();
             const importedQueue = queueService.playlist;
             queueService.curIdx = -1;
             const stats = await rebuildCompanionBindings(importedQueue, companionRegistry);

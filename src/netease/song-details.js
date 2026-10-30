@@ -193,6 +193,7 @@ export function createSongDetails({ api, auth, cache, content, debug, onlinePlay
                 ar: Array.isArray(incoming.ar || incoming.artists) ? incoming.ar || incoming.artists : previous.ar || previous.artists || [],
                 al: album, dt: Number(incoming.dt || incoming.duration || previous.dt || previous.duration || 0) });
             track.songData = normalized.songData;
+            track.detailCheckedAt = Date.now();
             track.name = `${normalized.name}${normalized.artists.length ? ` - ${normalized.artists.map(artist => artist.name).join(', ')}` : ''}`;
             if (confirmed.has(incoming)) confirmed.add(track.songData);
             updated.push(index);
@@ -210,9 +211,11 @@ export function createSongDetails({ api, auth, cache, content, debug, onlinePlay
         const mode = queue.playMode;
         const importing = onlinePlaylist?.currentPlaylistData;
         const looping = !!playback.getActiveCustomLoop();
-        const entries = planDetailWindow(queueRef, index, mode, {
-            nextIndex: prefetch.hasLockedNextPreloadTarget(queueRef, prefetch.nextPreloadIndex) ? prefetch.nextPreloadIndex : null,
-            loading: importing?.queueRef === queueRef && importing.loading,
+        const lockedIndex = prefetch.hasLockedNextPreloadTarget(queueRef, prefetch.nextPreloadIndex) ? prefetch.nextPreloadIndex : null;
+        const importingBase = importing?.queueRef === (queue.basePlaylist || queueRef) && importing.loading;
+        const entries = looping ? [] : queue.getDetailEntries ? queue.getDetailEntries(lockedIndex, importingBase) : planDetailWindow(queueRef, index, mode, {
+            nextIndex: lockedIndex,
+            loading: importingBase,
             looping
         });
         if (!anchor || anchor.queue !== queueRef || anchor.mode !== mode || anchor.looping !== looping

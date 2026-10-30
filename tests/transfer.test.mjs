@@ -103,6 +103,19 @@ test('oversize online audio keeps only the URL, never opens the body request', a
     assert.equal(prefetch.nextSongRawData, null);
 });
 
+test('an in-flight next-song body survives index remapping without a second download', async () => {
+    const f = prefetchFixture(); let finish;
+    f.transfers.fetchAudioDataWithFallback = () => { f.calls.bodies++; return new Promise(resolve => { finish = resolve; }); };
+    await f.prefetch.prefetchNextSong(1); await tick();
+    const target = f.queue.playlist[1];
+    f.queue.playlist.unshift({ name: 'inserted base row' }); f.queue.curIdx++;
+    f.prefetch.retargetNextPreload(); assert.equal(f.prefetch.nextPreloadIndex, 2);
+    finish({ buffer: new ArrayBuffer(8), byteLength: 8, audioUrl: 'https://cdn.test/a' });
+    await f.prefetch.nextSongFetchPromise; await tick();
+    assert.equal(f.prefetch.hasPreloaded, true); assert.equal(f.calls.bodies, 1); assert.equal(f.calls.urls, 1);
+    assert.ok(f.prefetch.takeNextPreloadedRawData(2, target, 2, 'exhigh'));
+});
+
 test('an expired URL refreshes once; an account change prevents late preload adoption', async () => {
     const state = prefetchFixture();
     state.transfers.fetchAudioDataWithFallback = async () => { state.calls.bodies++; throw Object.assign(new Error('expired'), { status: 403 }); };

@@ -70,6 +70,8 @@ export function createPersistence({
             id: positiveMusicInteger(track.songId || song.id, 0),
             title: String(song.name || track.name || ''),
             displayName: String(track.name || song.name || ''),
+            ...(song.durationMs > 0 ? { durationMs: song.durationMs } : {}),
+            ...(track.detailCheckedAt > 0 ? { detailCheckedAt: track.detailCheckedAt } : {}),
             artists: song.artists.map(normalizePersistedArtist),
             album: {
                 id: positiveMusicInteger(song.album?.id, 0),
@@ -94,6 +96,7 @@ export function createPersistence({
     }
 
     function getPersistedPlaylistSource() {
+        if (onlinePlaylistService.getPersistedQueueSource) return onlinePlaylistService.getPersistedQueueSource();
         const data = onlinePlaylistService.currentPlaylistData;
         if (!data?.imported || data.importToken !== queueService.activePlaylistQueueToken || data.queueRef !== queueService.playlist) return null;
         return {
@@ -111,24 +114,31 @@ export function createPersistence({
     }
 
     function buildPlaylistState() {
-        if (!Array.isArray(queueService.playlist) || !queueService.playlist.length) return null;
         const source = getPersistedPlaylistSource();
-        const sourceKey = JSON.stringify(source);
+        const base = queueService.basePlaylist || queueService.playlist;
+        const pending = queueService.manualState;
+        const manual = pending && (pending.current || pending.pending.length) ? {
+            current: pending.current ? serializePlaylistTrack(pending.current) : null,
+            pending: pending.pending.map(serializePlaylistTrack)
+        } : null;
+        if (!Array.isArray(base) || !base.length && !source && !manual) return null;
+        const sourceKey = JSON.stringify({ source, manual });
         if (playlistPersistenceQueue !== queueService.playlist) {
             playlistPersistenceQueue = queueService.playlist;
             playlistPersistenceId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
             playlistStructureDirty = true;
         }
-        if (!playlistStructureDirty && playlistCachedState?.tracks.length === queueService.playlist.length && sourceKey === playlistCachedSource) return playlistCachedState;
+        if (!playlistStructureDirty && playlistCachedState?.tracks.length === base.length && sourceKey === playlistCachedSource) return playlistCachedState;
         playlistStateRevision = Math.max(playlistStateRevision + 1, Date.now());
         playlistCachedState = {
             schema: PLAYER_STATE_SCHEMA,
             listId: playlistPersistenceId,
             revision: playlistStateRevision,
             savedAt: Date.now(),
-            selectedIndex: Math.max(0, Math.min(queueService.playlist.length - 1, Number(queueService.curIdx) || 0)),
+            selectedIndex: Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx ?? queueService.curIdx) || 0)),
             source,
-            tracks: queueService.playlist.map(serializePlaylistTrack)
+            ...(manual ? { manual } : {}),
+            tracks: base.map(serializePlaylistTrack)
         };
         playlistCachedSource = sourceKey;
         playlistStructureDirty = false;
@@ -218,7 +228,8 @@ export function createPersistence({
     function saveCurrentPlaylist() {
         const state = buildPlaylistState();
         if (!state) return Promise.resolve(false);
-        const selectedIndex = Math.max(0, Math.min(queueService.playlist.length - 1, Number(queueService.curIdx) || 0));
+        const base = queueService.basePlaylist || queueService.playlist;
+        const selectedIndex = Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx ?? queueService.curIdx) || 0));
         if (playlistLastSelection?.listId === state.listId && playlistLastSelection.contentRevision === state.revision
             && playlistLastSelection.selectedIndex === selectedIndex && playlistCompactRevision === state.revision
             && playlistIdbRevision === state.revision && playlistSelectionIdbRevision === playlistLastSelection.revision
@@ -300,7 +311,12 @@ export function createPersistence({
             const { state: idbState, selection: idbSelection } = await readPlaylistIdbState();
             const compactState = readCompactPlaylistState();
             const state = pickNewestPlaylistState(idbState, compactState) || await migrateLegacyPlaylistState();
-            if (queueService.playlist.length || state?.schema !== PLAYER_STATE_SCHEMA || !Array.isArray(state.tracks) || !state.tracks.length) return;
+            if (queueService.playlist.length || state?.schema !== PLAYER_STATE_SCHEMA || !Array.isArray(state.tracks)) return;
+            playlistStateRevision = Math.max(playlistStateRevision, Number(state.revision) || 0);
+            if (!state.tracks.length && !state.manual) {
+                void onlinePlaylistService.restoreQueueSource?.(state.source, queueService.basePlaylist || queueService.playlist);
+                return;
+            }
             const compactSelection = readCompactPlaylistSelection();
             state.selectedIndex = pickPlaylistSelectedIndex(state, idbSelection, compactSelection);
             playlistStateRevision = Math.max(playlistStateRevision, Number(state.revision) || 0,
@@ -310,7 +326,7 @@ export function createPersistence({
                 delete state._upgraded;
                 writeCompactPlaylistState(state);
             }
-            queueService.playlist = state.tracks.map(item => {
+            const restoreTrack = item => {
                 if (item.type === 'local') {
                     const relativePath = String(item.relativePath || item.name || '本地文件');
                     return {
@@ -331,20 +347,28 @@ export function createPersistence({
                 const al = { id: item.album?.id || 0, name: item.album?.name || '', picUrl: toHttps(item.album?.picUrl || '') };
                 return {
                     name: String(item.displayName || item.title || ''), netease: true, songId: item.id,
-                    songData: { id: item.id, name: String(item.title || ''), ar, al, artists: ar, album: al }
+                    ...(item.detailCheckedAt > 0 ? { detailCheckedAt: item.detailCheckedAt } : {}),
+                    songData: { id: item.id, name: String(item.title || ''), ar, al, artists: ar, album: al,
+                        ...(item.durationMs > 0 ? { dt: item.durationMs, duration: item.durationMs } : {}) }
                 };
-            });
+            };
+            queueService.playlist = state.tracks.map(restoreTrack);
             queueService.activePlaylistQueueToken = null;
             queueService.playlistPendingAdvance = false;
             playlistPersistenceQueue = queueService.playlist;
             playlistPersistenceId = state.listId || window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-            queueService.curIdx = Math.max(0, Math.min(queueService.playlist.length - 1, Number(state.selectedIndex) || 0));
+            queueService.curIdx = state.tracks.length ? Math.max(0, Math.min(state.tracks.length - 1, Number(state.selectedIndex) || 0)) : -1;
+            if (state.manual) queueService.restoreManualState?.({
+                current: state.manual.current ? restoreTrack(state.manual.current) : null,
+                pending: state.manual.pending.map(restoreTrack)
+            });
             playlistViewService.renderPlaylist();
-            const currentTrack = queueService.playlist[queueService.curIdx];
+            const currentTrack = queueService.playlist[queueService.curIdx] || queueService.playlist[0];
+            if (!currentTrack) return;
             if (currentTrack.netease) {
                 domService.el.title.textContent = currentTrack.songData.name || currentTrack.name;
                 contentService.setMainMusicEntityLinks(currentTrack.songData);
-                lyricsService.setArtistTag(currentTrack.songData.ar.map(artist => artist.name).join(', ') || '网易云');
+                lyricsService.setArtistTag('网易云');
                 const cover = toHttps(currentTrack.songData.al.picUrl);
                 if (cover) {
                     coversService.setMainCover(cover);
@@ -360,6 +384,7 @@ export function createPersistence({
             const needsFile = queueService.playlist.filter(track => track.needsFile).length;
             const needsSelection = queueService.playlist.filter(track => track.needsFile && !track.fileHandle).length;
             debugService.log(`已从历史恢复 ${queueService.playlist.length} 首歌曲${needsFile ? `；${needsFile - needsSelection} 个本地文件可请求访问权限，${needsSelection} 个文件需重新选择` : ''}`, needsFile ? 'warn' : 'success');
+            void onlinePlaylistService.restoreQueueSource?.(state.source, queueService.basePlaylist || queueService.playlist);
         } catch (error) {
             console.warn('Failed to restore playlist:', error);
         }

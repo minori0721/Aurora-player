@@ -352,11 +352,11 @@ export function createPlayback({
         analysisService.cancelPreviewTimer();
         controlsService.cancelProgressDrag();
         const data = onlinePlaylistService.currentPlaylistData;
-        if ((queueService.playlistPendingAdvance || data?.pendingAdvance) && data?.queueRef === queueService.playlist) {
+        if ((queueService.playlistPendingAdvance || data?.pendingAdvance) && data?.queueRef === (queueService.basePlaylist || queueService.playlist)) {
             pausedPlaylistAdvance = { data, queue: queueService.playlist, index: queueService.curIdx };
         }
         queueService.playlistPendingAdvance = false;
-        if (data?.queueRef === queueService.playlist) data.pendingAdvance = false;
+        if (data?.queueRef === (queueService.basePlaylist || queueService.playlist)) data.pendingAdvance = false;
         if (playbackState.isPlaying) playbackState.pauseTime = getCurrentTime();
         stopAudio('paused', { preserveLoad: true });
     }
@@ -589,6 +589,7 @@ export function createPlayback({
     function updatePlayIcon() {
         const canPause = playbackState.isPlaying || playbackWantsPlay
             && (playbackState.status === 'loading' || !!pendingTransportPlay);
+        // Material Icons play/pause paths, adapted SVG wrappers; Apache-2.0, see THIRD_PARTY_NOTICES.txt.
         domService.el.playBtn.innerHTML = canPause ? '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
         domService.el.playBtn.setAttribute('aria-label', canPause ? '暂停' : '播放');
         domService.el.playBtn.title = domService.el.playBtn.getAttribute('aria-label');
@@ -608,6 +609,7 @@ export function createPlayback({
         updatePlayIcon();
         if (typeof renderService.scheduleRender === 'function') renderService.scheduleRender(true);
         lyricsService.syncWordLyricPlayback?.();
+        controlsService.syncToolbarVisibility?.();
         return nextStatus;
     }
 

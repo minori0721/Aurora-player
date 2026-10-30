@@ -108,6 +108,15 @@ export function createContent({
                 </div>
                 <span class="netease-item-duration">${fmtTime(song.durationMs / 1000)}</span>
                 <button class="netease-item-play" data-music-play aria-label="播放 ${escapeHtml(song.name)}">&#9654;</button>`;
+            const menu = document.createElement('details');
+            menu.className = 'music-song-menu';
+            menu.innerHTML = `<summary role="button" tabindex="0" aria-expanded="false" aria-label="歌曲选项：${escapeHtml(song.name)}" title="歌曲选项">&#8943;</summary>
+                <div class="music-song-options">
+                    <button type="button" data-music-queue="next" aria-label="下一首播放">下一首播放</button>
+                    <button type="button" data-music-queue="last" aria-label="加入队列">加入队列</button>
+                    <button type="button" data-music-queue="from" aria-label="从这首连续播放">从这首连续播放</button>
+                </div>`;
+            item.appendChild(menu);
             fragment.appendChild(item);
         });
         container.appendChild(fragment);
@@ -136,6 +145,7 @@ export function createContent({
     async function activateOnlineMusicContext(contextId, selectedIndex = 0, shuffle = false) {
         const context = browserService.musicBrowserState.contexts.get(contextId);
         if (!context?.songs?.length) return;
+        if (queueService.confirmReplaceQueue && !await queueService.confirmReplaceQueue()) return;
         let songs = context.songs.slice();
         let index = Math.max(0, Math.min(songs.length - 1, Number(selectedIndex) || 0));
         if (shuffle) {
@@ -160,6 +170,29 @@ export function createContent({
         playlistViewService.renderPlaylist();
         await queueService.playTrackFromPlaylist(index);
         updateMusicMiniPlayer();
+    }
+
+    function queueEntry(song, meta) {
+        return { name: `${song.name}${song.artists.length ? ` - ${song.artists.map(artist => artist.name).join(', ')}` : ''}`,
+            netease: true, songId: song.id, songData: song.songData, context: { ...meta } };
+    }
+
+    async function playSingleMusic(contextId, index) {
+        const context = browserService.musicBrowserState.contexts.get(contextId);
+        const song = context?.songs[index];
+        if (!song) return;
+        await queueService.playTemporaryNow(queueEntry(song, context.meta));
+    }
+
+    function addMusicToQueue(contextId, index = null, next = false) {
+        const context = browserService.musicBrowserState.contexts.get(contextId);
+        if (!context) return;
+        const songs = index === null ? context.songs : [context.songs[index]].filter(Boolean);
+        queueService.enqueueTemporary(songs.map(song => queueEntry(song, context.meta)), next);
+        const message = `已${next ? '设为下一首' : '加入队列'}：${songs.length} 首`;
+        debugService.log(message, 'success');
+        const feedback = document.getElementById('music-queue-feedback');
+        if (feedback) feedback.textContent = message;
     }
 
     async function fetchMusicSearch(type, keyword, limit, offset, signal) {
@@ -396,8 +429,9 @@ export function createContent({
             </button>` : '';
         return `
             <div class="music-entity-actions">
-                <button class="music-action-btn primary" data-music-play-context="${escapeHtml(contextId || '')}" ${playDisabled}>播放</button>
+                <button class="music-action-btn primary" data-music-play-context="${escapeHtml(contextId || '')}" ${playDisabled}>${browserService.musicBrowserState.contexts.get(contextId)?.meta.sourceType === 'album' ? '播放专辑' : '播放全部'}</button>
                 <button class="music-action-btn" data-music-shuffle-context="${escapeHtml(contextId || '')}" ${playDisabled}>随机播放</button>
+                <button class="music-action-btn" data-music-add-context="${escapeHtml(contextId || '')}" ${playDisabled}>加入队列</button>
                 ${followButton}
             </div>`;
     }
@@ -900,6 +934,21 @@ export function createContent({
                     activateOnlineMusicContext(playContext.dataset.musicPlayContext, 0, false);
                     return;
                 }
+                const addContext = event.target.closest('[data-music-add-context]');
+                if (addContext?.dataset.musicAddContext) {
+                    addMusicToQueue(addContext.dataset.musicAddContext);
+                    return;
+                }
+                const queueAction = event.target.closest('[data-music-queue]');
+                if (queueAction) {
+                    const row = queueAction.closest('.netease-item[data-music-context]');
+                    if (!row) return;
+                    queueAction.closest('details').open = false;
+                    const index = Number(row.dataset.musicIndex) || 0;
+                    if (queueAction.dataset.musicQueue === 'from') activateOnlineMusicContext(row.dataset.musicContext, index);
+                    else addMusicToQueue(row.dataset.musicContext, index, queueAction.dataset.musicQueue === 'next');
+                    return;
+                }
                 const shuffleContext = event.target.closest('[data-music-shuffle-context]');
                 if (shuffleContext?.dataset.musicShuffleContext) {
                     activateOnlineMusicContext(shuffleContext.dataset.musicShuffleContext, 0, true);
@@ -925,9 +974,29 @@ export function createContent({
                     return;
                 }
                 const row = event.target.closest('.netease-item[data-music-context]');
-                if (row && (event.target.closest('[data-music-play]') || !event.target.closest('button, a, input, select'))) {
-                    activateOnlineMusicContext(row.dataset.musicContext, Number(row.dataset.musicIndex) || 0, false);
+                if (row && (event.target.closest('[data-music-play]') || !event.target.closest('button, a, input, select, details'))) {
+                    playSingleMusic(row.dataset.musicContext, Number(row.dataset.musicIndex) || 0);
                 }
+            });
+
+            domService.neteasePanel.addEventListener('toggle', event => {
+                const menu = event.target;
+                if (!menu.classList?.contains('music-song-menu')) return;
+                const summary = menu.querySelector('summary');
+                summary.setAttribute('aria-expanded', String(menu.open));
+                if (!menu.open) return;
+                document.querySelectorAll('.music-song-menu[open]').forEach(other => { if (other !== menu) other.open = false; });
+                const bounds = domService.neteaseBrowserScroll.getBoundingClientRect();
+                const tabBottom = domService.neteasePanel.querySelector('.netease-tabs')?.getBoundingClientRect().bottom || bounds.top;
+                const rect = summary.getBoundingClientRect();
+                const below = bounds.bottom - rect.bottom - 4, above = rect.top - Math.max(bounds.top, tabBottom) - 4;
+                const options = menu.querySelector('.music-song-options');
+                const upwards = below < options.scrollHeight && above > below;
+                menu.classList.toggle('menu-above', upwards);
+                options.style.maxHeight = `${Math.max(44, upwards ? above : below)}px`;
+            }, true);
+            document.addEventListener('click', event => {
+                document.querySelectorAll('.music-song-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
             });
 
             domService.el.coverWrap.addEventListener('click', openMainPlayerAlbum);
