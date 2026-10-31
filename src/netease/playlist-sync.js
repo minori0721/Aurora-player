@@ -26,13 +26,11 @@ export function createPlaylistSync({
     let binding = null;
     let request = null;
     let temporaryCurrent = null;
-    const baseQueue = () => queue.basePlaylist || queue.playlist;
-    const baseIndex = () => queue.baseCurIdx ?? queue.curIdx;
+    const baseQueue = () => queue.basePlaylist;
+    const baseIndex = () => queue.baseCurIdx;
 
     function bound() {
-        return binding && binding.queue === baseQueue() && binding.entries.length === baseQueue().length
-            && binding.entries.every((entry, index) => entry === baseQueue()[index]
-                && entry.netease && Number(entry.songId) === binding.ids[index]);
+        return binding && binding.queue === baseQueue() && binding.revision === queue.baseStructureRevision;
     }
 
     function remember(source, queueRef = baseQueue()) {
@@ -41,7 +39,7 @@ export function createPlaylistSync({
         temporaryCurrent = null;
         const normalized = normalizeSource(source);
         binding = normalized && queueRef === baseQueue() && queueRef.every(track => track.netease && positiveMusicInteger(track.songId, 0))
-            ? { source: normalized, queue: queueRef, entries: queueRef.slice(), ids: queueRef.map(track => Number(track.songId)) } : null;
+            ? { source: normalized, queue: queueRef, revision: queue.baseStructureRevision, ids: queueRef.map(track => Number(track.songId)) } : null;
     }
 
     function getSource() {
@@ -54,7 +52,7 @@ export function createPlaylistSync({
     }
 
     function updateBinding() {
-        binding.entries = baseQueue().slice();
+        binding.revision = queue.baseStructureRevision;
         binding.ids = baseQueue().map(track => Number(track.songId));
     }
 
@@ -158,10 +156,7 @@ export function createPlaylistSync({
                 const selectedIndex = selected && next.includes(selected) ? next.indexOf(selected)
                     : queue.isTemporary ? (continuation && next.includes(continuation) ? next.indexOf(continuation) - 1 : -1)
                         : next.length ? 0 : -1;
-                baseQueue().length = 0;
-                for (const track of next) baseQueue().push(track);
-                if (queue.reconcileBasePlaylist) queue.reconcileBasePlaylist(selectedIndex);
-                else queue.curIdx = selectedIndex;
+                queue.replaceBaseTracks(next, selectedIndex);
             }
             owner.source = { ...owner.source, loadedCount: ids.length, totalCount: ids.length, loading: false };
             updateBinding();
@@ -191,9 +186,7 @@ export function createPlaylistSync({
         if (!bound() || !temporaryCurrent || !target || target === temporaryCurrent) return index;
         const oldIndex = baseQueue().indexOf(temporaryCurrent);
         prefetch.cancelNextPreload();
-        baseQueue().splice(oldIndex, 1);
-        if (queue.reconcileBasePlaylist) queue.reconcileBasePlaylist(baseIndex() >= oldIndex ? baseIndex() - 1 : baseIndex());
-        else if (queue.curIdx >= oldIndex) queue.curIdx--;
+        queue.removeBaseTrack(oldIndex, baseIndex() >= oldIndex ? baseIndex() - 1 : baseIndex());
         temporaryCurrent = null;
         updateBinding();
         playlistView.renderPlaylist();
@@ -203,9 +196,7 @@ export function createPlaylistSync({
     function finishEmptyQueue() {
         if (!bound() || !temporaryCurrent || baseQueue().length !== 1 || binding.source.totalCount !== 0) return false;
         prefetch.cancelNextPreload();
-        baseQueue().splice(0);
-        if (queue.reconcileBasePlaylist) queue.reconcileBasePlaylist(-1);
-        else queue.curIdx = -1;
+        queue.replaceBaseTracks([], -1);
         temporaryCurrent = null;
         updateBinding();
         playback.stopAudio('idle');

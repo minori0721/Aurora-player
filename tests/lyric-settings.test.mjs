@@ -36,15 +36,19 @@ function fixture(t, preference = 'original') {
     } });
     const box = new LyricElement(), artist = new LyricElement(), cloud = new FakeElement(), desktop = new FakeElement();
     const inputs = ['original', 'both', 'roma'].map(value => Object.assign(new FakeElement(), { value }));
+    const toggle = Object.assign(new FakeElement(), { textContent: '词译音' });
+    const symbol = Object.assign(new FakeElement(), { className: 'lyric-mode-symbol' });
+    const icon = Object.assign(new FakeElement(), { tagName: 'svg' });
+    symbol.appendChild(icon); toggle.appendChild(symbol);
     const requests = [], pending = [];
     const lyrics = createLyrics({
-        dom: { el: { lyricBox: box, artist, title: new FakeElement() }, cloudLyricsSwitch: cloud, neteaseBtn: desktop, lyricModeInputs: inputs },
+        dom: { el: { lyricBox: box, artist, title: new FakeElement() }, cloudLyricsSwitches: [cloud, desktop], lyricModeInputs: inputs, lyricToggleBtn: toggle },
         playback: { getCurrentTime: () => 0, playbackState: { duration: 120, isPlaying: false } }, metadata: {}, debug: { log() {} },
         api: { buildApiUrl: path => `https://fixture.invalid${path}` },
         cache: { cachedFetchJson(url, options) { requests.push({ url, options }); return new Promise(resolve => pending.push(resolve)); } }
     });
     t.after(() => lyrics.cancelLocalLyricSession());
-    return { lyrics, box, artist, cloud, desktop, inputs, host, requests, pending };
+    return { lyrics, box, artist, cloud, desktop, inputs, toggle, symbol, icon, host, requests, pending };
 }
 
 const original = '[00:00.000]original\n[00:02.000]next';
@@ -153,13 +157,13 @@ test('cloud switches sync both entry points and turning off invalidates pending 
     assert.equal(f.requests.length, 0);
     f.lyrics.neteaseSearchEnabled = true;
     assert.equal(f.cloud.checked, true);
-    assert.equal(f.desktop.getAttribute('aria-pressed'), 'true');
+    assert.equal(f.desktop.checked, true);
     assert.equal(f.requests.length, 1);
     const signal = f.requests[0].options.signal;
     f.lyrics.neteaseSearchEnabled = false;
     assert.equal(signal.aborted, true);
     assert.equal(f.cloud.checked, false);
-    assert.equal(f.desktop.getAttribute('aria-pressed'), 'false');
+    assert.equal(f.desktop.checked, false);
     f.pending[0]({ code: 200, result: { songs: [{ id: 1, name: 'fixture', ar: [{ name: 'Example' }] }] } });
     await settle();
     assert.equal(f.lyrics.originalLyricsArr.length, 0);
@@ -167,6 +171,58 @@ test('cloud switches sync both entry points and turning off invalidates pending 
     assert.equal(f.requests.length, 2);
     f.lyrics.neteaseSearchEnabled = true;
     assert.equal(f.requests.length, 2);
+});
+
+test('desktop cycle button and mobile modes mirror selection, missing text and track reset', t => {
+    const f = fixture(t, 'roma');
+    f.lyrics.resetTrackLyrics();
+    assert.equal(f.toggle.disabled, true); assert.equal(f.toggle.dataset.lyricMode, 'original');
+    assert.ok(f.inputs.every(input => input.disabled));
+    f.lyrics.parseAndRenderLyrics(original, 'test', translated, roman);
+    assert.equal(f.toggle.dataset.lyricMode, 'roma'); assert.equal(f.inputs[2].checked, true);
+    f.lyrics.setLyricDisplayMode('both');
+    assert.equal(f.toggle.dataset.lyricMode, 'both'); assert.equal(f.inputs[1].checked, true);
+    f.lyrics.resetTrackLyrics();
+    f.lyrics.parseAndRenderLyrics(original, 'test', '', roman);
+    assert.equal(f.inputs[1].disabled, true); assert.equal(f.inputs[0].checked, true);
+    assert.equal(f.toggle.dataset.lyricMode, 'original'); assert.equal(f.toggle.disabled, false);
+    assert.equal(f.lyrics.lyricDisplayMode, 'both');
+    assert.equal(f.requests.length, 0);
+});
+
+test('desktop cycles through word, translation and roman using the existing subtitle update path', t => {
+    const f = fixture(t);
+    f.lyrics.parseAndRenderLyrics(original, 'test', translated, roman,
+        [{ t: 0, words: [{ txt: 'original', start: 0, dur: 1000 }] }]);
+    const first = f.box.children[0], word = first.querySelector('.yrc-char');
+    for (const mode of ['both', 'roma', 'original']) {
+        assert.equal(f.lyrics.cycleLyricDisplayMode(), true);
+        assert.equal(f.lyrics.effectiveLyricDisplayMode, mode);
+        assert.equal(f.toggle.dataset.lyricMode, mode); assert.match(f.toggle.getAttribute('aria-label'), /点击切换/);
+        assert.equal(f.inputs.find(input => input.checked).value, mode);
+        assert.equal(f.toggle.textContent, '词译音');
+        assert.equal(f.toggle.children[0], f.symbol); assert.equal(f.symbol.children[0], f.icon);
+        assert.equal(f.box.children[0], first); assert.equal(first.querySelector('.yrc-char'), word);
+    }
+    assert.equal(f.requests.length, 0);
+});
+
+test('desktop cycles skip missing extras and cannot change preferences with no alternative text', t => {
+    const f = fixture(t, 'roma');
+    f.lyrics.resetTrackLyrics();
+    assert.equal(f.lyrics.cycleLyricDisplayMode(), false);
+    assert.equal(f.host.localStorage.getItem('lyric_mode'), 'roma');
+    f.lyrics.parseAndRenderLyrics(original, 'test');
+    assert.equal(f.toggle.disabled, true); assert.equal(f.lyrics.cycleLyricDisplayMode(), false);
+    assert.equal(f.lyrics.lyricDisplayMode, 'roma');
+    f.lyrics.parseAndRenderLyrics(original, 'test', translated);
+    assert.equal(f.toggle.dataset.lyricMode, 'original'); f.lyrics.cycleLyricDisplayMode();
+    assert.equal(f.toggle.dataset.lyricMode, 'both'); f.lyrics.cycleLyricDisplayMode();
+    assert.equal(f.toggle.dataset.lyricMode, 'original');
+    f.lyrics.parseAndRenderLyrics(original, 'test', '', roman);
+    f.lyrics.cycleLyricDisplayMode(); assert.equal(f.toggle.dataset.lyricMode, 'roma');
+    f.lyrics.cycleLyricDisplayMode(); assert.equal(f.toggle.dataset.lyricMode, 'original');
+    assert.equal(f.requests.length, 0);
 });
 
 test('cloud setting never replaces embedded lyrics or clears already visible text', t => {

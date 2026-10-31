@@ -30,7 +30,7 @@ export function createOnlinePlaylist({
         queue: queueService, transfer: transferService });
 
     function rememberImportedSource(data) {
-        if (data?.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist || queueService.playlist)) {
+        if (data?.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist)) {
             queueSync.remember({ type: 'netease-playlist', id: data.playlistId,
                 loadedCount: data.loadedCount, totalCount: data.totalCount, loading: data.loading }, data.queueRef);
         }
@@ -77,7 +77,7 @@ export function createOnlinePlaylist({
             data.loading = false;
             data.cancelled = outcome !== 'completed';
             data.tracksLoadIncomplete = data.loadedCount < data.totalCount || data.failedBatches.length > 0;
-            const ownsQueue = data.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist || queueService.playlist);
+            const ownsQueue = data.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist);
             if (data.cancelled && ownsQueue) {
                 const wasWaiting = queueService.playlistPendingAdvance || !!data.pendingAdvance;
                 data.pendingAdvance = false;
@@ -208,11 +208,11 @@ export function createOnlinePlaylist({
     }
 
     function settlePlaylistAdvance(data) {
-        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist || queueService.playlist)) return;
+        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist)) return;
         const waiting = queueService.playlistPendingAdvance || !!data.pendingAdvance;
         if (!waiting) return;
 
-        const baseIndex = queueService.baseCurIdx ?? queueService.curIdx;
+        const baseIndex = queueService.baseCurIdx;
         if (baseIndex + 1 < data.queueRef.length) {
             queueService.playlistPendingAdvance = false;
             data.pendingAdvance = false;
@@ -238,15 +238,16 @@ export function createOnlinePlaylist({
     }
 
     function appendLoadedTracksToImportedQueue(data) {
-        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist || queueService.playlist)) return;
+        if (!data?.importToken || queueService.activePlaylistQueueToken !== data.importToken || data.queueRef !== (queueService.basePlaylist)) return;
         const previousLength = data.queueRef.length;
+        const appended = [];
         while (data.nextQueueSlot < data.tracks.length) {
             const song = data.tracks[data.nextQueueSlot];
             if (!song && data.loading) break;
-            if (song) data.queueRef.push(createOnlinePlaylistEntry(song, data.nextQueueSlot));
+            if (song) appended.push(createOnlinePlaylistEntry(song, data.nextQueueSlot));
             data.nextQueueSlot++;
         }
-        queueService.reconcileBasePlaylist?.();
+        queueService.appendBaseTracks(appended);
         rememberImportedSource(data);
         if (data.queueRef.length === previousLength) {
             settlePlaylistAdvance(data);
@@ -485,19 +486,19 @@ export function createOnlinePlaylist({
             return;
         }
 
-        if (queueService.confirmReplaceQueue && !await queueService.confirmReplaceQueue()) return;
+        if (!await queueService.confirmReplaceQueue()) return;
 
         const importToken = `playlist-${data.loadToken}-${Date.now()}`;
-        queueService.playlist = [];
+        const entries = [];
         for (let slot = 0; slot < importWindow.endSlot; slot++) {
-            if (data.tracks[slot]) (queueService.basePlaylist || queueService.playlist).push(createOnlinePlaylistEntry(data.tracks[slot], slot));
+            if (data.tracks[slot]) entries.push(createOnlinePlaylistEntry(data.tracks[slot], slot));
         }
-        queueService.reconcileBasePlaylist?.();
+        queueService.playlist = entries;
         queueService.activePlaylistQueueToken = importToken;
         queueService.playlistPendingAdvance = false;
         data.imported = true;
         data.importToken = importToken;
-        data.queueRef = queueService.basePlaylist || queueService.playlist;
+        data.queueRef = queueService.basePlaylist;
         data.nextQueueSlot = importWindow.endSlot;
         rememberImportedSource(data);
         queueService.curIdx = -1;

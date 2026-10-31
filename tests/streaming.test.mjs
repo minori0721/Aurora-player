@@ -2,7 +2,7 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMediaTransport, pcmSizeEstimate, readPlaybackPreference } from '../src/audio/media.js';
 import { createPlayback } from '../src/audio/playback.js';
-import { FakeAudioContext, FakeElement, storage } from './helpers/host.mjs';
+import { FakeAudioContext, FakeElement, storage, withBaseQueue } from './helpers/host.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 class Media extends FakeElement {
@@ -33,10 +33,10 @@ beforeEach(() => {
 function fixture(t, mediaElement = new Media(), loadComplete) {
     const el = Object.fromEntries(['coverWrap', 'loadTip', 'playBtn', 'currTime', 'totalTime', 'bufferLine'].map(name => [name, new FakeElement()]));
     let nextCalls = 0, fullCalls = 0;
-    const queue = { playlist: [{ name: 'one' }, { name: 'two' }], curIdx: 0, playMode: 0, handleNext() { nextCalls++; } };
+    const queue = withBaseQueue({ playlist: [{ name: 'one' }, { name: 'two' }], curIdx: 0, playMode: 0, handleNext() { nextCalls++; } });
     const player = createPlayback({
         dom: { el }, queue, loop: { loopState: { active: false } }, download: {},
-        analysis: { cancelPreviewTimer() {}, cancelLoopAnalysisRun() {} }, controls: { cancelProgressDrag() {} },
+        analysis: { cancelPreviewTimer() {}, cancelLoopAnalysisRun() {} }, controls: { cancelProgressDrag() {}, syncToolbarVisibility() {} },
         lyrics: { cancelLocalLyricSession() {}, syncWordLyricPlayback() {} }, content: { updateMusicMiniPlayer() {} },
         onlinePlaylist: {}, debug: { log() {} }, render: { scheduleRender() {}, setPlaybackProgress() {} }
     });

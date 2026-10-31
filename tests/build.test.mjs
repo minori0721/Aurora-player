@@ -11,6 +11,7 @@ import { createHost, FakeAudioContext } from './helpers/host.mjs';
 import { periodicSignal } from './helpers/signal.mjs';
 import { findBestMatchByMode, releaseAnalysisBuffer } from '../src/analysis/algorithms.js';
 import { createLoopAnalysisInput, describeLoopAnalysisInput } from '../src/analysis/input.js';
+import { formatSliLoop, parseSliFile } from '../src/playlist/sli.js';
 
 const built = await buildHtml({ env: {} });
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -182,13 +183,16 @@ test('mobile download uses the desktop icon and forwards to the existing downloa
     assert.equal(calls, 1);
 });
 
-test('mobile toolbar keeps labeled SVG controls and desktop-only legacy icons', async () => {
+test('desktop and mobile toolbar share labeled inline SVG controls and their original actions', async () => {
     for (const id of ['btn-import', 'toggle-netease-panel', 'toggle-list', 'toggle-advanced']) {
         const markup = built.html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/button>`))?.[0];
-        assert.ok(markup?.includes('mobile-toolbar-icon'));
+        assert.ok(markup?.includes('toolbar-icon'));
         assert.match(markup, /aria-label="[^"]+"/);
         assert.match(markup, /<svg[^>]*aria-hidden="true"[^>]*focusable="false"/);
-        if (id === 'toggle-netease-panel' || id === 'toggle-list') assert.ok(markup.includes('class="desktop-only"'));
+        if (id === 'toggle-netease-panel' || id === 'toggle-list') {
+            assert.doesNotMatch(markup, /class="desktop-only"/);
+            assert.equal((markup.match(/<svg/g) || []).length, 1);
+        }
     }
     const f = boot(); await settle();
     for (const id of ['btn-import', 'toggle-netease-panel', 'toggle-list', 'toggle-advanced']) {
@@ -197,12 +201,39 @@ test('mobile toolbar keeps labeled SVG controls and desktop-only legacy icons', 
     }
 });
 
+test('desktop cycle button and mobile radio settings keep their positions, modes and icon licenses', () => {
+    for (const id of ['toggle-analyze', 'toggle-loop-panel']) {
+        const markup = built.html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/button>`))?.[0];
+        assert.match(markup, /<svg class="toolbar-icon"[^>]*aria-hidden="true"/);
+        assert.match(markup, /<span>[^<]+<\/span>/);
+    }
+    for (const id of ['cloud-lyrics-switch', 'cloud-lyrics-switch-desktop']) {
+        assert.match(built.html, new RegExp(`<input[^>]*id="${id}"[^>]*type="checkbox"[^>]*role="switch"`));
+    }
+    for (const mode of ['original', 'both', 'roma']) {
+        assert.equal(built.html.split(`id="lyric-mode-${mode}"`).length, 2);
+    }
+    assert.match(built.html, /name="lyric-display-mode"/);
+    assert.doesNotMatch(built.html, /id="toggle-netease"|lyric-mode-desktop-/);
+    const lyricButton = built.html.match(/<button class="btn desktop-only lyric-mode-button" id="lyric-toggle-btn"[^>]*>[\s\S]*?<\/button>/)?.[0];
+    assert.match(lyricButton, /data-lyric-mode="original" disabled/);
+    assert.match(lyricButton, /class="lyric-mode-symbol" aria-hidden="true"/);
+    assert.match(lyricButton, /<svg class="lyric-mode-icon"[^>]*focusable="false"/);
+    assert.deepEqual([...lyricButton.matchAll(/data-lyric-mark="([^"]+)"/g)].map(match => match[1]), ['original', 'both', 'roma']);
+    assert.match(built.html, /snowflake, audio-lines, waves-horizontal, chevron-down and captions/);
+    const topBar = built.html.slice(built.html.indexOf('<div class="top-bar">'), built.html.indexOf('<div class="panel-float"'));
+    assert.doesNotMatch(topBar, /lyric-mode-desktop-/);
+    assert.ok(built.html.indexOf('id="lyric-toggle-btn"') > built.html.indexOf('id="download-btn"'));
+});
+
 test('compiled local playback and lyric controls write Chinese logs without translating diagnostic data', async () => {
     const f = boot();
     await settle();
-    const lyrics = f.elements.get('toggle-netease');
-    lyrics.click();
-    lyrics.click();
+    const lyrics = f.elements.get('cloud-lyrics-switch-desktop');
+    lyrics.checked = true; lyrics.dispatchEvent({ type: 'change', target: lyrics });
+    assert.equal(f.elements.get('cloud-lyrics-switch').checked, true);
+    lyrics.checked = false; lyrics.dispatchEvent({ type: 'change', target: lyrics });
+    assert.equal(f.elements.get('cloud-lyrics-switch').checked, false);
     assert.ok(f.logs.some(parts => parts[0] === '网易云歌词搜索：已开启'));
     assert.ok(f.logs.some(parts => parts[0] === '网易云歌词搜索：已关闭'));
     importFiles(f, [localFile('diagnostic-English-title.flac')]);
@@ -224,14 +255,15 @@ test('compiled cloud switch stays in the menu and synchronizes with the desktop 
     const f = boot();
     await settle();
     const trigger = f.elements.get('toggle-advanced'), menu = f.elements.get('advanced-menu');
-    const cloud = f.elements.get('cloud-lyrics-switch'), desktop = f.elements.get('toggle-netease');
+    const cloud = f.elements.get('cloud-lyrics-switch'), desktop = f.elements.get('cloud-lyrics-switch-desktop');
     trigger.click();
     assert.equal(trigger.getAttribute('aria-expanded'), 'true');
     cloud.checked = true;
     cloud.dispatchEvent({ type: 'change', target: cloud });
-    assert.equal(desktop.getAttribute('aria-pressed'), 'true');
+    assert.equal(desktop.checked, true);
     assert.equal(menu.getAttribute('aria-hidden'), 'false');
-    desktop.click();
+    desktop.checked = false;
+    desktop.dispatchEvent({ type: 'change', target: desktop });
     assert.equal(cloud.checked, false);
     assert.equal(menu.getAttribute('aria-hidden'), 'false');
     menu.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
@@ -566,16 +598,24 @@ test('compiled analysis falls back safely even if transfer detached the local wi
     assert.equal(fixture.logs.some(parts => String(parts[0]).includes('回退主线程')), true);
 });
 
-async function pendingAnalysis() {
+async function pendingAnalysis({ configuration = null, sli = null } = {}) {
     const fixture=boot(),workers=[];
     fixture.host.Worker=class {
         constructor(){workers.push(this);}
         postMessage(message){this.message=message;}
         terminate(){this.terminated=true;}
-        reply(start=4,end=12){this.onmessage({data:{jobId:this.message.jobId,ok:true,result:{start,end,confidence:100,diff:0}}});}
+        reply(start=4,end=12,confidence=100){this.onmessage({data:{jobId:this.message.jobId,ok:true,result:{start,end,confidence,diff:1-confidence/100}}});}
     };
     fixture.audio.decoded=periodicSignal(44100);
-    importFiles(fixture,[localFile('edit-analysis.flac')]);await settle();
+    importFiles(fixture,[localFile('edit-analysis.flac'), ...(sli ? [{ name: 'edit-analysis.flac.sli', text: async () => sli }] : [])]);await settle();
+    if (configuration) {
+        for (const [id, value] of [['loop-start', configuration.start], ['loop-end', configuration.end]]) {
+            const control = fixture.elements.get(id); control.value = String(value); control.dispatchEvent({ type: 'input', target: control });
+        }
+        const control = fixture.elements.get('loop-enable'); control.checked = true;
+        control.dispatchEvent({ type: 'change', target: control });
+        if (!configuration.active) { control.checked = false; control.dispatchEvent({ type: 'change', target: control }); }
+    }
     analyze(fixture);
     const flush=async()=>{for(const [id,callback] of [...fixture.frames]){fixture.frames.delete(id);callback(performance.now());}await settle();};
     return {...fixture,workers,flush};
@@ -645,7 +685,136 @@ test('compiled SLI export keeps sample positions after toggling a precise loop',
     const button=f.host.document.createElement('button');button.dataset.action='export-sli';
     f.host.document.dispatchEvent({type:'click',target:button,preventDefault(){}});
     assert.equal(blobs.length,1);
-    assert.equal(await blobs[0].text(),'From = 529239;\nTo = 176418;');
+    const text = await blobs[0].text();
+    assert.equal(text, formatSliLoop(529239, 176418));
+    assert.deepEqual(await parseSliFile({ text: async () => text }), { status: 'valid', fromSamples: 529239, toSamples: 176418 });
+});
+
+function analysisAction(fixture, action) {
+    const button = fixture.host.document.createElement('button'); button.dataset.action = action;
+    fixture.host.document.dispatchEvent({ type: 'click', target: button, preventDefault() {} });
+}
+
+for (const confidence of [30, 65, 100]) test(`analysis auto-applies ${confidence}-point candidates only when no loop is configured`, async () => {
+    const f = await pendingAnalysis(); await f.flush(); f.workers[0].reply(4, 12, confidence); await settle();
+    assert.equal(f.elements.get('loop-enable').checked, true);
+    assert.equal(f.elements.get('ana-result').hidden, false);
+    assert.equal(f.elements.get('ana-apply').disabled, true);
+    assert.equal(f.elements.get('ana-restore').disabled, false);
+    assert.match(f.elements.get('ana-details').textContent, /周期 8\.00000s → 8\.00000s/);
+    analysisAction(f, 'restore-analysis');
+    assert.equal(f.elements.get('loop-enable').checked, false);
+    assert.equal(f.elements.get('ana-apply').disabled, false);
+    assert.equal(f.elements.get('ana-restore').disabled, true);
+    analysisAction(f, 'apply-analysis');
+    assert.equal(f.elements.get('loop-enable').checked, true);
+});
+
+for (const active of [false, true]) for (const confidence of [45, 100]) {
+    test(`analysis protects an existing ${active ? 'active' : 'disabled'} loop at score ${confidence}, then applies and restores precisely`, async () => {
+        const configuration = { active, start: 3 + 11 / 44100, end: 9 + 25 / 44100 };
+        const f = await pendingAnalysis({ configuration }); await f.flush();
+        const oldSource = f.audio.sources.at(-1), oldStart = f.elements.get('loop-start').value, oldEnd = f.elements.get('loop-end').value;
+        f.workers[0].reply(4, 12, confidence); await settle();
+        assert.equal(f.audio.sources.at(-1), oldSource);
+        assert.equal(f.elements.get('loop-enable').checked, active);
+        assert.equal(f.elements.get('loop-start').value, oldStart); assert.equal(f.elements.get('loop-end').value, oldEnd);
+        assert.equal(f.elements.get('ana-apply').disabled, false);
+        assert.match(f.elements.get('ana-msg').textContent, /原循环保持不变/);
+        analysisAction(f, 'apply-analysis');
+        assert.equal(f.audio.sources.at(-1).loopStart, 4); assert.equal(f.audio.sources.at(-1).loopEnd, 12);
+        analysisAction(f, 'restore-analysis');
+        assert.equal(f.elements.get('loop-enable').checked, active);
+        if (active) {
+            assert.equal(f.audio.sources.at(-1).loopStart, configuration.start);
+            assert.equal(f.audio.sources.at(-1).loopEnd, configuration.end);
+        } else {
+            const control = f.elements.get('loop-enable'); control.checked = true; control.dispatchEvent({ type: 'change', target: control });
+            assert.equal(f.audio.sources.at(-1).loopStart, configuration.start);
+            assert.equal(f.audio.sources.at(-1).loopEnd, configuration.end);
+        }
+    });
+}
+
+test('analysis preserves imported SLI until explicit apply, including its original precise endpoints', async () => {
+    const f = await pendingAnalysis({ sli: formatSliLoop(529239, 176418) }); await f.flush();
+    const original = f.audio.sources.at(-1);
+    f.workers[0].reply(); await settle();
+    assert.equal(f.audio.sources.at(-1), original);
+    assert.equal(f.elements.get('ana-apply').disabled, false);
+    analysisAction(f, 'apply-analysis'); analysisAction(f, 'restore-analysis');
+    assert.equal(f.audio.sources.at(-1).loopStart, 176418 / 44100);
+    assert.equal(f.audio.sources.at(-1).loopEnd, 529239 / 44100);
+});
+
+test('unreliable and invalid candidates never replace a configured loop', async () => {
+    for (const configuration of [null, { active: true, start: 3, end: 9 }]) for (const [start, end, score] of [[4, 12, 29], [NaN, 12, 100], [4, 80, 100]]) {
+        const f = await pendingAnalysis({ configuration }); await f.flush();
+        const original = f.audio.sources.at(-1); f.workers[0].reply(start, end, score); await settle();
+        assert.equal(f.audio.sources.at(-1), original);
+        assert.equal(f.elements.get('ana-result').hidden, true);
+        assert.equal(!!f.elements.get('loop-enable').checked, !!configuration);
+    }
+});
+
+test('candidate audition loops across its own B/A seam without changing the original loop or decoding another buffer', async () => {
+    const f = await pendingAnalysis({ configuration: { active: true, start: 3, end: 9 } }); await f.flush();
+    f.workers[0].reply(); await settle(); const decoded = f.audio.decodeCalls.length;
+    analysisAction(f, 'preview-analysis');
+    const preview = f.audio.sources.at(-1);
+    assert.equal(preview.loopStart, 4); assert.equal(preview.loopEnd, 12); assert.equal(preview.started[1], 10.5);
+    assert.equal(f.elements.get('loop-start').value, '3.000'); assert.equal(f.elements.get('loop-end').value, '9.000');
+    assert.equal(f.audio.decodeCalls.length, decoded);
+    const timer = [...f.timers].filter(([, timer]) => timer.delay === 6000).at(-1);
+    assert.ok(timer); f.timers.delete(timer[0]); timer[1].callback();
+    assert.equal(preview.stopped, true);
+    assert.equal(f.elements.get('loop-enable').checked, true);
+    f.elements.get('play-btn').click(); await settle();
+    assert.equal(f.audio.sources.at(-1).loopStart, 3); assert.equal(f.audio.sources.at(-1).loopEnd, 9);
+});
+
+test('auditioning a candidate for a disabled loop does not show permanent loop markers or enable the original setting', async () => {
+    const f = await pendingAnalysis({ configuration: { active: false, start: 3, end: 9 } }); await f.flush();
+    f.workers[0].reply(); await settle(); analysisAction(f, 'preview-analysis');
+    assert.equal(f.elements.get('loop-enable').checked, false);
+    assert.equal(f.elements.get('loop-status').style.display, 'none');
+    assert.equal(f.elements.get('marker-a').style.display, 'none');
+    assert.equal(f.elements.get('marker-b').style.display, 'none');
+});
+
+test('a stale audition timer cannot stop manual playback or a different track', async () => {
+    const f = await pendingAnalysis({ configuration: { active: true, start: 3, end: 9 } }); await f.flush();
+    f.workers[0].reply(); await settle(); analysisAction(f, 'preview-analysis');
+    const stop = [...f.timers.values()].filter(timer => timer.delay === 6000).at(-1).callback;
+    f.elements.get('play-btn').click(); await settle(); f.elements.get('play-btn').click(); await settle();
+    const source = f.audio.sources.at(-1); stop();
+    assert.notEqual(source.stopped, true);
+    importFiles(f, [localFile('another.flac')]); await settle();
+    const next = f.audio.sources.at(-1); stop(); analysisAction(f, 'apply-analysis'); analysisAction(f, 'restore-analysis');
+    assert.equal(f.audio.sources.at(-1), next); assert.notEqual(next.stopped, true);
+    assert.equal(f.elements.get('ana-result').hidden, true);
+});
+
+test('an old audition timeout cannot clear the timer or stop source belonging to a new audition', async () => {
+    const f = await pendingAnalysis({ configuration: { active: true, start: 3, end: 9 } }); await f.flush();
+    f.workers[0].reply(); await settle(); analysisAction(f, 'preview-analysis');
+    const old = [...f.timers.values()].filter(timer => timer.delay === 6000).at(-1).callback;
+    analysisAction(f, 'preview-analysis');
+    const preview = f.audio.sources.at(-1);
+    const current = [...f.timers].filter(([, timer]) => timer.delay === 6000).at(-1);
+    old(); assert.notEqual(preview.stopped, true); assert.equal(f.timers.has(current[0]), true);
+    current[1].callback(); assert.equal(preview.stopped, true);
+});
+
+test('editing loop fields or rough points invalidates completed candidates and undo', async () => {
+    for (const id of ['loop-start', 'ana-end', 'base-rate']) {
+        const f = await pendingAnalysis(); await f.flush(); f.workers[0].reply(); await settle();
+        const control = f.elements.get(id); control.value = id === 'base-rate' ? '48000' : '6';
+        control.dispatchEvent({ type: 'input', target: control });
+        assert.equal(f.elements.get('ana-result').hidden, true);
+        const current = f.audio.sources.at(-1); analysisAction(f, 'restore-analysis'); analysisAction(f, 'apply-analysis');
+        assert.equal(f.audio.sources.at(-1), current);
+    }
 });
 
 test('release tag must match the version and notes contain only that version', () => {

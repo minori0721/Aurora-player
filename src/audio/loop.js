@@ -13,6 +13,7 @@ export function createLoop({
     let loopState = { active: false, start: 0, end: 0, source: null };
     let preparingLoop = false, pendingLoopVersion = 0;
     let preciseInputs = null;
+    let configuredInputToken = null;
 
     function writeLoopInputs(start, end) {
         const startText = start.toFixed(3), endText = end.toFixed(3);
@@ -34,7 +35,42 @@ export function createLoop({
 
     function markLoopInputEdit(point) {
         if (preciseInputs) preciseInputs[point].edited = true;
+        configuredInputToken = playbackService._currentPlayActionToken;
         markLoopUserEdit();
+    }
+
+    function validLoopRange(start, end) {
+        const duration = Number(playbackService.audioBuffer?.duration || playbackService.playbackState.duration || 0);
+        return Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start && (!duration || end <= duration);
+    }
+
+    function getLoopConfiguration() {
+        const token = playbackService._currentPlayActionToken;
+        if (loopState.active) return { ...loopState };
+        if (preciseInputs?.token === token || configuredInputToken === token) {
+            const start = readLoopInput('start'), end = readLoopInput('end');
+            if (validLoopRange(start, end)) return { active: false, start, end, source: loopState.source || 'manual' };
+        }
+        const track = queueService.playlist[queueService.curIdx];
+        if (track?.sliStatus === 'valid') {
+            const resolved = resolveTrackSliLoop(track);
+            if (resolved.status === 'valid') return { active: false, start: resolved.start, end: resolved.end, source: 'sli' };
+        }
+        return null;
+    }
+
+    function restoreLoopConfiguration(configuration) {
+        if (configuration && !validLoopRange(configuration.start, configuration.end)) return false;
+        if (configuration?.active) return applyLoop(configuration.start, configuration.end, configuration.source);
+        markLoopUserEdit();
+        const currentTime = playbackService.getCurrentTime(), wasActive = !!playbackService.getActiveCustomLoop();
+        resetLoopUI();
+        writeLoopInputs(configuration?.start || 0, configuration?.end || 0);
+        loopState = { active: false, start: configuration?.start || 0, end: configuration?.end || 0, source: configuration?.source || null };
+        if (wasActive && playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
+        prefetchService.prewarmNextNeteaseSongUrl();
+        prefetchService.prefetchUpcomingNeteaseDetails();
+        return true;
     }
 
     function getLoopEditVersion(track) {
@@ -124,8 +160,7 @@ export function createLoop({
         if (source !== 'sli') markLoopUserEdit();
         const currentTime = playbackService.getCurrentTime();
         const previousLoop = playbackService.getActiveCustomLoop();
-        const duration = Number(playbackService.audioBuffer?.duration || playbackService.playbackState.duration || 0);
-        const isValid = Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e > s && (!duration || e <= duration);
+        const isValid = validLoopRange(s, e);
         if(!isValid) {
             preciseInputs = null;
             loopState = { active: false, start: Number(s) || 0, end: Number(e) || 0, source: null };
@@ -133,7 +168,7 @@ export function createLoop({
             domService.el.loopMsg.textContent = '循环区间无效';
             updateLoopMarkers();
             if(previousLoop && playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
-            prefetchService.prefetchUpcomingNeteaseDetails?.();
+            prefetchService.prefetchUpcomingNeteaseDetails();
             return false;
         }
         if (playbackService.isStreaming && !playbackService.audioBuffer) {
@@ -158,18 +193,19 @@ export function createLoop({
         domService.el.loopMsg.textContent = '';
         updateLoopMarkers();
         if(playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
-        prefetchService.prefetchUpcomingNeteaseDetails?.();
+        prefetchService.prefetchUpcomingNeteaseDetails();
         return true;
     }
 
     const setLoopPoint = function(t) {
         const now = playbackService.getCurrentTime();
         if (preciseInputs) preciseInputs[t === 'a' ? 'start' : 'end'].edited = true;
+        configuredInputToken = playbackService._currentPlayActionToken;
         if(t==='a') domService.el.loopStart.value=now.toFixed(3); else domService.el.loopEnd.value=now.toFixed(3);
         domService.el.loopEnable.checked = true; domService.el.loopEnable.dispatchEvent(new Event('change'));
     };
 
-    function resetLoopUI() { pendingLoopVersion++; preparingLoop=false; preciseInputs=null; loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
+    function resetLoopUI() { pendingLoopVersion++; preparingLoop=false; preciseInputs=null; configuredInputToken=null; loopState.active=false; loopState.source=null; domService.el.loopEnable.checked=false; domService.el.loopMsg.textContent=''; updateLoopMarkers(); }
 
     function updateLoopMarkers() {
         if(!loopState.active) { domService.el.markerA.style.display='none'; domService.el.markerB.style.display='none'; document.getElementById('loop-status').style.display='none'; return; }
@@ -184,6 +220,8 @@ export function createLoop({
         get loopState() { return loopState; },
         get preparingLoop() { return preparingLoop; },
         getLoopEditVersion,
+        getLoopConfiguration,
+        restoreLoopConfiguration,
         applySliLoopForTrack,
         syncCurrentTrackCompanions,
         applyLoop,
@@ -205,8 +243,8 @@ export function createLoop({
                     loopState.source = null;
                     if(wasActive && playbackService.playbackState.isPlaying) playbackService.startAudio(currentTime);
                     updateLoopMarkers();
-                    prefetchService.prewarmNextNeteaseSongUrl?.();
-                    prefetchService.prefetchUpcomingNeteaseDetails?.();
+                    prefetchService.prewarmNextNeteaseSongUrl();
+                    prefetchService.prefetchUpcomingNeteaseDetails();
                 }
             });
         }

@@ -14,4 +14,10 @@ async function parseSliFile(file) {
     }
 }
 
-export { parseSliFile };
+function formatSliLoop(fromSamples, toSamples) {
+    if (!Number.isSafeInteger(fromSamples) || !Number.isSafeInteger(toSamples)
+        || toSamples < 0 || fromSamples <= toSamples) throw new Error('SLI 需要有效的整数采样点，且 From > To >= 0');
+    return `#2.00\n# Sound Loop Information (utf-8)\nLink { From=${fromSamples}; To=${toSamples}; Smooth=False; Condition=no; RefValue=0; CondVar=0; }\n`;
+}
+
+export { parseSliFile, formatSliLoop };

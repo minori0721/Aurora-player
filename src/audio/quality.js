@@ -2,17 +2,12 @@ import { parseMp3StreamInfo } from './mp3.js';
 
 function inferAudioTypeFromUrl(url, fallbackType = '') {
     const rawType = String(fallbackType || '').toLowerCase();
-    const rawUrl = String(url || '').toLowerCase();
-    let path = rawUrl;
-    try { path = new URL(rawUrl).pathname.toLowerCase(); } catch (_) {}
-    if (path.includes('.flac') || rawType === 'flac') return 'flac';
-    if (path.includes('.wav') || rawType === 'wav') return 'wav';
-    if (path.includes('.aiff') || path.includes('.aif') || rawType === 'aiff' || rawType === 'aif') return 'aiff';
-    if (path.includes('.ogg') || rawType === 'ogg' || rawType === 'opus') return rawType === 'opus' ? 'opus' : 'ogg';
-    if (path.includes('.m4a') || rawType === 'm4a') return 'm4a';
-    if (path.includes('.aac') || rawType === 'aac') return 'aac';
-    if (path.includes('.mp3') || rawType === 'mp3') return 'mp3';
-    return rawType || 'mp3';
+    let path = '';
+    try { path = new URL(String(url || ''), 'https://audio.invalid').pathname.toLowerCase(); } catch (_) {}
+    const extension = path.match(/\.(flac|wav|aiff?|ogg|opus|m4a|aac|mp3|ape|tta|tak|alac)$/)?.[1];
+    const type = extension || rawType;
+    if (type === 'aif') return 'aiff';
+    return ['flac', 'wav', 'aiff', 'ogg', 'opus', 'm4a', 'aac', 'mp3', 'ape', 'tta', 'tak', 'alac'].includes(type) ? type : '';
 }
 
 function formatSampleRate(sampleRate) {
@@ -105,7 +100,7 @@ function describeAudioQualityFromInfo(audioInfo, audioUrl = '', streamInfo = nul
     const brKbps = streamInfo?.bitrateKbps || (audioInfo?.br ? Math.round(audioInfo.br / 1000) : null);
     const sampleRate = streamInfo?.sampleRate || audioInfo?.sr || null;
     const srText = formatSampleRate(sampleRate);
-    let label = type;
+    let label = type || '音频';
     if (type === 'FLAC' || type === 'WAV' || type === 'AIFF') {
         if (type === 'FLAC' && srText && streamInfo?.bitsPerSample) label = `${type} ${srText}/${streamInfo.bitsPerSample}bit`;
         else if (srText) label = `${type} ${srText}`;
@@ -113,19 +108,23 @@ function describeAudioQualityFromInfo(audioInfo, audioUrl = '', streamInfo = nul
     } else if (type === 'MP3' && streamInfo?.mode === 'VBR' && !brKbps) {
         label = 'MP3 VBR';
     } else if (brKbps) {
-        label = `${type} ${brKbps}kbps`;
+        label = `${label} ${brKbps}kbps`;
     }
     return { label, type, brKbps, sampleRate };
 }
 
 function createAudioQualityProbe(buffer, audioUrl, audioInfo = {}) {
-    const type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
+    let type = inferAudioTypeFromUrl(audioUrl || audioInfo?.url, audioInfo?.type).toUpperCase();
+    const flacInfo = !type || type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null;
+    const wavInfo = !type || type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null;
+    const mp3Info = !type || type === 'MP3' ? parseMp3StreamInfo(buffer) : null;
+    if (flacInfo) type = 'FLAC';
+    else if (wavInfo) type = 'WAV';
+    else if (mp3Info) type = 'MP3';
     return {
         type,
         byteLength: Number(buffer?.byteLength || audioInfo?.size || 0),
-        flacInfo: type === 'FLAC' ? parseFlacStreamInfoFromBuffer(buffer) : null,
-        wavInfo: type === 'WAV' ? parseWavStreamInfoFromBuffer(buffer) : null,
-        mp3Info: type === 'MP3' ? parseMp3StreamInfo(buffer) : null
+        flacInfo, wavInfo, mp3Info
     };
 }
 
@@ -146,7 +145,7 @@ function describeAudioQualityFromBuffer(buffer, audioUrl, decodedBuffer, audioIn
     const sourceChannels = flacInfo?.channels || wavInfo?.channels || null;
     const bitsPerSample = flacInfo?.bitsPerSample || wavInfo?.bitsPerSample || null;
     const srText = formatSampleRate(sourceSampleRate);
-    let label = type;
+    let label = type || '音频';
 
     if (type === 'FLAC') {
         if (srText && bitsPerSample) label = `FLAC ${srText}/${bitsPerSample}bit`;
@@ -161,7 +160,7 @@ function describeAudioQualityFromBuffer(buffer, audioUrl, decodedBuffer, audioIn
     } else if (type === 'APE' || type === 'TTA' || type === 'TAK') {
         label = srText ? `${type} ${srText}` : (bitrateKbps ? `${type} ${bitrateKbps}kbps` : type);
     } else if (bitrateKbps) {
-        label = `${type} ${bitrateKbps}kbps`;
+        label = `${label} ${bitrateKbps}kbps`;
     }
 
     return { label, type, bitrateKbps, sampleRate: sourceSampleRate, channels: sourceChannels || channels, decodedSampleRate };

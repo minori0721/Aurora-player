@@ -26,14 +26,8 @@ export function createDebug({} = {}) {
         scheduleDebugScroll();
     }
 
-    let initialized = false;
     return {
         scheduleDebugScroll,
-        log,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        log
     };
 }

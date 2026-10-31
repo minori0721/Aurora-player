@@ -120,24 +120,37 @@ function queueFixture(t) {
     Object.defineProperty(globalThis, 'document', { configurable: true, value: { getElementById: id => elements.get(id) } });
     t.after(() => previous ? Object.defineProperty(globalThis, 'document', previous) : delete globalThis.document);
     let queue, token = 0;
-    const played = [], stopped = [], modeButton = new FakeElement();
+    const played = [], stopped = [], feedbackClears = [], modeButton = new FakeElement();
     const playback = { playbackWantsPlay: true, transportVersion: 0, playbackState: { status: 'playing', isPlaying: true },
         beginPlaybackAction: () => ++token, getPlaybackLoad: () => ({}), releasePlaybackLoad() {},
         stopAudio: value => stopped.push(value), resetPlaybackTimeline() {}, unlockAudioContext: async () => true,
         isPlaybackActionCurrent: (value, item) => value === token && (!item || queue.playlist[queue.curIdx] === item),
         setPlaybackStatus: value => { playback.playbackState.status = value; }, getActiveCustomLoop: () => null, getCurrentTime: () => 0,
         startAudio: () => played.push('replay') };
-    queue = createQueue({ playback, content: { setMainMusicEntityLinks() {}, updateMusicMiniPlayer() {} },
+    queue = createQueue({ playback, content: { setMainMusicEntityLinks() {}, updateMusicMiniPlayer() {},
+        clearMusicQueueFeedback() { feedbackClears.push(true); } },
         covers: { setMainCover() {} }, debug: { log() {} }, dom: { el: { title: {}, img: { style: {} }, modeBtn: modeButton } },
-        onlinePlaylist: {}, persistence: { schedulePlaylistStateSave() {}, schedulePlaylistTrackSave() {} },
+        onlinePlaylist: { resolveSyncedSelection: index => index, finishSyncedEmptyQueue: () => false }, persistence: { schedulePlaylistStateSave() {}, schedulePlaylistTrackSave() {} },
         playlistView: { renderPlaylist() {}, ensurePlaylistRenderedAndActive() {} },
         prefetch: { hasLockedNextPreloadTarget: () => false, nextPreloadKind: 'none', nextPreloadStatus: 'idle',
-            prefetchUpcomingNeteaseDetails() {}, cancelNextPreload() {}, prewarmNextNeteaseSongUrl() {} },
+            prefetchUpcomingNeteaseDetails() {}, cancelNextPreload() {}, prewarmNextNeteaseSongUrl() {}, retargetNextPreload() {} },
         onlinePlayback: { playNeteaseSong: async song => played.push(song.id) }
     });
     queue.playlist = [track(1), track(2), track(3)]; queue.curIdx = 0; queue.initialize();
-    return { queue, played, stopped, elements, playback, modeButton };
+    return { queue, played, stopped, feedbackClears, elements, playback, modeButton };
 }
+
+test('only base structure mutations change the base revision, not temporary history or selection', () => {
+    const model = new PlaybackPlan(); model.reset([track(1), track(2)]);
+    const initial = model.baseStructureRevision, reference = model.base;
+    model.select(0); model.playNow(track(90)); model.enqueue([track(91)]); model.clearPending();
+    assert.equal(model.baseStructureRevision, initial);
+    model.appendBaseTracks([track(3)]); assert.equal(model.baseStructureRevision, initial + 1);
+    model.sortBaseTracks((a, b) => b.songId - a.songId); assert.equal(model.baseStructureRevision, initial + 2);
+    model.removeBaseTrack(0); assert.equal(model.baseStructureRevision, initial + 3);
+    model.replaceBaseTracks([track(5)]); assert.equal(model.baseStructureRevision, initial + 4);
+    assert.equal(model.base, reference);
+});
 
 test('integrated queue plays single -> album block -> original next song', async t => {
     const f = queueFixture(t), q = f.queue;
@@ -163,10 +176,18 @@ test('single-track loop replays actual temporary audio and does not consume pend
 test('clearing temporary pending never stops current audio or changes the active token', async t => {
     const f = queueFixture(t), q = f.queue;
     await q.playTemporaryNow(track(10)); q.enqueueTemporary([track(20)]);
-    const stops = f.stopped.length, current = q.playlist[q.curIdx];
+    const stops = f.stopped.length, current = q.playlist[q.curIdx], clears = f.feedbackClears.length;
     q.clearTemporaryQueue();
+    assert.equal(f.feedbackClears.length, clears + 1);
     assert.equal(f.stopped.length, stops); assert.equal(q.playlist[q.curIdx], current);
     assert.equal(q.manualState.pending.length, 0);
+});
+
+test('replacing the base list clears any feedback from the previous queue', t => {
+    const f = queueFixture(t), clears = f.feedbackClears.length;
+    f.queue.playlist = [track(50)];
+    assert.equal(f.feedbackClears.length, clears + 1);
+    assert.equal(f.queue.basePlaylist[0].songId, 50);
 });
 
 function replacementDialog(fixture) {

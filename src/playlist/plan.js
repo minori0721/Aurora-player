@@ -5,6 +5,7 @@ export class PlaybackPlan {
     constructor() { this.reset([]); }
 
     reset(base) {
+        this.baseStructureRevision = (this.baseStructureRevision || 0) + 1;
         this.base = base;
         this.items = base.slice();
         this.index = -1;
@@ -112,12 +113,35 @@ export class PlaybackPlan {
     }
 
     reconcile(baseIndex = this.baseIndex) {
+        this.baseStructureRevision++;
         const selected = this.current;
         const manual = this.isTemporary;
         this.baseIndex = Math.max(-1, Math.min(baseIndex, this.base.length - 1));
         this.rebuild(manual || this.base.includes(selected) ? selected : this.base[this.baseIndex], true);
         this.history = this.history.filter(track => this.indexOf(track) >= 0);
         this.forward = this.forward.filter(track => this.indexOf(track) >= 0);
+    }
+
+    appendBaseTracks(tracks) {
+        if (!tracks.length) return;
+        for (const track of tracks) this.base.push(track);
+        this.reconcile();
+    }
+
+    replaceBaseTracks(tracks, index = this.baseIndex) {
+        this.base.length = 0;
+        for (const track of tracks) this.base.push(track);
+        this.reconcile(index);
+    }
+
+    removeBaseTrack(index, selectedIndex = this.baseIndex) {
+        this.base.splice(index, 1);
+        this.reconcile(selectedIndex);
+    }
+
+    sortBaseTracks(compare) {
+        this.base.sort(compare);
+        this.reconcile();
     }
 
     clearPending() {

@@ -25,6 +25,7 @@ export function createPlayback({
     let actx = new AudioContext();
 
     let audioBuffer = null, sourceNode = null, gainNode = actx.createGain(), analyser = actx.createAnalyser();
+    let previewLoop = null;
 
     let lastAudioUnlockWarnAt = 0;
 
@@ -221,7 +222,7 @@ export function createPlayback({
             progress() {
                 if (current() && playbackState.duration) domService.el.bufferLine.style.width = `${Math.min(100, media.bufferedEnd() / playbackState.duration * 100)}%`;
             },
-            seek() { if (current()) { playbackState.pauseTime = media.time; mediaSession.sync(); renderService.scheduleRender?.(true); lyricsService.syncWordLyricPlayback?.(); } },
+            seek() { if (current()) { playbackState.pauseTime = media.time; mediaSession.sync(); renderService.scheduleRender(true); lyricsService.syncWordLyricPlayback(); } },
             suspended: () => !playbackWantsPlay || actx.state !== 'running',
             error: recover,
             ended() {
@@ -252,11 +253,12 @@ export function createPlayback({
         playbackState.pauseTime = time;
         if (!streamSession && playbackState.isPlaying) startAudio(time);
         mediaSession.sync();
-        renderService.scheduleRender?.(true);
+        renderService.scheduleRender(true);
         return time;
     }
 
     function beginPlaybackAction() {
+        previewLoop = null;
         mediaSession.reset();
         releaseOnlineResource();
         const previousLoad = activePlaybackLoad;
@@ -352,11 +354,11 @@ export function createPlayback({
         analysisService.cancelPreviewTimer();
         controlsService.cancelProgressDrag();
         const data = onlinePlaylistService.currentPlaylistData;
-        if ((queueService.playlistPendingAdvance || data?.pendingAdvance) && data?.queueRef === (queueService.basePlaylist || queueService.playlist)) {
+        if ((queueService.playlistPendingAdvance || data?.pendingAdvance) && data?.queueRef === (queueService.basePlaylist)) {
             pausedPlaylistAdvance = { data, queue: queueService.playlist, index: queueService.curIdx };
         }
         queueService.playlistPendingAdvance = false;
-        if (data?.queueRef === (queueService.basePlaylist || queueService.playlist)) data.pendingAdvance = false;
+        if (data?.queueRef === (queueService.basePlaylist)) data.pendingAdvance = false;
         if (playbackState.isPlaying) playbackState.pauseTime = getCurrentTime();
         stopAudio('paused', { preserveLoad: true });
     }
@@ -440,9 +442,10 @@ export function createPlayback({
 
     function getActiveCustomLoop() {
         const duration = Number(audioBuffer?.duration || 0);
-        const start = Number(loopService.loopState.start);
-        const end = Number(loopService.loopState.end);
-        if(!loopService.loopState.active || !duration || !Number.isFinite(start) || !Number.isFinite(end)) return null;
+        const loop = previewLoop || loopService.loopState;
+        const start = Number(loop.start);
+        const end = Number(loop.end);
+        if(!(previewLoop || loop.active) || !duration || !Number.isFinite(start) || !Number.isFinite(end)) return null;
         if(start < 0 || end <= start || end > duration) return null;
         return { start, end };
     }
@@ -463,7 +466,21 @@ export function createPlayback({
         return Math.min(normalized, duration);
     }
 
-    function startAudio(offset) {
+    function startLoopPreview(start, end) {
+        if (!audioBuffer || !Number.isFinite(start) || !Number.isFinite(end)
+            || start < 0 || end <= start || end > audioBuffer.duration) return false;
+        return startAudio(end - Math.min(1.5, (end - start) / 2), { start, end });
+    }
+
+    function cancelLoopPreview() {
+        if (!previewLoop) return;
+        const position = getCurrentTime();
+        previewLoop = null;
+        if (playbackState.isPlaying) startAudio(position);
+    }
+
+    function startAudio(offset, temporaryLoop = null) {
+        previewLoop = temporaryLoop;
         if (streamSession && !loopStateRequiresPcm()) {
             const session = streamSession;
             const version = ++transportVersion;
@@ -510,7 +527,7 @@ export function createPlayback({
             sourceNode.loop = true;
             sourceNode.loopStart = isCustomLooping ? customLoop.start : 0;
             sourceNode.loopEnd = isCustomLooping ? customLoop.end : audioBuffer.duration;
-            document.getElementById('loop-status').style.display = isCustomLooping ? 'inline' : 'none';
+            if (!previewLoop) document.getElementById('loop-status').style.display = isCustomLooping ? 'inline' : 'none';
         } else {
             sourceNode.loop = false;
             document.getElementById('loop-status').style.display = 'none';
@@ -536,7 +553,15 @@ export function createPlayback({
         // 使用闭包保存循环状态，避免后续状态变化影响判断
         const wasCustomLooping = isCustomLooping;
         const wasSingleTrackLooping = isSingleTrackLooping;
+        const wasPreviewLooping = !!previewLoop;
         sourceNode.onended = () => {
+            if (wasPreviewLooping) {
+                if (sourceNode === startedSource && playbackState.isPlaying) {
+                    playbackState.pauseTime = getCurrentTime();
+                    stopAudio('paused');
+                }
+                return;
+            }
             // 如果是循环模式，onended 不应该触发切歌
             // 但某些浏览器可能在精度问题下意外触发，这里重新启动循环
             if(wasCustomLooping && loopService.loopState.active && playbackState.isPlaying) {
@@ -558,6 +583,7 @@ export function createPlayback({
     }
 
     function stopAudio(nextStatus = 'paused', { preserveLoad = false } = {}) {
+        previewLoop = null;
         if (nextStatus === 'paused') {
             playbackWantsPlay = false;
             transportVersion++;
@@ -584,7 +610,7 @@ export function createPlayback({
         return t;
     }
 
-    function loopStateRequiresPcm() { return queueService.playMode === 2 || loopService.loopState.active; }
+    function loopStateRequiresPcm() { return !!previewLoop || queueService.playMode === 2 || loopService.loopState.active; }
 
     function updatePlayIcon() {
         const canPause = playbackState.isPlaying || playbackWantsPlay
@@ -594,11 +620,12 @@ export function createPlayback({
         domService.el.playBtn.setAttribute('aria-label', canPause ? '暂停' : '播放');
         domService.el.playBtn.title = domService.el.playBtn.getAttribute('aria-label');
         domService.el.playBtn.disabled = false;
-        if (typeof contentService.updateMusicMiniPlayer === 'function') contentService.updateMusicMiniPlayer();
+        contentService.updateMusicMiniPlayer();
     }
 
     function setPlaybackStatus(status, options = {}) {
-        const nextStatus = PLAYBACK_STATUSES.has(status) ? status : 'error';
+        if (!PLAYBACK_STATUSES.has(status)) throw new TypeError(`Invalid playback status: ${String(status)}`);
+        const nextStatus = status;
         playbackState.status = nextStatus;
         playbackState.isPlaying = nextStatus === 'playing';
         playbackState.error = nextStatus === 'error' ? String(options.error || '') : '';
@@ -607,9 +634,9 @@ export function createPlayback({
         document.querySelector('.main-container')?.setAttribute('aria-busy', nextStatus === 'loading' ? 'true' : 'false');
         mediaSession.sync();
         updatePlayIcon();
-        if (typeof renderService.scheduleRender === 'function') renderService.scheduleRender(true);
-        lyricsService.syncWordLyricPlayback?.();
-        controlsService.syncToolbarVisibility?.();
+        renderService.scheduleRender(true);
+        lyricsService.syncWordLyricPlayback();
+        controlsService.syncToolbarVisibility();
         return nextStatus;
     }
 
@@ -679,6 +706,8 @@ export function createPlayback({
         startAudio,
         stopAudio,
         getCurrentTime,
+        startLoopPreview,
+        cancelLoopPreview,
         setPlaybackStatus,
         resetPlaybackTimeline,
         initialize() {
@@ -696,8 +725,8 @@ export function createPlayback({
             }
             actx.addEventListener?.('statechange', () => {
                 mediaSession.sync();
-                lyricsService.syncWordLyricPlayback?.();
-                renderService.scheduleRender?.(true);
+                lyricsService.syncWordLyricPlayback();
+                renderService.scheduleRender(true);
             });
             gainNode.connect(analyser);
 

@@ -94,7 +94,7 @@ export function createPanels({
         open(overlay, closeHandler) {
             if (this.active === overlay) return;
             if (this.active && this.closeHandler) this.closeHandler();
-            controlsService?.syncToolbarVisibility?.();
+            controlsService.syncToolbarVisibility();
             this.active = overlay;
             this.closeHandler = closeHandler;
             this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -128,7 +128,7 @@ export function createPanels({
             this.active = null;
             this.closeHandler = null;
             this.previousFocus = null;
-            controlsService?.syncToolbarVisibility?.();
+            controlsService.syncToolbarVisibility();
             if (restoreFocus && focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
         },
         getFocusable(overlay) {

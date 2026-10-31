@@ -8,13 +8,7 @@ export function createApi({} = {}) {
         return path.includes('randomCNIP=') ? `${NETEASE_API_HOST}${path}` : `${NETEASE_API_HOST}${path}${separator}randomCNIP=true`;
     }
 
-    let initialized = false;
     return {
-        buildApiUrl,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        buildApiUrl
     };
 }

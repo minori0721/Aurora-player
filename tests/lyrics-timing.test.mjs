@@ -15,6 +15,21 @@ function globals(t, values) {
     });
 }
 
+test('a lyric update fault logs once and cannot stop playback; rebuilding lyrics permits recovery', t => {
+    const { host } = createHost(), errors = [], box = new FakeElement();
+    globals(t, { document: host.document, localStorage: host.localStorage });
+    let broken = true;
+    const lyrics = createLyrics({ playback: { getCurrentTime() { if (broken) throw new Error('synthetic lyric fault'); return 0; } },
+        metadata: {}, debug: { log: text => errors.push(text) }, dom: { el: { lyricBox: box, artist: new FakeElement() } } });
+    lyrics.parseAndRenderLyrics('[00:00.000]first\n[00:01.000]second', 'test');
+    lyrics.refreshLyricHighlightAndCenter(); lyrics.refreshLyricHighlightAndCenter();
+    assert.equal(errors.filter(text => text.includes('synthetic lyric fault')).length, 1);
+    broken = false;
+    lyrics.parseAndRenderLyrics('[00:00.000]rebuilt', 'test');
+    lyrics.refreshLyricHighlightAndCenter();
+    assert.equal(box.children[0].getAttribute('aria-current'), 'true');
+});
+
 test('next cue is read-only and follows actual time through pauses, seeks, loops and resets', t => {
     const { host } = createHost(); host.document.createTextNode = () => new FakeElement();
     globals(t, { document: host.document, localStorage: host.localStorage });
@@ -107,7 +122,7 @@ function renderer(t, cues = [.05, .4]) {
     };
     const analyser = { frequencyBinCount: 8, getByteFrequencyData() {} };
     const render = createRender({ dom: { el }, playback: { playbackState, getCurrentTime, analyser }, lyrics: lyricService,
-        queue: { playlist: [] }, prefetch: { getLikelyNextPlaylistIndex: () => null } });
+        queue: { playlist: [] }, prefetch: { getLikelyNextPlaylistIndex: () => null, warmNextStreamIfNeeded() {} } });
     render.initialize();
     const frame = at => {
         clock = at;

@@ -275,9 +275,3 @@ test('invalidation, refresh and reset retain timed node identity and clear tempo
     assert.equal(value.document.body.childNodes.length, 1);
     assert.equal(value.manager.layout(), false);
 });
-
-test('a host without layout APIs preserves native wrapping', () => {
-    const manager = createLyricWrapping({}, { environment: {}, document: {} });
-    manager.refresh(); manager.invalidate(); manager.reset();
-    assert.equal(manager.layout(), false);
-});

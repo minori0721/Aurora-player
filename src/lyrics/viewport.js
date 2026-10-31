@@ -228,7 +228,8 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         const index = browsing && position ? nearestIndex() : -1;
         const offset = index >= 0 ? centers[index] - top() - followPoint : 0;
         const visibleHeight = height();
-        followPoint = visibleHeight / 2;
+        // Keep one mobile anchor across cues and text modes, independent of line length.
+        followPoint = visibleHeight / 2 - (desktop.matches ? 0 : Math.min(28, visibleHeight * .15));
         if (alignmentTarget && desktop.matches) {
             const box = viewport.getBoundingClientRect(), target = alignmentTarget.getBoundingClientRect();
             const point = target.top + target.height / 2 - box.top;

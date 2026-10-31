@@ -20,7 +20,7 @@ function normalizeMusicAlbum(album = {}) {
         id: positiveMusicInteger(album.id, 0),
         name: String(album.name || '未知专辑'),
         picUrl: toHttps(album.picUrl || album.blurPicUrl || ''),
-        artists: rawArtists.map(normalizeMusicArtist).filter(artist => artist.id || artist.name),
+        artists: rawArtists.filter(artist => artist && (artist.id || artist.name || artist.artistName)).map(normalizeMusicArtist),
         publishTime: Number(album.publishTime || 0),
         size: Number(album.size || album.trackCount || 0),
         description: String(album.description || album.briefDesc || ''),
@@ -31,7 +31,7 @@ function normalizeMusicAlbum(album = {}) {
 
 function normalizeMusicSong(song = {}) {
     const rawArtists = song.ar || song.artists || [];
-    const artists = rawArtists.map(normalizeMusicArtist).filter(artist => artist.id || artist.name);
+    const artists = rawArtists.filter(artist => artist && (artist.id || artist.name || artist.artistName)).map(normalizeMusicArtist);
     const rawAlbum = song.al || song.album || {};
     const album = normalizeMusicAlbum(rawAlbum);
     const durationMs = Math.max(0, Number(song.dt || song.duration || 0));

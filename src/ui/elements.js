@@ -20,7 +20,9 @@ export function createDom({} = {}) {
         modeBtn: document.getElementById('mode-btn'), loadTip: document.getElementById('loading-tip'),
         volBtn: document.getElementById('vol-btn'), volPopup: document.getElementById('vol-popup'), volRange: document.getElementById('vol-range'),
         // Analyze UI
-        anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMode: document.getElementById('ana-mode'), anaRun: document.getElementById('ana-run'), anaMsg: document.getElementById('ana-msg')
+        anaPanel: document.getElementById('analyze-panel'), anaStart: document.getElementById('ana-start'), anaEnd: document.getElementById('ana-end'), anaMode: document.getElementById('ana-mode'), anaRun: document.getElementById('ana-run'), anaMsg: document.getElementById('ana-msg'),
+        anaResult: document.getElementById('ana-result'), anaDetails: document.getElementById('ana-details'),
+        anaApply: document.getElementById('ana-apply'), anaRestore: document.getElementById('ana-restore')
     };
 
     // 下载 UI 元素
@@ -40,7 +42,6 @@ export function createDom({} = {}) {
 
     const downloadTrackInfo = document.getElementById('download-track-info');
 
-    // 歌词显示切换控件与状态
     const lyricToggleBtn = document.getElementById('lyric-toggle-btn');
 
     const fileInput = document.getElementById('file-input');
@@ -50,9 +51,6 @@ export function createDom({} = {}) {
     const dragMaskDetail = document.getElementById('drag-mask-detail');
 
     const importSummary = document.getElementById('import-summary');
-
-    // 网易云歌词开关
-    const neteaseBtn = document.getElementById('toggle-netease');
 
     // ========== 网易云音乐搜索 & 歌单导入 ==========
     const neteasePanel = document.getElementById('netease-panel');
@@ -86,10 +84,9 @@ export function createDom({} = {}) {
     const advancedBtn = document.getElementById('toggle-advanced');
 
     const advancedMenu = document.getElementById('advanced-menu');
-    const cloudLyricsSwitch = document.getElementById('cloud-lyrics-switch');
+    const cloudLyricsSwitches = ['cloud-lyrics-switch', 'cloud-lyrics-switch-desktop'].map(id => document.getElementById(id)).filter(Boolean);
     const lyricModeInputs = ['original', 'both', 'roma'].map(mode => document.getElementById(`lyric-mode-${mode}`)).filter(Boolean);
 
-    let initialized = false;
     return {
         get el() { return el; },
         get downloadBtn() { return downloadBtn; },
@@ -105,7 +102,6 @@ export function createDom({} = {}) {
         get dragMaskTitle() { return dragMaskTitle; },
         get dragMaskDetail() { return dragMaskDetail; },
         get importSummary() { return importSummary; },
-        get neteaseBtn() { return neteaseBtn; },
         get neteasePanel() { return neteasePanel; },
         get neteaseTabs() { return neteaseTabs; },
         get searchInput() { return searchInput; },
@@ -121,12 +117,7 @@ export function createDom({} = {}) {
         get qualitySelect() { return qualitySelect; },
         get advancedBtn() { return advancedBtn; },
         get advancedMenu() { return advancedMenu; },
-        get cloudLyricsSwitch() { return cloudLyricsSwitch; },
-        get lyricModeInputs() { return lyricModeInputs; },
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        get cloudLyricsSwitches() { return cloudLyricsSwitches; },
+        get lyricModeInputs() { return lyricModeInputs; }
     };
 }

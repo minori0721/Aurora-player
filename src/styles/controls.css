@@ -70,6 +70,20 @@ label.advanced-setting { cursor: pointer; }
 .lyric-mode-control input:checked + span { color: var(--text-main); background: rgba(255,255,255,0.9); box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; }
 .lyric-mode-control input:disabled { cursor: not-allowed; }
 .lyric-mode-control input:disabled + span { opacity: 0.35; }
+.lyric-mode-button { font-family: inherit; line-height: 1; }
+.lyric-mode-symbol { position: relative; display: block; width: 26px; height: 26px; flex: 0 0 26px; pointer-events: none; }
+.lyric-mode-button .lyric-mode-icon {
+    position: absolute; left: -1px; top: -3px; width: 24px; height: 24px;
+    fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.lyric-mode-mark { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; font-size: 11px; font-weight: 500; line-height: 12px; }
+.lyric-mode-mark > span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transition: opacity 120ms ease-out; }
+.lyric-mode-button[data-lyric-mode="original"] [data-lyric-mark="original"],
+.lyric-mode-button[data-lyric-mode="both"] [data-lyric-mark="both"],
+.lyric-mode-button[data-lyric-mode="roma"] [data-lyric-mark="roma"] { opacity: 1; }
+.lyric-mode-button:disabled { opacity: .45; cursor: not-allowed; }
+.lyric-mode-button:disabled:hover { transform: none; }
+.lyric-mode-button:focus-visible { outline: 2px solid var(--text-main); outline-offset: 3px; }
 
 /* 桌面端隐藏高级按钮 */
 .mobile-only { display: none; }
@@ -77,17 +91,16 @@ label.advanced-setting { cursor: pointer; }
 
 @media screen and (min-width: 901px) {
     #pl-container { margin-left: -15px; width: calc(100% + 15px); }
+    .top-bar { align-items: center; gap: 12px; }
+    .top-bar .tool-group { align-items: center; min-width: 0; }
+    .top-bar .glass-btn { height: 38px; box-sizing: border-box; flex: 0 0 auto; }
+    .top-bar button:focus-visible, .top-bar select:focus-visible { outline: 2px solid var(--text-main); outline-offset: 3px; }
+    .top-bar .toolbar-setting { padding: 0 8px 0 12px; gap: 6px; }
+    .top-bar .toolbar-setting .settings-switch { width: 36px; height: 32px; flex-basis: 36px; }
     #toggle-debug .tool-icon { width: 16px; height: 16px; flex: 0 0 16px; }
-    .effect-select-control { position: relative; flex: 0 0 auto; transition: transform 0.3s ease; }
-    .effect-select-control:hover { transform: translateY(-2px) scale(1.02); }
+    .effect-select-control { position: relative; flex: 0 0 auto; }
     .effect-select-control #effect-select {
-        -webkit-appearance: none; appearance: none; width: 100%; margin: 0;
-        padding-right: 34px; transform: none;
-    }
-    .effect-select-control::after {
-        content: ''; position: absolute; right: 14px; top: 50%; width: 6px; height: 6px;
-        border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-        transform: translateY(-65%) rotate(45deg); pointer-events: none;
+        min-width: 144px; margin: 0;
     }
     .main-container { grid-template-columns: clamp(320px, 38vw, 450px) minmax(0, 1fr); }
     .right-panel { --controls-width: 520px; }
@@ -101,6 +114,23 @@ label.advanced-setting { cursor: pointer; }
     .controls-row .vol-container { flex: 0 1 50px; min-width: 44px; }
     .controls-row .vol-container .btn { flex: 0 0 auto; width: 100%; min-width: 0; }
 }
+
+.effect-select-control #effect-select[hidden], .effect-select-menu[hidden] { display: none; }
+.effect-select-menu > summary { list-style: none; min-width: 144px; }
+.effect-select-menu > summary::-webkit-details-marker { display: none; }
+.effect-current-icon { display: inline-flex; width: 16px; flex: 0 0 16px; }
+.effect-chevron { margin-left: auto; }
+.effect-options {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 1;
+    width: 176px; padding: 4px; box-sizing: border-box; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--glass-strong); box-shadow: 0 6px 24px rgba(0,0,0,.14);
+}
+.effect-option { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 5px; cursor: pointer; font-size: .85rem; }
+.effect-option:hover { background: rgba(0,0,0,.05); }
+.effect-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.effect-option-check { margin-left: auto; visibility: hidden; }
+.effect-option input:checked ~ .effect-option-check { visibility: visible; }
+.effect-option input:focus-visible ~ svg { outline: 2px solid var(--text-main); outline-offset: 3px; }
 
 @media screen and (min-width: 901px) {
     .panel-float, .playlist-sidebar {

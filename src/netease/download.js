@@ -208,26 +208,17 @@ export function createDownload({
                                 it.classList.remove('disabled');
 
                                 // 2. 智能推断真实格式
-                                const urlLower = data.url.toLowerCase();
                                 // 官方档位描述不一定属于 match 返回的实际文件。
-                                const fallbackDetail = useMatchForVip ? null : detail;
+                                const fallbackDetail = !useMatchForVip && data.level === level ? detail : null;
                                 const br = data.br || fallbackDetail?.br || 0;
                                 const size = data.size || fallbackDetail?.size || 0;
                                 const sampleRate = data.sr || fallbackDetail?.sr || 0;
 
-                                let realExt = 'mp3'; // 默认格式
-                                let isLossless = false;
-
-                                // 判定逻辑：URL含flac / API类型为flac / 文件体积巨大
-                                if (urlLower.includes('.flac')) { realExt = 'flac'; isLossless = true; }
-                                else if (data.type && data.type.toLowerCase() === 'flac') { realExt = 'flac'; isLossless = true; }
-                                else if (size > 20 * 1024 * 1024) { realExt = 'flac'; isLossless = true; }
-                                else if (urlLower.includes('.m4a') || (data.type && data.type.toLowerCase() === 'm4a')) { realExt = 'm4a'; }
-                                else if (urlLower.includes('.ogg') || (data.type && data.type.toLowerCase() === 'ogg')) { realExt = 'ogg'; }
-                                else if (urlLower.includes('.wav') || (data.type && data.type.toLowerCase() === 'wav')) { realExt = 'wav'; isLossless = true; }
+                                const realExt = inferAudioTypeFromUrl(data.url, data.type);
+                                const isLossless = realExt === 'flac';
 
                                 // 3. 构建用户易读的信息文本
-                                let metaText = realExt.toUpperCase();
+                                let metaText = realExt ? realExt.toUpperCase() : '格式未知';
 
                                 // 如果使用了 match 接口兜底
                                 if (useMatchForVip) {
@@ -270,7 +261,7 @@ export function createDownload({
                                 // 绑定下载事件 (保持你之前的 Worker 代理逻辑)
                                 dlBtn.onclick = () => {
                                     const safeName = (songName + ' - ' + artists).replace(/[\\/:*?"<>|]+/g, '_').slice(0,120);
-                                    const fileName = `${safeName} [${level}].${realExt}`;
+                                    const fileName = `${safeName} [${level}]${realExt ? `.${realExt}` : ''}`;
 
                                     // 使用配置好的 Worker 地址，如果没有则回退到相对路径
                                     const baseUrl = window.DOWNLOAD_PROXY_URL || '/proxy-download';

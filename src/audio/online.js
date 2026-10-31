@@ -86,7 +86,7 @@ export function createOnlinePlayback({
         const preloadMatchesCurrent = prefetchService.isNextPreloadCompatible(queueService.playlist, prefetchService.nextPreloadIndex, preloadTrack)
             && prefetchService.nextPreloadSongId === Number(songId);
         if (!preloadMatchesCurrent && prefetchService.nextPreloadKind !== 'none') {
-            try { prefetchService.cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false }); } catch (_) {}
+            prefetchService.cancelNextPreload({ resetAttempted: false, silent: true, resetDetails: false });
         }
 
         debugService.log(`正在播放：${songName} - ${artists}`);
@@ -121,6 +121,11 @@ export function createOnlinePlayback({
         if (!cover) supplementPlayingSongDetail(songId, myPlayToken, detail => { song = detail; });
         const recoveryBudget = preloadMatchesCurrent && prefetchService.nextPreloadRecoveryBudget
             ? prefetchService.nextPreloadRecoveryBudget : { urlRefreshUsed: false, stallRecoveryUsed: false };
+        const startLyrics = () => {
+            void lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric,
+                isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) })
+                .catch(error => debugService.log(`歌词任务异常：${error?.message || error}`, 'error'));
+        };
 
         async function useStream(initialResolved, rawData = null, media = null) {
             const cookie = authService.neteaseCookie, generation = authService.authGeneration, level = authService.neteaseQuality;
@@ -213,7 +218,7 @@ export function createOnlinePlayback({
             }
             playbackService.finishPlaybackLoad(load);
             metadataService.updateMediaSession();
-            lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) });
+            startLyrics();
             prefetchService.prewarmNextNeteaseSongUrl();
             prefetchService.prefetchUpcomingNeteaseDetails();
             supplementStreamQuality().catch(() => {});
@@ -225,100 +230,50 @@ export function createOnlinePlayback({
             let prewarmedResolved = null;
             let prewarmedMedia = null;
             try {
-                const preloadIndex = prefetchService.nextPreloadIndex;
-                const preloadTrack = queueService.playlist[preloadIndex];
-                const nextPrefetchMatches = prefetchService.isNextPreloadCompatible(queueService.playlist, preloadIndex, preloadTrack)
-                    && prefetchService.nextPreloadSongId === Number(songId);
-                if (nextPrefetchMatches) {
-                    const preloadToken = prefetchService.nextPreloadToken;
-                    let res = null;
-                    if (prefetchService.hasPreloaded && prefetchService.nextSongRawData) {
-                        res = { ab: prefetchService.nextSongRawData, ...(prefetchService.nextSongPreloadMeta || {}) };
-                    } else if (prefetchService.prefetchInProgress && prefetchService.nextSongFetchPromise) {
-                        const preloadPromise = prefetchService.nextSongFetchPromise;
-                        try {
-                            res = await transferService.awaitWithSignal(preloadPromise, signal);
-                        } catch (error) {
-                            if (!playbackService.isPlaybackActionCurrent(myPlayToken) || signal.aborted) return;
-                            if (error?.name === 'AbortError' || error?.stale) throw error;
-                            debugService.log(`预取任务未完成，将由正式播放重试: ${error?.message || error}`, 'warn');
-                        }
-                        if (!playbackService.isPlaybackActionCurrent(myPlayToken)) return;
-                    }
-
-                    if (!res?.ab && prefetchService.nextPreloadKind === 'netease-url') {
-                        const warmed = preferStream ? prefetchService.takeNextStreamWarm?.(songId) : null;
-                        prewarmedMedia = warmed?.media || null;
-                        prewarmedResolved = warmed?.resolved || prefetchService.takeNextPrewarmedNeteaseUrl(songId, authService.neteaseQuality);
-                    }
-
-                    if (res?.ab && prefetchService.isNextPreloadSnapshotCurrent(preloadToken, queueService.playlist, preloadIndex, preloadTrack, songId, authService.neteaseQuality, authService.authGeneration)) {
-                        // Promise 恰好在提交回调前完成时，先把结果补进统一状态，再由同一入口消费。
-                        if (!prefetchService.hasPreloaded) {
-                            prefetchService.nextSongRawData = res.ab;
-                            prefetchService.nextSongPreloadMeta = { ...res };
-                            prefetchService.hasPreloaded = true;
-                            prefetchService.nextPreloadStatus = 'ready';
-                        }
-                        const consumed = prefetchService.takeNextPreloadedRawData(preloadIndex, preloadTrack, songId, authService.neteaseQuality);
-                        if (!consumed?.ab) {
-                            try { prefetchService.cancelNextPreload(); } catch(e) {}
-                        } else {
-                        if (preferStream) {
-                            await useStream({ ...consumed, candidates: consumed.candidates?.length ? consumed.candidates : [consumed.audioUrl] }, consumed.ab);
-                            return;
-                        }
-                        domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
-                        domService.el.bufferLine.style.width = '30%';
-
-                        const ab = consumed.ab;
-
-                        domService.el.bufferLine.style.width = '60%';
-                        const preloadedProbe = createAudioQualityProbe(ab, consumed.audioUrl || '', consumed.audioInfo || {});
-                        const decodedBuffer = await playbackService.decodePlaybackLoad(load, ab);
-                        playbackService.assertPlaybackActionCurrent(myPlayToken);
-                        playbackService.audioBuffer = decodedBuffer;
-                        const preloadedQuality = describeAudioQualityFromBuffer(ab, consumed.audioUrl || '', decodedBuffer, { ...(consumed.audioInfo || {}), _qualityProbe: preloadedProbe });
-                        metadataService.currentAudioQuality = preloadedQuality.label;
-                        lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
-                        debugService.log(`音质：${metadataService.currentAudioQuality}`, 'success');
-                        domService.el.bufferLine.style.width = '100%';
-                        playbackService.playbackState.duration = playbackService.audioBuffer.duration;
-                        domService.el.totalTime.textContent = fmtTime(playbackService.playbackState.duration);
-
-
-                        if (queueService.playlist[queueService.curIdx]) {
-                            const track = queueService.playlist[queueService.curIdx];
-                            if (!songDetailsService.isReady(track.songData)) track.songData = song;
-                            playlistViewService.refreshPlaylistItem(queueService.curIdx);
-                        }
-                        playlistViewService.ensurePlaylistRenderedAndActive();
-
-                        playbackService.finishPlaybackLoad(load);
-                        metadataService.updateMediaSession();
-
-                        try { lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
-
-                        // 批量预取后续详情，但仍只预热下一首音频 URL。
-                        try {
-                            prefetchService.prewarmNextNeteaseSongUrl();
-                            prefetchService.prefetchUpcomingNeteaseDetails();
-                        } catch (_) {}
-
+                const consumed = await prefetchService.takeNeteasePreload(songId, { signal, preferStream });
+                if (!playbackService.isPlaybackActionCurrent(myPlayToken) || signal.aborted) return;
+                prewarmedResolved = consumed?.resolved || null;
+                prewarmedMedia = consumed?.media || null;
+                if (consumed?.ab) {
+                    if (preferStream) {
+                        await useStream({ ...consumed, candidates: consumed.candidates?.length ? consumed.candidates : [consumed.audioUrl] }, consumed.ab);
                         return;
-                        }
-                    } else if (!prewarmedResolved) {
-                        // 预取失败或只有过期状态时才清理；正常下载不会在等待阈值
-                        // 到达时被取消，因此正式播放不会重新发起重复 GET。
-                        try { prefetchService.cancelNextPreload(); } catch(e) {}
                     }
+                    domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
+                    domService.el.bufferLine.style.width = '30%';
+                    const ab = consumed.ab;
+                    domService.el.bufferLine.style.width = '60%';
+                    const preloadedProbe = createAudioQualityProbe(ab, consumed.audioUrl || '', consumed.audioInfo || {});
+                    const decodedBuffer = await playbackService.decodePlaybackLoad(load, ab);
+                    playbackService.assertPlaybackActionCurrent(myPlayToken);
+                    playbackService.audioBuffer = decodedBuffer;
+                    const preloadedQuality = describeAudioQualityFromBuffer(ab, consumed.audioUrl || '', decodedBuffer, { ...(consumed.audioInfo || {}), _qualityProbe: preloadedProbe });
+                    metadataService.currentAudioQuality = preloadedQuality.label;
+                    lyricsService.setArtistTag('网易云', metadataService.currentAudioQuality);
+                    debugService.log(`音质：${metadataService.currentAudioQuality}`, 'success');
+                    domService.el.bufferLine.style.width = '100%';
+                    playbackService.playbackState.duration = playbackService.audioBuffer.duration;
+                    domService.el.totalTime.textContent = fmtTime(playbackService.playbackState.duration);
+                    if (queueService.playlist[queueService.curIdx]) {
+                        const track = queueService.playlist[queueService.curIdx];
+                        if (!songDetailsService.isReady(track.songData)) track.songData = song;
+                        playlistViewService.refreshPlaylistItem(queueService.curIdx);
+                    }
+                    playlistViewService.ensurePlaylistRenderedAndActive();
+                    playbackService.finishPlaybackLoad(load);
+                    metadataService.updateMediaSession();
+                    startLyrics();
+                    // 批量预取后续详情，但仍只预热下一首音频 URL。
+                    prefetchService.prewarmNextNeteaseSongUrl();
+                    prefetchService.prefetchUpcomingNeteaseDetails();
+                    return;
                 }
             } catch (e) {
                 if (!playbackService.isPlaybackActionCurrent(myPlayToken) || signal.aborted) return;
                 if (e.stale || e.message === 'stale') return;
                 if (e.code === 'AUDIO_STALLED') recoveryBudget.stallRecoveryUsed = true;
                 debugService.log('预取数据复用失败，回退正常加载：' + (e && e.message), 'warn');
-                try { prefetchService.cancelNextPreload(); } catch(e) {}
+                prefetchService.cancelNextPreload();
             }
 
             // 获取音频URL - 使用新版API指定音质，优先从缓存获取（短时缓存）
@@ -426,7 +381,7 @@ export function createOnlinePlayback({
             metadataService.updateMediaSession();
 
             // 直接用歌曲ID获取歌词（已知ID无需搜索）
-            try { lyricsService.fetchLyricById(songId, { signal, prefetched: prefetchedLyric, isCurrent: () => playbackService.isPlaybackActionCurrent(myPlayToken) }); } catch(_) {}
+            startLyrics();
 
                 // 批量预取后续详情，但仍只预热下一首音频 URL。
                 try {
@@ -450,13 +405,7 @@ export function createOnlinePlayback({
         }
     }
 
-    let initialized = false;
     return {
-        playNeteaseSong,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        playNeteaseSong
     };
 }

@@ -186,7 +186,6 @@ export function createMyPlaylists({
         return firstPagePromise;
     }
 
-    let initialized = false;
     return {
         get myPlaylistsCache() { return myPlaylistsCache; },
         set myPlaylistsCache(value) { myPlaylistsCache = value; },
@@ -200,11 +199,6 @@ export function createMyPlaylists({
         set myPlaylistsLoadToken(value) { myPlaylistsLoadToken = value; },
         get myPlaylistsAbortController() { return myPlaylistsAbortController; },
         set myPlaylistsAbortController(value) { myPlaylistsAbortController = value; },
-        loadMyPlaylists,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        loadMyPlaylists
     };
 }

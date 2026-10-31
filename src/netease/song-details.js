@@ -212,7 +212,7 @@ export function createSongDetails({ api, auth, cache, content, debug, onlinePlay
         const importing = onlinePlaylist?.currentPlaylistData;
         const looping = !!playback.getActiveCustomLoop();
         const lockedIndex = prefetch.hasLockedNextPreloadTarget(queueRef, prefetch.nextPreloadIndex) ? prefetch.nextPreloadIndex : null;
-        const importingBase = importing?.queueRef === (queue.basePlaylist || queueRef) && importing.loading;
+        const importingBase = importing && importing.queueRef === queue.basePlaylist && importing.loading;
         const entries = looping ? [] : queue.getDetailEntries ? queue.getDetailEntries(lockedIndex, importingBase) : planDetailWindow(queueRef, index, mode, {
             nextIndex: lockedIndex,
             loading: importingBase,

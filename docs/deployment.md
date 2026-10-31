@@ -4,7 +4,7 @@
 
 ## 单文件与源码
 
-发布产物是一个 `index.html`，脚本、样式、Worker 以及 `jsmediatags`、`color-thief` 的固定源码和许可证均已内嵌，不需要额外上传资源目录。
+发布产物是一个 `index.html`，包含脚本、样式、Worker，以及 `jsmediatags`、`color-thief` 的固定源码和许可证，上传该文件即可。
 
 从 [Releases](https://github.com/minori0721/Aurora-player/releases) 下载该文件即可直接打开，或上传到静态主机。本地播放不依赖在线 API；网易云功能和下载代理分别依赖后端服务。
 
@@ -15,7 +15,7 @@ npm ci
 npm run build
 ```
 
-输出为 `dist/index.html`，不再维护仓库根目录的播放器 HTML。`dist/` 不提交到 Git，日常修改 `src/`，不要手工编辑构建产物。
+输出为 `dist/index.html`。日常修改 `src/`，构建生成的 `dist/` 由 Git 忽略。
 
 ## 本地开发
 
@@ -25,44 +25,44 @@ npm run dev
 
 开发服务只监听 `127.0.0.1`，默认端口 8765；占用时使用后续可用端口，以命令输出为准。源码修改后自动重新构建，刷新浏览器查看；修改构建脚本或环境变量后需重启开发服务。按 Ctrl+C 关闭。
 
-也可以先构建，再直接打开 `dist/index.html`。更换端口、域名或本地文件路径后，浏览器的账号、列表与偏好记录可能不同，不是构建过程清除了数据。
+也可以先构建，再直接打开 `dist/index.html`。浏览器存储按来源隔离，更换端口、域名或本地文件路径后，账号、列表与偏好可能使用不同记录。
 
 ## 从 GitHub 托管前端
 
-平台连接包含当前源码的分支，根目录保持仓库根目录，不要选择 `src/` 或 `dist/`。
+平台连接包含当前源码的分支，根目录选择仓库根目录。
 
 | 平台 | 首次配置 |
 | --- | --- |
 | Cloudflare Workers | 构建命令 `npm run build`，部署命令 `npx wrangler deploy`，名称与 `wrangler.json` 一致 |
 | Cloudflare Pages | 框架 `None`，构建命令 `npm run build`，输出目录 `dist` |
-| Vercel | 框架 `Other`，安装、构建及输出目录使用仓库 `vercel.json`，无需重复覆盖 |
+| Vercel | 框架 `Other`，安装、构建及输出目录使用仓库 `vercel.json` |
 | GitHub Pages | 发布来源选 `GitHub Actions`，使用仓库已有 `pages.yml` |
 
-这些平台只发布静态产物，不需要为播放器维持一个 Node.js 服务。Hash 路由使用 `#music/...`，不依赖服务器把任意路径重写到首页，也支持 GitHub Pages 仓库子路径。
+这些平台发布静态产物，Node.js 用于构建。页面使用 `#music/...` Hash 路由，支持 GitHub Pages 仓库子路径。
 
 ### Cloudflare Workers 与 Pages
 
-Workers 使用 [wrangler.json](../wrangler.json) 的 `assets.directory` 发布 `dist/`，不需要编写后端 Worker 或添加 ASSETS 绑定。当前名称为 `aurora-player`；使用其他平台项目名时同步修改配置。
+Workers 按 [wrangler.json](../wrangler.json) 的 `assets.directory` 发布 `dist/`。当前名称为 `aurora-player`；使用其他平台项目名时同步修改配置。
 
 Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds 不执行这项自定义构建配置，因此面板的构建命令不能留空。公开 API 地址应放在构建变量中，仅修改运行时 Variables / Secrets 不会改变静态页面。参见 [Workers Builds 配置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)。
 
-已有 Pages 项目可继续使用上表配置，无需为了源码拆分迁移到 Workers。仓库 `.node-version` 指定 Node.js 22；已有项目若手动设置了版本，需检查没有被旧配置覆盖。
+已有 Pages 项目沿用上表配置。仓库 `.node-version` 指定 Node.js 22，平台手动设置的版本应与仓库要求一致。
 
 ### Vercel
 
-[vercel.json](../vercel.json) 已设置安装命令 `npm ci`、构建命令 `npm run build`、输出目录 `dist`。项目选 `Other`，避免平台框架预设覆盖静态构建。Node.js 使用仓库允许的版本；其他设置以当前项目面板和 [Vercel 配置说明](https://vercel.com/docs/project-configuration/vercel-json) 为准。
+[vercel.json](../vercel.json) 已设置安装命令 `npm ci`、构建命令 `npm run build`、输出目录 `dist`。项目选 `Other`，Node.js 使用仓库允许的版本。其他设置见 [Vercel 配置说明](https://vercel.com/docs/project-configuration/vercel-json)。
 
-构建变量可按 Production、Preview 等环境分别配置；修改后重新部署，不会自动改写已经生成的 HTML。
+构建变量可按 Production、Preview 等环境分别配置，修改后重新部署生效。
 
 ### GitHub Pages
 
 1. 仓库进入 `Settings → Pages → Build and deployment`。
-2. 将 `Source` 设置为 `GitHub Actions`，不要再添加一份模板工作流。
-3. 按需要配置下面的公开地址变量，然后推送部署分支或手动运行 `GitHub Pages` 工作流。
+2. 将 `Source` 设置为 `GitHub Actions`，使用仓库已有工作流。
+3. 按需要配置下面的公开地址变量，然后推送部署分支或手动运行该分支的 `Check` 工作流。
 
-[pages.yml](../.github/workflows/pages.yml) 当前仅从 `minori0721-test-1` 部署，手动运行也检查该分支。构建经过检查、测试和打包后，只上传 `dist/`，不发布源码和 `node_modules/`。
+[pages.yml](../.github/workflows/pages.yml) 当前仅由 `Check` 从 `minori0721-test-1` 调用。Windows、Linux 检查均成功后，Pages 与 Release 复用同次运行的 Linux 单文件产物，不发布源码和 `node_modules/`。手动重试部署也从 `Check` 进入。
 
-换用其他分支时，同步修改工作流的 `push.branches`、`jobs.build.if`；若 `github-pages` 环境限制了分支，也需允许该分支。工作流不会自动修改仓库的 Pages 发布来源。仍从分支根目录发布的旧配置，不能生成拆分源码后的播放器。
+换用其他分支时，同步修改 `check.yml` 中的发布分支条件和 `pages.yml` 中的部署分支条件；若 `github-pages` 环境限制了分支，也需允许该分支。
 
 ## API 与下载代理地址
 
@@ -90,7 +90,7 @@ Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds �
 
 ## 部署后端 API
 
-播放器使用兼容 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/) 的接口，本项目使用的 Fork 是 [minori0721/api-enhanced](https://github.com/minori0721/api-enhanced)。API 后端与静态播放器是独立项目，部署前端不等于已经部署后端。
+播放器使用兼容 [NeteaseCloudMusicApiEnhanced](https://github.com/neteasecloudmusicapienhanced/api-enhanced/) 的接口，本项目使用的 Fork 是 [minori0721/api-enhanced](https://github.com/minori0721/api-enhanced)。API 后端与静态播放器分别部署，通过 `API_BASE_URL` 连接。
 
 推荐使用 Vercel 配合自定义域名：
 
@@ -98,14 +98,14 @@ Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds �
 2. 在 `Settings → Domains` 绑定域名或子域名，并按平台提示配置 DNS。
 3. 将播放器的 `API_BASE_URL` 设置为该 HTTPS 地址，重新构建前端。
 
-面向中国大陆使用时，不建议依赖默认 `*.vercel.app` 域名；Vercel 官方说明这些域名可能被屏蔽或限速，而自定义域名也仍可能受到网络与域名访问限制。应按目标地区、运营商及具体接口验证可达性，不把换域名视为稳定性的保证。参见 [Vercel 中国大陆访问说明](https://vercel.com/kb/guide/accessing-vercel-hosted-sites-from-mainland-china)。
+面向中国大陆使用时，建议使用自定义域名，并按目标地区、运营商和具体接口验证访问情况。默认 `*.vercel.app` 域名的访问问题见 [Vercel 中国大陆访问说明](https://vercel.com/kb/guide/accessing-vercel-hosted-sites-from-mainland-china)。
 
-下载代理需另外部署为可处理跨域与 Referer 的 Worker 或反代，再配置 `DOWNLOAD_PROXY_URL`。代理地址可访问并不代表每条音源都能下载；API、音频 CDN 和下载代理应分别验证。
+下载代理另外部署为可处理跨域与 Referer 的 Worker 或反代，再配置 `DOWNLOAD_PROXY_URL`。部署后分别检查 API 请求、音频 CDN 播放和代理下载。
 
 ## 自动部署与 Release
 
-Cloudflare 和 Vercel 原生 Git 部署跟随平台选定分支，GitHub Pages 跟随仓库工作流；它们不是跟随 Release 附件部署。构建变量不同时，即使同一源码版本，HTML 内的 API 地址也可能不同。
+Cloudflare 和 Vercel 的 Git 部署跟随平台选定分支，GitHub Pages 由仓库工作流构建部署。Release 另行提供单文件下载，HTML 内的 API 地址取自对应构建配置。
 
 Release 由 `Check` 工作流检查成功后按 `package.json` 和 changelog 决定是否创建。同版本已经公开发布时跳过，不覆盖旧附件；升级版本仍由维护者决定，不会每次提交自动加版本。
 
-版本准备、受检提交、标签与失败恢复规则见 [源码结构与发布](architecture.md)。本仓库不会自动创建或修改你的 Cloudflare、Vercel 项目。
+版本准备、受检提交、标签与失败恢复规则见 [源码结构与发布](architecture.md)。

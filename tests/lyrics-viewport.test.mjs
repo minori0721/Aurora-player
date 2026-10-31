@@ -304,17 +304,65 @@ test('desktop follows the cover center and returning from browse uses the same a
     f.view.dispose();
 });
 
-test('mobile keeps viewport centering and switching breakpoints restores the correct anchor', () => {
+test('mobile keeps its lifted anchor and switching breakpoints restores the correct anchor', () => {
     let reads = 0;
     const cover = new FakeElement(); cover.getBoundingClientRect = () => { reads++; return { top: 10, height: 100 }; };
     const f = fixture({ cover, desktop: false });
-    assert.equal(f.content.style.paddingTop, '90px'); assert.equal(reads, 0);
+    assert.equal(f.content.style.paddingTop, '63px'); assert.equal(reads, 0);
     assert.equal(f.viewport.scrollTop, 142);
     f.state.desktop = true; f.event(f.environment, 'resize'); f.flush();
     assert.equal(f.content.style.paddingTop, '60px');
     f.state.desktop = false; f.event(f.environment, 'resize'); f.flush();
-    assert.equal(f.content.style.paddingTop, '90px'); assert.equal(f.content.style.paddingBottom, '90px');
-    assert.equal(f.lines[2].offsetTop + 22 - f.viewport.scrollTop, 90); f.view.dispose();
+    assert.equal(f.content.style.paddingTop, '63px'); assert.equal(f.content.style.paddingBottom, '117px');
+    assert.equal(f.lines[2].offsetTop + 22 - f.viewport.scrollTop, 63); f.view.dispose();
+});
+
+for (const height of [80, 120, 180, 200, 305, 480]) {
+    test(`mobile anchor lift is bounded by 28px and 15 percent at ${height}px`, () => {
+        const f = fixture({ desktop: false });
+        f.viewport.clientHeight = height; f.view.relayout();
+        const anchor = height / 2 - Math.min(28, height * .15);
+        assert.equal(parseFloat(f.content.style.paddingTop), anchor);
+        assert.equal(parseFloat(f.content.style.paddingBottom), height - anchor);
+        assert.equal(f.lines[2].offsetTop + 22 - f.viewport.scrollTop, anchor);
+        f.view.dispose();
+    });
+}
+
+test('mobile cue changes and subtitle reflow never retarget the layout anchor', () => {
+    const f = fixture({ desktop: false, withVisuals: true });
+    const anchor = f.content.style.paddingTop;
+    for (const index of [0, 2, 7, 19]) {
+        f.view.setActive(index); assert.equal(f.content.style.paddingTop, anchor);
+    }
+    f.view.setActive(7);
+    const original = f.lines[7].querySelector('.lyric-original');
+    const subtitle = f.lines[7].querySelector('.lyric-translation');
+    for (const [text, subtitleHeight] of [['', 0], ['翻译文本', 28], ['romanized text wrapping over several lines', 56]]) {
+        subtitle.textContent = text; subtitle.offsetHeight = subtitleHeight;
+        original.offsetHeight = subtitleHeight ? 56 : 28;
+        f.lines[7].offsetHeight = original.offsetHeight + subtitleHeight + 6;
+        f.view.relayout();
+        assert.equal(f.content.style.paddingTop, anchor);
+        assert.equal(f.lines[7].offsetTop + 3 + original.offsetHeight / 2 - f.viewport.scrollTop, 63);
+    }
+    const moves = f.moves.length;
+    f.view.setActive(7); f.tick(10000);
+    assert.equal(f.moves.length, moves); assert.equal(f.timers.size, 0); assert.equal(f.frames.size, 0);
+    f.view.dispose();
+});
+
+test('mobile manual browsing and both return paths use the same stable anchor', () => {
+    const f = fixture({ desktop: false });
+    const anchor = f.content.style.paddingTop;
+    f.wheel(); f.scroll(600); f.view.setActive(6);
+    assert.equal(f.viewport.scrollTop, 600); assert.equal(f.content.style.paddingTop, anchor);
+    f.view.returnToCurrent();
+    assert.equal(f.lines[6].offsetTop + 22 - f.viewport.scrollTop, 63);
+    f.wheel(); f.scroll(900); f.tick(180 + LYRIC_RESUME_DELAY_MS);
+    assert.equal(f.lines[6].offsetTop + 22 - f.viewport.scrollTop, 63);
+    assert.equal(f.button.hidden, true); assert.deepEqual(f.seeks, []);
+    f.view.dispose();
 });
 
 test('cover anchors are bounded away from faded edges and unavailable geometry falls back', () => {

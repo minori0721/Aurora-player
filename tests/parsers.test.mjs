@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSliFile } from '../src/playlist/sli.js';
+import { inferAudioTypeFromUrl } from '../src/audio/quality.js';
+import { parseSliFile, formatSliLoop } from '../src/playlist/sli.js';
 import { createImportPathFields, normalizeImportPath, normalizeImportKey } from '../src/playlist/paths.js';
 import { findCompanionBindings } from '../src/playlist/matching.js';
 import { parseJsonLyricLine, parseLyricsToArray, parseYrc } from '../src/lyrics/parser.js';
@@ -15,6 +16,17 @@ test('SLI accepts valid sample ranges and rejects malformed/read failures', asyn
         assert.equal((await parseSliFile({ text: async () => source })).status, 'invalid');
     }
     assert.equal((await parseSliFile({ text: async () => { throw new Error('unreadable'); } })).status, 'invalid');
+});
+
+test('SLI exports a standard v2 Link block and preserves integer samples on import', async () => {
+    for (const [from, to] of [[529239, 176418], [1, 0], [Number.MAX_SAFE_INTEGER, 417]]) {
+        const text = formatSliLoop(from, to);
+        assert.equal(text, `#2.00\n# Sound Loop Information (utf-8)\nLink { From=${from}; To=${to}; Smooth=False; Condition=no; RefValue=0; CondVar=0; }\n`);
+        assert.deepEqual(await parseSliFile({ text: async () => text }), { status: 'valid', fromSamples: from, toSamples: to });
+    }
+    for (const pair of [[0, 0], [2, -1], [2, 3], [NaN, 0], [Infinity, 0], [2.1, 1], [Number.MAX_SAFE_INTEGER + 1, 0]]) {
+        assert.throws(() => formatSliLoop(...pair));
+    }
 });
 
 test('paths preserve Unicode/display names and normalize matching keys', () => {
@@ -86,4 +98,10 @@ test('truncated FLAC metadata never blocks playback and WAV headers are bounded'
     view.setUint32(0, 0x52494646); view.setUint32(8, 0x57415645); view.setUint32(12, 0x666d7420);
     view.setUint32(16, 16, true); view.setUint16(22, 2, true); view.setUint32(24, 44100, true); view.setUint16(34, 16, true);
     assert.deepEqual(parseWavStreamInfoFromBuffer(wav), { sampleRate: 44100, channels: 2, bitsPerSample: 16 });
+});
+test('format inference uses a path suffix or explicit type, never size, folders or query text', () => {
+    assert.equal(inferAudioTypeFromUrl('https://cdn.test/old.flac/song.mp3?x=.wav'), 'mp3');
+    assert.equal(inferAudioTypeFromUrl('https://cdn.test/opaque?x=.flac'), '');
+    assert.equal(inferAudioTypeFromUrl('https://cdn.test/opaque', 'flac'), 'flac');
+    assert.equal(inferAudioTypeFromUrl('https://cdn.test/opaque', 'nonsense'), '');
 });

@@ -18,7 +18,7 @@ test('music browser reserves its mini player in flex layout instead of covering 
 
 function fixture(t) {
     const { host, elements, frames } = createHost(html), scroller = { scrollTop: 540 };
-    const imageLifecycle = [];
+    const imageLifecycle = [], feedbackClears = [];
     host.location.href = 'http://localhost/#music/album/12'; host.location.hash = '#music/album/12';
     const panel = elements.get('netease-panel'); panel.classList.add('show');
     host.history.length = 2; host.history.go = () => {};
@@ -43,11 +43,12 @@ function fixture(t) {
         auth: { cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } },
         panels: { modalController: { open() { panel.classList.add('show'); }, close() { panel.classList.remove('show'); } } },
         content: { async renderMusicAlbumPage() {}, updateMusicMiniPlayer() {},
+            clearMusicQueueFeedback() { feedbackClears.push(true); },
             clearMusicImages() { imageLifecycle.push('clear'); }, pauseMusicImages() { imageLifecycle.push('pause'); },
             resumeMusicImages() { imageLifecycle.push('resume'); } }
     });
     const paint = async () => { await flush(); for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
-    return { host, scroller, browser, panel, elements, paint, imageLifecycle };
+    return { host, scroller, browser, panel, elements, paint, imageLifecycle, feedbackClears };
 }
 
 test('saving history while login is open preserves the source page instead of the login scroll', t => {
@@ -97,4 +98,14 @@ test('navigation clears old image subscriptions before resuming and closing rele
     assert.deepEqual(f.imageLifecycle.slice(-2), ['pause', 'clear']);
     await f.browser.renderMusicRoute(null);
     assert.deepEqual(f.imageLifecycle.slice(-2), ['pause', 'clear']);
+});
+
+test('route changes, panel close and leaving music clear the previous queue action feedback', async t => {
+    const f = fixture(t);
+    await f.browser.renderMusicRoute({ kind: 'album', id: 12 });
+    assert.equal(f.feedbackClears.length, 1);
+    await f.browser.renderMusicRoute({ kind: 'album', id: 13 });
+    assert.equal(f.feedbackClears.length, 2);
+    f.browser.closeMusicBrowser(); assert.equal(f.feedbackClears.length, 3);
+    await f.browser.renderMusicRoute(null); assert.equal(f.feedbackClears.length, 4);
 });

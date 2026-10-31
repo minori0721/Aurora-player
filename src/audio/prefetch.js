@@ -60,7 +60,7 @@ export function createPrefetch({
     }
 
     function resetNeteaseDetailPrefetchState() {
-        songDetailsService?.reset();
+        songDetailsService.reset();
     }
 
     // ---- 下一首预加载相关 ----
@@ -238,6 +238,25 @@ export function createPrefetch({
         return result;
     }
 
+    async function takeNeteasePreload(songId, { signal, preferStream = false } = {}) {
+        const token = nextPreloadToken;
+        const queueRef = queueService.playlist;
+        const index = nextPreloadIndex, track = queueRef[index];
+        const level = authService.neteaseQuality, generation = authService.authGeneration;
+        if (!isNextPreloadCompatible(queueRef, index, track) || nextPreloadSongId !== Number(songId)) return null;
+        if (prefetchInProgress && nextSongFetchPromise) await transferService.awaitWithSignal(nextSongFetchPromise, signal);
+        if (signal?.aborted) throw signal.reason || transferService.createAbortError();
+        if (!isNextPreloadSnapshotCurrent(token, queueRef, index, track, songId, level, generation)) return null;
+        const raw = takeNextPreloadedRawData(nextPreloadIndex, track, songId, level);
+        if (raw) return raw;
+        const warmed = preferStream ? takeNextStreamWarm(songId) : null;
+        if (warmed) return { resolved: warmed.resolved, media: warmed.media };
+        const resolved = takeNextPrewarmedNeteaseUrl(songId, level);
+        if (resolved) return { resolved, media: null };
+        cancelNextPreload({ resetDetails: false });
+        return null;
+    }
+
     // 等待预取完成（短等待），返回 true 表示预取已完成且数据可用
     async function waitForPrefetchCompletion(timeoutMs = LOCAL_PREFETCH_PLAYBACK_WAIT_MS, token = nextPreloadToken) {
         if (hasPreloaded && nextSongRawData) return true;
@@ -258,60 +277,39 @@ export function createPrefetch({
 
     // 取消下一首预加载；令牌递增后，任何迟到的 Promise 都不能回填新状态。
     function cancelNextPreload({ resetAttempted = true, silent = false, resetDetails = true } = {}) {
-        streamWarm?.media.dispose();
+        const warm = streamWarm, audioController = nextSongAbortController, urlController = nextSongUrlPrewarmController;
         streamWarm = null;
         nextPreloadToken++;
-        lyricsService?.cancelLyricPrefetch();
-        try {
-            if (nextSongAbortController) {
-                try { if (typeof nextSongAbortController.abort === 'function') nextSongAbortController.abort(); }
-                catch(e) {}
-                nextSongAbortController = null;
-            }
-            if (nextSongUrlPrewarmController) {
-                try { nextSongUrlPrewarmController.abort(); } catch(e) {}
-                nextSongUrlPrewarmController = null;
-            }
-            nextSongUrlPrewarmPromise = null;
-        } finally {
-            nextSongRawData = null;
-            hasPreloaded = false;
-            nextPreloadIndex = null;
-            nextPreloadQueueRef = null;
-            nextPreloadTrack = null;
-            nextPreloadSongId = 0;
-            nextPreloadLevel = '';
-            nextPreloadCookie = '';
-            nextPreloadAuthGeneration = -1;
-            nextPreloadKind = 'none';
-            nextPreloadStatus = 'idle';
-            if (resetAttempted) prefetchAttempted = false;
-            prefetchInProgress = false;
-            try { nextSongFetchPromise = null; } catch (e) {}
-            try { nextSongPreloadMeta = null; } catch (e) {}
-            nextPreloadRecoveryBudget = null;
-            if (resetDetails) songDetailsService?.cancelPrefetch();
-        }
+        nextSongAbortController = nextSongUrlPrewarmController = null;
+        nextSongUrlPrewarmPromise = nextSongFetchPromise = null;
+        nextSongRawData = nextSongPreloadMeta = null;
+        hasPreloaded = prefetchInProgress = false;
+        nextPreloadIndex = nextPreloadQueueRef = nextPreloadTrack = null;
+        nextPreloadSongId = 0;
+        nextPreloadLevel = nextPreloadCookie = '';
+        nextPreloadAuthGeneration = -1;
+        nextPreloadKind = 'none';
+        nextPreloadStatus = 'idle';
+        nextPreloadRecoveryBudget = null;
+        if (resetAttempted) prefetchAttempted = false;
+        // Invalidate before abort/dispose callbacks can observe the previous task.
+        audioController?.abort();
+        urlController?.abort();
+        warm?.media.dispose();
+        lyricsService.cancelLyricPrefetch();
+        if (resetDetails) songDetailsService.cancelPrefetch();
         if (!silent) debugService.log('已取消下一首预取');
     }
 
     function getLikelyNextPlaylistIndex() {
         if (!queueService.playlist || queueService.playlist.length === 0 || queueService.curIdx < 0 || queueService.playMode === 2) return null;
-        if (queueService.getNextPlaylistIndex) return queueService.getNextPlaylistIndex(
+        return queueService.getNextPlaylistIndex(
             hasLockedNextPreloadTarget(queueService.playlist, nextPreloadIndex) ? nextPreloadIndex : null);
-        if (queueService.playMode === 1) {
-            if (queueService.playlist.length === 1) return null;
-            if (hasLockedNextPreloadTarget(queueService.playlist, nextPreloadIndex) && nextPreloadIndex !== queueService.curIdx) return nextPreloadIndex;
-            let nextIdx = Math.floor(Math.random() * queueService.playlist.length);
-            if (nextIdx === queueService.curIdx) nextIdx = (nextIdx + 1) % queueService.playlist.length;
-            return nextIdx;
-        }
-        return queueService.curIdx + 1 >= queueService.playlist.length ? 0 : queueService.curIdx + 1;
     }
 
     function retargetNextPreload() {
         if (nextPreloadKind === 'none') return;
-        const index = queueService.indexOfTrack ? queueService.indexOfTrack(nextPreloadTrack) : queueService.playlist.indexOf(nextPreloadTrack);
+        const index = queueService.indexOfTrack(nextPreloadTrack);
         if (nextPreloadQueueRef !== queueService.playlist || index < 0) cancelNextPreload({ resetDetails: false });
         else nextPreloadIndex = index;
     }
@@ -321,7 +319,7 @@ export function createPrefetch({
     }
 
     function prefetchUpcomingNeteaseDetails() {
-        songDetailsService?.refresh();
+        songDetailsService.refresh();
     }
 
     function prewarmNextNeteaseSongUrl() {
@@ -523,7 +521,7 @@ export function createPrefetch({
             const songId = getPlaylistTrackSongId(nextTrack);
             if (!nextTrack.file && (!nextTrack.netease || !songId)) return;
             if (nextTrack.netease && playbackService.playbackPreference === 'stream') {
-                lyricsService?.prefetchLyricById(songId);
+                lyricsService.prefetchLyricById(songId);
                 prewarmNextNeteaseSongUrl();
                 prefetchAttempted = true;
                 return;
@@ -589,7 +587,7 @@ export function createPrefetch({
             prefetchInProgress = true;
             prefetchAttempted = true;
 
-            if (nextTrack.netease && !nextTrack.file) lyricsService?.prefetchLyricById(songId);
+            if (nextTrack.netease && !nextTrack.file) lyricsService.prefetchLyricById(songId);
 
             const work = nextTrack.file
                 ? (async () => {
@@ -632,28 +630,23 @@ export function createPrefetch({
         }
     }
 
-    let initialized = false;
     return {
         warmNextStreamIfNeeded,
         takeNextStreamWarm,
         get LOCAL_PREFETCH_TRIGGER_SEC() { return LOCAL_PREFETCH_TRIGGER_SEC; },
         resetNeteaseDetailPrefetchState,
         get nextSongRawData() { return nextSongRawData; },
-        set nextSongRawData(value) { nextSongRawData = value; },
         get hasPreloaded() { return hasPreloaded; },
-        set hasPreloaded(value) { hasPreloaded = value; },
         get nextPreloadIndex() { return nextPreloadIndex; },
         get prefetchAttempted() { return prefetchAttempted; },
         set prefetchAttempted(value) { prefetchAttempted = value; },
         get prefetchInProgress() { return prefetchInProgress; },
         get nextSongFetchPromise() { return nextSongFetchPromise; },
         get nextSongPreloadMeta() { return nextSongPreloadMeta; },
-        set nextSongPreloadMeta(value) { nextSongPreloadMeta = value; },
         get nextPreloadToken() { return nextPreloadToken; },
         get nextPreloadSongId() { return nextPreloadSongId; },
         get nextPreloadKind() { return nextPreloadKind; },
         get nextPreloadStatus() { return nextPreloadStatus; },
-        set nextPreloadStatus(value) { nextPreloadStatus = value; },
         get nextPreloadRecoveryBudget() { return nextPreloadRecoveryBudget; },
         hasLockedNextPreloadTarget,
         isNextPreloadCompatible,
@@ -661,6 +654,7 @@ export function createPrefetch({
         takeNextPrewarmedNeteaseUrl,
         getNeteasePrefetchTriggerSec,
         takeNextPreloadedRawData,
+        takeNeteasePreload,
         waitForPrefetchCompletion,
         cancelNextPreload,
         getLikelyNextPlaylistIndex,
@@ -668,11 +662,6 @@ export function createPrefetch({
         applyNeteaseSongDetailToPlaylist,
         prefetchUpcomingNeteaseDetails,
         prewarmNextNeteaseSongUrl,
-        prefetchNextSong,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        prefetchNextSong
     };
 }

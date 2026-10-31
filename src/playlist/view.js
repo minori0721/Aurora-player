@@ -17,7 +17,7 @@ export function createPlaylistView({
     let searchQueue = queueService.playlist, searchTerms = [], searchKeys = [], visibleCount = 0;
     let searchFrame = 0, composing = false, unfilteredScrollTop = 0;
     let temporaryRows = new Map(), renderedTemporary = [];
-    const base = () => queueService.basePlaylist || queueService.playlist;
+    const base = () => queueService.basePlaylist;
     const rowAt = index => index < base().length ? domService.el.plContainer.children[index] : temporaryRows.get(index);
     const rowEntries = () => [
         ...Array.from(domService.el.plContainer.children, (row, index) => ({ row, index })),
@@ -74,7 +74,7 @@ export function createPlaylistView({
             }
             activePlaylistRow = nextRow;
         }
-        if (typeof persistenceService.schedulePlaylistStateSave === 'function') persistenceService.schedulePlaylistStateSave();
+        persistenceService.schedulePlaylistStateSave();
     }
 
     function updatePlaylistCompanionMarker(row, track) {
@@ -167,7 +167,7 @@ export function createPlaylistView({
         updatePlaylistCompanionMarker(d, track);
         d.onclick = () => {
             if (!prefetchService.isNextPreloadCompatible(queueService.playlist, index, track)) {
-                try { prefetchService.cancelNextPreload(); } catch(e) {}
+                prefetchService.cancelNextPreload();
             }
             queueService.playTrackFromPlaylist(index);
         };
@@ -192,7 +192,7 @@ export function createPlaylistView({
         domService.el.plTemporaryContainer.classList.toggle('pl-large', renderedTemporary.length > 500);
         domService.el.plTemporaryContainer.innerHTML = '';
         renderedTemporary.forEach((track, number) => {
-            const index = queueService.indexOfTrack ? queueService.indexOfTrack(track) : queueService.playlist.indexOf(track);
+            const index = queueService.indexOfTrack(track);
             const row = createPlaylistRow(track, index, number + 1);
             row._track = track;
             row._temporaryNumber = number + 1;
@@ -246,7 +246,7 @@ export function createPlaylistView({
         domService.el.plContainer.innerHTML = '';
         activePlaylistRow = null;
         appendPlaylistRows(0, true);
-        if (typeof persistenceService.schedulePlaylistStateSave === 'function') persistenceService.schedulePlaylistStateSave(true);
+        persistenceService.schedulePlaylistStateSave(true);
     }
 
     function scrollPlaylistToCurrent() {

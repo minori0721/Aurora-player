@@ -29,8 +29,10 @@ export function createLyrics({
 
     let lyricViewport = null;
     let wordMotion = null;
+    let lyricUpdateFailed = false;
 
     function resetTrackLyrics() {
+        lyricUpdateFailed = false;
         lyricRequests.cancelTaken();
         wordMotion?.reset();
         lyricViewport?.reset();
@@ -91,23 +93,26 @@ export function createLyrics({
             input.title = input.disabled ? `当前歌曲暂无${missing[input.value]}` : names[input.value];
         }
         const button = domService.lyricToggleBtn;
-        if (!button) return;
-        button.disabled = modes.length < 2;
-        button.style.opacity = button.disabled ? '0.45' : '';
-        button.title = button.disabled ? '暂无更多歌词文本'
-            : `当前：${names[mode]}（点击切至：${names[modes[(modes.indexOf(mode) + 1) % modes.length]]}）`;
-        button.setAttribute('aria-label', button.title);
+        if (button) {
+            button.dataset.lyricMode = mode;
+            button.disabled = modes.length < 2;
+            button.title = !modes.length ? '暂无歌词'
+                : button.disabled ? `当前：${names[mode]}，暂无其他歌词文本`
+                : `当前：${names[mode]}，点击切换为${names[modes[(modes.indexOf(mode) + 1) % modes.length]]}`;
+            button.setAttribute('aria-label', button.title);
+        }
+    }
+
+    function cycleLyricDisplayMode() {
+        const modes = availableLyricModes();
+        if (modes.length < 2) return false;
+        return setLyricDisplayMode(modes[(modes.indexOf(effectiveLyricMode()) + 1) % modes.length]);
     }
 
     function setNeteaseSearchEnabled(value) {
         const enabled = Boolean(value), changed = enabled !== neteaseSearchEnabled;
         neteaseSearchEnabled = enabled;
-        if (domService.cloudLyricsSwitch) domService.cloudLyricsSwitch.checked = enabled;
-        if (domService.neteaseBtn) {
-            domService.neteaseBtn.style.background = enabled ? '#27ae60' : '';
-            domService.neteaseBtn.style.color = enabled ? '#fff' : '';
-            domService.neteaseBtn.setAttribute('aria-pressed', String(enabled));
-        }
+        for (const input of domService.cloudLyricsSwitches || []) input.checked = enabled;
         if (changed && localLyricSession) {
             if (enabled) updateLocalLyrics(localLyricSession);
             else cancelLocalLyricSearch(localLyricSession);
@@ -160,6 +165,7 @@ export function createLyrics({
 
     // 渲染函数（在切换显示模式时复用）
     function renderLyricsFromArrays(source) {
+        lyricUpdateFailed = false;
         const displayMode = effectiveLyricMode();
         const hasSynced = lyricRows.length > 0;
         isSyncedLyrics = hasSynced;
@@ -264,7 +270,7 @@ export function createLyrics({
         setArtistTag(source || '', metadataService.currentAudioQuality || '');
 
         // 尝试立即刷新高亮并居中当前播放位置
-        try { refreshLyricHighlightAndCenter(true); } catch(e) {}
+        refreshLyricHighlightAndCenter(true);
     }
 
     function cancelLocalLyricSearch(session) {
@@ -587,6 +593,16 @@ export function createLyrics({
     }
 
     function refreshLyricHighlightAndCenter(force = false) {
+        if (lyricUpdateFailed) return;
+        try { updateLyricHighlightAndCenter(force); }
+        catch (error) {
+            lyricUpdateFailed = true;
+            wordMotion?.reset();
+            debugService.log(`歌词更新已暂停，重新加载歌词后恢复：${error?.message || error}`, 'error');
+        }
+    }
+
+    function updateLyricHighlightAndCenter(force) {
         lyricViewport?.syncPlayback();
         if(!isSyncedLyrics || !lyrics || !lyrics.length) return;
         const now = playbackService.getCurrentTime();
@@ -633,6 +649,7 @@ export function createLyrics({
         get originalLyricsArr() { return originalLyricsArr; },
         get translatedLyricsArr() { return translatedLyricsArr; },
         updateLyricToggleUI,
+        cycleLyricDisplayMode,
         setArtistTag,
         renderLyricsFromArrays,
         cancelLocalLyricSession,
@@ -679,13 +696,6 @@ export function createLyrics({
                 getTransportVersion: () => playbackService.transportVersion || 0
             });
             if (_lastActiveLyric) wordMotion.activate(_lastActiveLyric);
-            if(domService.lyricToggleBtn) {
-                domService.lyricToggleBtn.onclick = () => {
-                    const modes = availableLyricModes(), current = effectiveLyricMode();
-                    if (modes.length < 2) return;
-                    setLyricDisplayMode(modes[(modes.indexOf(current) + 1) % modes.length]);
-                };
-            }
             updateLyricToggleUI();
             setNeteaseSearchEnabled(neteaseSearchEnabled);
         }

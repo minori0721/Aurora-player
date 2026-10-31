@@ -4,6 +4,7 @@ import { createSongDetails, planDetailWindow } from '../src/netease/song-details
 import { createTransfer } from '../src/audio/transfer.js';
 import { createCache, createRequestPriority } from '../src/storage/cache.js';
 import { createQueue } from '../src/playlist/queue.js';
+import { withBaseQueue } from './helpers/host.mjs';
 
 const settle = async () => { for (let i = 0; i < 15; i++) await new Promise(resolve => setImmediate(resolve)); };
 const song = id => ({ id, name: `song-${id}`, ar: [{ id: 1, name: 'artist' }], al: { id: 1, name: 'album', picUrl: 'https://fixture.invalid/cover' }, dt: 180000 });
@@ -12,7 +13,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((done,
 
 function fixture(t, length = 30) {
     const calls = [], updates = [], logs = [];
-    const queue = { playlist: Array.from({ length }, (_, i) => entry(i + 1)), curIdx: 0, playMode: 0 };
+    const queue = withBaseQueue({ playlist: Array.from({ length }, (_, i) => entry(i + 1)), curIdx: 0, playMode: 0 });
     queue.playlist[0].songData = song(1);
     const auth = { authGeneration: 1, neteaseCookie: '', accountAbortControllers: new Set() };
     const playback = { playbackState: { status: 'playing' }, looping: false, getActiveCustomLoop() { return this.looping; } };
@@ -202,8 +203,9 @@ test('metadata load cancellation leaves the queue paused and cannot launch onlin
         setPlaybackStatus(status) { this.playbackState.status = status; }
     };
     const transfer = createTransfer();
-    const queue = createQueue({ playback, prefetch: { prefetchUpcomingNeteaseDetails() {} },
-        onlinePlaylist: {}, playlistView: { ensurePlaylistRenderedAndActive() {} },
+    const queue = createQueue({ playback, prefetch: { prefetchUpcomingNeteaseDetails() {}, retargetNextPreload() {} },
+        content: { clearMusicQueueFeedback() {} },
+        onlinePlaylist: { resolveSyncedSelection: index => index }, playlistView: { ensurePlaylistRenderedAndActive() {} },
         songDetails: { getSongDetail: (id, options) => transfer.awaitWithSignal(response.promise, options.signal) },
         dom: { el: { lyricBox: {}, img: { style: {} } } }, debug: { log() {} },
         covers: { setMainCover() {} },

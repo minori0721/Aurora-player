@@ -51,7 +51,7 @@ export function createAuth({
         downloadService.cancelDownloadProbes();
         onlinePlaylistService.cancelPlaylistLoad('auth-changed');
         abortAccountRequests();
-        try { prefetchService.cancelNextPreload(); } catch (_) {}
+        prefetchService.cancelNextPreload();
         if (playbackService.currentAbortController) {
             playbackService.currentAbortController.abort();
             playbackService.currentAbortController = null;
@@ -293,7 +293,7 @@ export function createAuth({
 
             domService.qualitySelect.onchange = () => {
                 neteaseQuality = domService.qualitySelect.value;
-                try { prefetchService.cancelNextPreload(); } catch (_) {}
+                prefetchService.cancelNextPreload();
                 resolverService.clearNeteaseResolvedAudioCache();
                 localStorage.setItem('netease_quality', neteaseQuality);
                 debugService.log(`音质设置: ${domService.qualitySelect.options[domService.qualitySelect.selectedIndex].text}`);

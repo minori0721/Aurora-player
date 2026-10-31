@@ -89,6 +89,7 @@ export function createBrowser({
     }
 
     async function renderMusicRoute(route, restoreScroll = 0, options = {}) {
+        contentService.clearMusicQueueFeedback();
         if (!route) {
             contentService.pauseMusicImages();
             contentService.clearMusicImages();
@@ -136,6 +137,7 @@ export function createBrowser({
                     domService.searchResults.innerHTML = '<div class="netease-empty">输入关键词开始搜索</div>';
                 }
             } else if (route.kind === 'playlist-import') {
+                contentService.restorePlaylistPreviewContext();
                 setMusicBrowserTab('playlist');
             } else if (route.kind === 'playlist-mine') {
                 setMusicBrowserTab('mylist');
@@ -225,6 +227,7 @@ export function createBrowser({
     }
 
     function closeMusicBrowser() {
+        contentService.clearMusicQueueFeedback();
         document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'false');
         saveMusicScrollState();
         try { sessionStorage.setItem('aurora_music_last_route', window.location.hash); } catch (_) {}
@@ -250,6 +253,7 @@ export function createBrowser({
     function syncMusicRouteFromLocation() {
         const route = parseMusicRoute();
         if (!route) {
+            contentService.clearMusicQueueFeedback();
             abortMusicNavigationRequests();
             authService.cancelLoginSession();
             contentService.pauseMusicImages();

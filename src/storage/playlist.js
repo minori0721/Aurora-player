@@ -96,16 +96,7 @@ export function createPersistence({
     }
 
     function getPersistedPlaylistSource() {
-        if (onlinePlaylistService.getPersistedQueueSource) return onlinePlaylistService.getPersistedQueueSource();
-        const data = onlinePlaylistService.currentPlaylistData;
-        if (!data?.imported || data.importToken !== queueService.activePlaylistQueueToken || data.queueRef !== queueService.playlist) return null;
-        return {
-            type: 'netease-playlist',
-            id: String(data.playlistId || ''),
-            loadedCount: Number(data.loadedCount || queueService.playlist.length),
-            totalCount: Number(data.totalCount || queueService.playlist.length),
-            loading: !!data.loading
-        };
+        return onlinePlaylistService.getPersistedQueueSource();
     }
 
     function serializePlaylistTrack(track) {
@@ -115,7 +106,7 @@ export function createPersistence({
 
     function buildPlaylistState() {
         const source = getPersistedPlaylistSource();
-        const base = queueService.basePlaylist || queueService.playlist;
+        const base = queueService.basePlaylist;
         const pending = queueService.manualState;
         const manual = pending && (pending.current || pending.pending.length) ? {
             current: pending.current ? serializePlaylistTrack(pending.current) : null,
@@ -135,7 +126,7 @@ export function createPersistence({
             listId: playlistPersistenceId,
             revision: playlistStateRevision,
             savedAt: Date.now(),
-            selectedIndex: Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx ?? queueService.curIdx) || 0)),
+            selectedIndex: Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx) || 0)),
             source,
             ...(manual ? { manual } : {}),
             tracks: base.map(serializePlaylistTrack)
@@ -170,39 +161,34 @@ export function createPersistence({
     }
 
     async function writePlaylistTransaction(state, selection) {
-        try {
-            const db = await cacheService.openIdb();
-            return await new Promise((resolve, reject) => {
-                const tx = db.transaction(cacheService.IDB_PLAYER_STORE, 'readwrite');
-                tx.oncomplete = () => resolve(true);
-                tx.onabort = tx.onerror = () => reject(tx.error || new Error('Playlist transaction failed'));
-                const store = tx.objectStore(cacheService.IDB_PLAYER_STORE);
-                try {
-                    if (state) store.put(state, PLAYER_STATE_KEY);
-                    store.put(selection, PLAYER_SELECTION_KEY);
-                } catch (error) {
-                    tx.abort();
-                    reject(error);
-                }
-            });
-        } catch (_) { return false; }
+        const db = await cacheService.openIdb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(cacheService.IDB_PLAYER_STORE, 'readwrite');
+            tx.oncomplete = () => resolve(true);
+            tx.onabort = tx.onerror = () => reject(tx.error || new Error('Playlist transaction failed'));
+            const store = tx.objectStore(cacheService.IDB_PLAYER_STORE);
+            try {
+                if (state) store.put(state, PLAYER_STATE_KEY);
+                store.put(selection, PLAYER_SELECTION_KEY);
+            } catch (error) {
+                reject(error);
+                tx.abort();
+            }
+        });
     }
 
     async function persistPlaylistState(state, selection) {
-        let ok = await writePlaylistTransaction(state, selection);
-        if (ok) return true;
-        if (!state) return false;
-        const withoutHandles = {
-            ...state,
-            tracks: state.tracks.map(track => {
-                const copy = { ...track };
-                delete copy.handle;
-                return copy;
-            })
-        };
-        ok = await writePlaylistTransaction(withoutHandles, selection);
-        if (!ok) console.warn('IndexedDB playlist persistence unavailable; compact snapshot remains available');
-        return ok;
+        try {
+            return await writePlaylistTransaction(state, selection);
+        } catch (error) {
+            if (error?.name === 'DataCloneError' && state?.tracks.some(track => track.handle)) {
+                const withoutHandles = { ...state, tracks: state.tracks.map(({ handle: _handle, ...track }) => track) };
+                try { return await writePlaylistTransaction(withoutHandles, selection); }
+                catch (retryError) { error = retryError; }
+            }
+            debugService.log(`播放列表本地数据库写入失败 (${error?.name || 'Error'})，保留已有快照`, 'warn');
+            return false;
+        }
     }
 
     function drainPlaylistStateWrites() {
@@ -228,8 +214,8 @@ export function createPersistence({
     function saveCurrentPlaylist() {
         const state = buildPlaylistState();
         if (!state) return Promise.resolve(false);
-        const base = queueService.basePlaylist || queueService.playlist;
-        const selectedIndex = Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx ?? queueService.curIdx) || 0));
+        const base = queueService.basePlaylist;
+        const selectedIndex = Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx) || 0));
         if (playlistLastSelection?.listId === state.listId && playlistLastSelection.contentRevision === state.revision
             && playlistLastSelection.selectedIndex === selectedIndex && playlistCompactRevision === state.revision
             && playlistIdbRevision === state.revision && playlistSelectionIdbRevision === playlistLastSelection.revision
@@ -314,7 +300,7 @@ export function createPersistence({
             if (queueService.playlist.length || state?.schema !== PLAYER_STATE_SCHEMA || !Array.isArray(state.tracks)) return;
             playlistStateRevision = Math.max(playlistStateRevision, Number(state.revision) || 0);
             if (!state.tracks.length && !state.manual) {
-                void onlinePlaylistService.restoreQueueSource?.(state.source, queueService.basePlaylist || queueService.playlist);
+                void onlinePlaylistService.restoreQueueSource(state.source, queueService.basePlaylist);
                 return;
             }
             const compactSelection = readCompactPlaylistSelection();
@@ -358,7 +344,7 @@ export function createPersistence({
             playlistPersistenceQueue = queueService.playlist;
             playlistPersistenceId = state.listId || window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
             queueService.curIdx = state.tracks.length ? Math.max(0, Math.min(state.tracks.length - 1, Number(state.selectedIndex) || 0)) : -1;
-            if (state.manual) queueService.restoreManualState?.({
+            if (state.manual) queueService.restoreManualState({
                 current: state.manual.current ? restoreTrack(state.manual.current) : null,
                 pending: state.manual.pending.map(restoreTrack)
             });
@@ -384,7 +370,7 @@ export function createPersistence({
             const needsFile = queueService.playlist.filter(track => track.needsFile).length;
             const needsSelection = queueService.playlist.filter(track => track.needsFile && !track.fileHandle).length;
             debugService.log(`已从历史恢复 ${queueService.playlist.length} 首歌曲${needsFile ? `；${needsFile - needsSelection} 个本地文件可请求访问权限，${needsSelection} 个文件需重新选择` : ''}`, needsFile ? 'warn' : 'success');
-            void onlinePlaylistService.restoreQueueSource?.(state.source, queueService.basePlaylist || queueService.playlist);
+            void onlinePlaylistService.restoreQueueSource(state.source, queueService.basePlaylist);
         } catch (error) {
             console.warn('Failed to restore playlist:', error);
         }

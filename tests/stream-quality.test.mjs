@@ -107,7 +107,7 @@ test('header/body stalls and cancellation are bounded and do not retry', async t
     controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
 });
 
-function onlineFixture({ type = 'flac', header = async () => flacHeader(), preloaded = null, br = 320000 } = {}) {
+function onlineFixture({ type = 'flac', header = async () => flacHeader(), preloaded = null, br = 320000, fetchLyrics = async () => {} } = {}) {
     let token = 0, options, headerCalls = 0, fullCalls = 0, starts = 0;
     const tags = [], errors = [], logs = [];
     const resolved = { candidates: [`https://cdn.test/a.${type}`], audioInfo: { type, sr: 44100, br } };
@@ -125,6 +125,7 @@ function onlineFixture({ type = 'flac', header = async () => flacHeader(), prelo
         hasPreloaded: !!preloaded, nextSongRawData: preloaded, nextSongPreloadMeta: { ...resolved, audioUrl: resolved.candidates[0] },
         isNextPreloadCompatible: () => !!preloaded, isNextPreloadSnapshotCurrent: () => true,
         takeNextPreloadedRawData: () => ({ ab: preloaded, ...resolved, audioUrl: resolved.candidates[0] }),
+        takeNeteasePreload: async () => preloaded ? { ab: preloaded, ...resolved, audioUrl: resolved.candidates[0] } : null,
         prewarmNextNeteaseSongUrl() {}, prefetchUpcomingNeteaseDetails() {} };
     const auth = { neteaseCookie: '', authGeneration: 0, neteaseQuality: 'lossless' };
     const metadata = { updateMediaSession() {} };
@@ -133,7 +134,7 @@ function onlineFixture({ type = 'flac', header = async () => flacHeader(), prelo
         dom: { el: Object.fromEntries(['title', 'img', 'lyricBox'].map(key => [key, new FakeElement()])) },
         analysis: { resetLoopAnalysisWorkerAudio() {} }, loop: { resetLoopUI() {} }, covers: { setMainCover() {} },
         content: { setMainMusicEntityLinks() {} }, debug: { log(message) { logs.push(message); } },
-        lyrics: { resetTrackLyrics() {}, takePrefetchedLyric() {}, fetchLyricById() {}, setArtistTag(source, label) { tags.push(label); } },
+        lyrics: { resetTrackLyrics() {}, takePrefetchedLyric() {}, fetchLyricById: fetchLyrics, setArtistTag(source, label) { tags.push(label); } },
         resolver: { getNeteaseMatchStrategy() {}, resolveNeteaseAudioUrlWithTimeout: async () => resolved },
         transfer: { async fetchAudioHeader(url, request) { headerCalls++; return header(url, request); },
             fetchAudioDataWithFallback() { fullCalls++; throw new Error('Unexpected full download'); } }
@@ -161,6 +162,14 @@ test('FLAC labels update asynchronously without delaying playback or decoding a 
     assert.equal(f.metadata.currentAudioQuality, 'FLAC 96kHz/24bit');
     assert.equal(f.playback.audioBuffer, null); assert.equal(f.fullCalls, 0); assert.equal(f.headerCalls, 1);
     assert.deepEqual(f.errors, []);
+});
+
+test('an asynchronous lyric failure is reported without rejecting or restarting audio playback', async () => {
+    const f = onlineFixture({ type: 'mp3', fetchLyrics: async () => { throw new Error('synthetic async lyric fault'); } });
+    await f.start(); await tick();
+    assert.equal(f.starts, 1); assert.deepEqual(f.errors, []); assert.equal(f.fullCalls, 0);
+    assert.equal(f.logs.filter(message => message.includes('synthetic async lyric fault')).length, 1);
+    f.options.dispose();
 });
 
 test('existing prefetch memory supplies FLAC precision without any extra network request', async () => {

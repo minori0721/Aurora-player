@@ -2,6 +2,7 @@ import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
 import { parseMusicRoute, positiveMusicInteger } from './routes.js';
 import { normalizeMusicAlbum, normalizeMusicArtist, normalizeMusicSong } from './models.js';
 import { createMusicImages } from './images.js';
+import { createQueueFeedback } from './queue-feedback.js';
 
 export function isMusicStaticResponse(path, data) {
     const endpoint = new URL(path, 'https://music.invalid').pathname;
@@ -38,6 +39,10 @@ export function createContent({
         fallbackCover: MUSIC_FALLBACK_COVER,
         fallbackArtist: MUSIC_FALLBACK_ARTIST
     });
+    const queueFeedback = createQueueFeedback({
+        element: document.getElementById('music-queue-feedback'),
+        isActive: () => domService.neteasePanel.classList.contains('show')
+    });
 
     function observeMusicImages(root = domService.neteaseBrowserScroll) {
         musicImages.observe(root);
@@ -60,6 +65,27 @@ export function createContent({
     }
 
     const MUSIC_CONTEXT_MAX_ENTRIES = 24;
+    let playlistPreviewContext = null;
+
+    function storeMusicContext(id, context) {
+        browserService.musicBrowserState.contexts.delete(id);
+        browserService.musicBrowserState.contexts.set(id, context);
+        while (browserService.musicBrowserState.contexts.size > MUSIC_CONTEXT_MAX_ENTRIES) {
+            browserService.musicBrowserState.contexts.delete(browserService.musicBrowserState.contexts.keys().next().value);
+        }
+    }
+
+    function restorePlaylistPreviewContext() {
+        const retained = playlistPreviewContext;
+        if (!retained || !retained.container.contains(retained.firstRow)) return;
+        storeMusicContext(retained.id, retained.context);
+    }
+
+    function getMusicActionContext(id) {
+        const context = browserService.musicBrowserState.contexts.get(id);
+        if (!context) debugService.log('歌曲列表状态已失效，请返回列表或重新加载后重试', 'warn');
+        return context;
+    }
 
     function getMusicContextStableKey(meta = {}) {
         if (meta.contextKey) return String(meta.contextKey);
@@ -67,22 +93,18 @@ export function createContent({
         return [meta.sourceType, meta.sourceId || meta.title || '', meta.page || 0].join('|');
     }
 
-    function registerMusicContext(songs, meta = {}) {
-        const normalized = (songs || []).map(normalizeMusicSong).filter(song => song.id);
+    function registerMusicContext(songs, meta = {}, normalized = false) {
+        const entries = normalized ? songs : (songs || []).map(normalizeMusicSong).filter(song => song.id);
         const stableKey = getMusicContextStableKey(meta);
         const id = stableKey ? `music-context-${stableKey}` : `music-context-${++browserService.musicBrowserState.contextSeed}`;
-        browserService.musicBrowserState.contexts.delete(id);
-        browserService.musicBrowserState.contexts.set(id, { songs: normalized, meta });
-        while (browserService.musicBrowserState.contexts.size > MUSIC_CONTEXT_MAX_ENTRIES) {
-            browserService.musicBrowserState.contexts.delete(browserService.musicBrowserState.contexts.keys().next().value);
-        }
+        storeMusicContext(id, { songs: entries, meta });
         return id;
     }
 
     function renderMusicSongRows(songs, container, meta = {}, queueSongs = songs) {
         const normalizedRows = (songs || []).map(normalizeMusicSong).filter(song => song.id);
-        const contextId = registerMusicContext(queueSongs, meta);
-        const queue = browserService.musicBrowserState.contexts.get(contextId)?.songs || [];
+        const queue = queueSongs === songs ? normalizedRows : (queueSongs || []).map(normalizeMusicSong).filter(song => song.id);
+        const contextId = registerMusicContext(queue, meta, true);
         const queueIndexById = new Map();
         queue.forEach((song, index) => { if (!queueIndexById.has(song.id)) queueIndexById.set(song.id, index); });
         const fragment = document.createDocumentFragment();
@@ -143,9 +165,9 @@ export function createContent({
     }
 
     async function activateOnlineMusicContext(contextId, selectedIndex = 0, shuffle = false) {
-        const context = browserService.musicBrowserState.contexts.get(contextId);
+        const context = getMusicActionContext(contextId);
         if (!context?.songs?.length) return;
-        if (queueService.confirmReplaceQueue && !await queueService.confirmReplaceQueue()) return;
+        if (!await queueService.confirmReplaceQueue()) return;
         let songs = context.songs.slice();
         let index = Math.max(0, Math.min(songs.length - 1, Number(selectedIndex) || 0));
         if (shuffle) {
@@ -155,7 +177,7 @@ export function createContent({
             }
             index = 0;
         }
-        try { prefetchService.cancelNextPreload(); } catch (_) {}
+        prefetchService.cancelNextPreload();
         playbackService.beginPlaybackAction();
         queueService.playlist = songs.map(song => ({
             name: `${song.name} - ${song.artists.map(artist => artist.name).join(', ')}`,
@@ -178,21 +200,21 @@ export function createContent({
     }
 
     async function playSingleMusic(contextId, index) {
-        const context = browserService.musicBrowserState.contexts.get(contextId);
+        const context = getMusicActionContext(contextId);
         const song = context?.songs[index];
         if (!song) return;
         await queueService.playTemporaryNow(queueEntry(song, context.meta));
     }
 
     function addMusicToQueue(contextId, index = null, next = false) {
-        const context = browserService.musicBrowserState.contexts.get(contextId);
+        const context = getMusicActionContext(contextId);
         if (!context) return;
         const songs = index === null ? context.songs : [context.songs[index]].filter(Boolean);
+        if (!songs.length) return;
         queueService.enqueueTemporary(songs.map(song => queueEntry(song, context.meta)), next);
-        const message = `已${next ? '设为下一首' : '加入队列'}：${songs.length} 首`;
+        const message = songs.length === 1 ? (next ? '已设为下一首' : '已加入队列') : `已加入 ${songs.length} 首歌曲`;
         debugService.log(message, 'success');
-        const feedback = document.getElementById('music-queue-feedback');
-        if (feedback) feedback.textContent = message;
+        queueFeedback.show(message);
     }
 
     async function fetchMusicSearch(type, keyword, limit, offset, signal) {
@@ -336,7 +358,9 @@ export function createContent({
         const pageSongs = songs.slice(start, start + onlinePlaylistService.SONGS_PER_PAGE);
         musicImages.clear(container);
         container.innerHTML = '';
-        renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
+        const id = renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
+        const firstRow = container.querySelector('.netease-item');
+        playlistPreviewContext = firstRow ? { container, firstRow, id, context: browserService.musicBrowserState.contexts.get(id) } : null;
         renderMusicPagination(
             container,
             page + 1,
@@ -899,13 +923,16 @@ export function createContent({
         resumeMusicImages: () => musicImages.resume(),
         searchNeteaseSongs,
         renderSongList,
+        restorePlaylistPreviewContext,
         renderMusicAlbumPage,
         renderMusicArtistPage,
         setMainMusicEntityLinks,
         updateMusicMiniPlayer,
+        clearMusicQueueFeedback: queueFeedback.clear,
         initialize() {
             if (initialized) return;
             initialized = true;
+            queueFeedback.initialize();
             domService.neteasePanel.addEventListener('click', event => {
                 const artistLink = event.target.closest('[data-music-artist]');
                 if (artistLink) {

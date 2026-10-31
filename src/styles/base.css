@@ -61,7 +61,7 @@ body {
     box-shadow: inset 1px 1px 5px var(--glass-highlight), inset -1px -1px 5px var(--glass-shadow), 0 10px 20px rgba(0,0,0,0.1);
 }
 #download-btn-mobile svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
-.mobile-toolbar-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.toolbar-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* 通用面板样式 */
 .panel-float {
@@ -87,9 +87,13 @@ body {
 .vol-popup[hidden], .advanced-menu[hidden] { display: none !important; }
 
 /* 分析面板特别样式 */
-#analyze-panel { right: 350px; width: 300px; } /* 放在循环面板左边 */
+#analyze-panel { right: 350px; width: 300px; max-height: calc(100dvh - 100px); overflow-y: auto; } /* 放在循环面板左边 */
 #analyze-panel:not(.show) { transform: translateX(calc(100% + 370px)); } /* 确保能完全滑出屏幕 */
 .analyze-btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px; }
+.analysis-result-details { display: block; white-space: pre-line; overflow-wrap: anywhere; font-size: .75rem; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.analysis-result-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+.analysis-result-actions .glass-btn { min-width: 0; min-height: 44px; justify-content: center; padding: 6px; }
+.analysis-result-actions .glass-btn:disabled { opacity: .45; cursor: default; }
 .big-btn {
     width: 100%; justify-content: center;
     background: linear-gradient(135deg, var(--accent), #1a5276);
@@ -107,6 +111,7 @@ body {
     grid-template-columns: minmax(320px, 450px) minmax(0, 1fr);
     gap: clamp(30px, 5vw, 80px); position: relative; z-index: 10;
 }
+.player-stage { display: contents; }
 .left-panel { display: flex; flex-direction: column; justify-content: center; position: relative; }
 /* 针对横屏（桌面端）单独把封面往上偏移8px，移动端在下方媒体查询中会重置 */
 .cover-wrapper {
@@ -140,6 +145,7 @@ body {
 .progress-section { margin-top: 0; width: 100%; -webkit-user-select: none; user-select: none; }
 .time-display {
     font-size: 0.9rem; color: var(--text-sub); margin-bottom: 12px; font-weight: 500;
+    position: relative;
     display: grid; align-items: baseline; column-gap: 4px; row-gap: 2px;
     grid-template-columns: minmax(8ch, 1fr) minmax(0, 2fr) minmax(8ch, 1fr);
 }
@@ -147,7 +153,7 @@ body {
 #curr-time { grid-area: 1 / 1; justify-self: start; }
 #playback-engine { grid-area: 1 / 2; justify-self: stretch; }
 #total-time { grid-area: 1 / 3; justify-self: end; }
-#loop-status { grid-area: 2 / 1 / 3 / 4; justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#loop-status { position: absolute; right: 0; bottom: calc(100% + 2px); line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 .progress-bar-bg { width: 100%; height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; cursor: pointer; transition: height 0.2s; overflow: visible; touch-action: none;}
 .progress-bar-bg:hover { height: 12px; }
 .progress-line { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--text-main); border-radius: 4px; clip-path: inset(0 100% 0 0 round 4px); will-change: clip-path; }

@@ -169,7 +169,9 @@
                 </div>
             </div>
 
-            <div id="music-queue-feedback" class="music-queue-feedback" role="status" aria-live="polite"></div>
+            <div class="music-queue-feedback-anchor">
+                <div id="music-queue-feedback" class="music-queue-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+            </div>
             <div class="music-mini-player" id="music-mini-player">
                 <button class="music-mini-main" id="music-mini-main" aria-label="返回正在播放">
                     <img class="music-mini-cover" id="music-mini-cover" src="" alt="当前歌曲封面">
@@ -189,21 +191,40 @@
 
     <div class="top-bar">
         <div class="tool-group">
-            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件" aria-label="导入音乐文件"><svg class="mobile-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg><span>导入</span></button>
+            <button id="btn-import" class="glass-btn mobile-only" title="导入音乐文件" aria-label="导入音乐文件"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg><span>导入</span></button>
             <input type="file" id="file-input" multiple accept="audio/*,.lrc,.sli" style="display:none">
-            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板" aria-expanded="false"><span class="desktop-only" aria-hidden="true">☁️</span><svg class="mobile-toolbar-icon mobile-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg><span class="btn-text">云音乐</span></button>
+            <button id="toggle-netease-panel" class="glass-btn" title="搜索网易云音乐" aria-label="打开云音乐面板" aria-expanded="false"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg><span class="btn-text">云音乐</span></button>
             <!-- 移动端下载按钮，放在云音乐右侧 -->
             <button id="download-btn-mobile" class="glass-btn mobile-only" title="下载" aria-label="下载"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
-            <button id="toggle-netease" class="glass-btn desktop-only" title="自动从网易云搜索歌词" aria-label="云词开关" aria-pressed="false">📝 <span class="btn-text">云词</span></button>
+            <label class="glass-btn desktop-only toolbar-setting" title="本地歌曲自动匹配云词">
+                <span>云词</span>
+                <span class="settings-switch">
+                    <input id="cloud-lyrics-switch-desktop" type="checkbox" role="switch" aria-label="本地歌曲自动匹配云词">
+                    <span class="settings-switch-track" aria-hidden="true"></span>
+                </span>
+            </label>
             <div class="effect-select-control desktop-only">
                 <select id="effect-select" class="glass-btn desktop-only" aria-label="视觉特效">
-                    <option value="none">✨ 无特效</option>
-                    <option value="snow">❄️ 凛冬飞雪</option>
-                    <option value="bars">📊 律动频谱</option>
-                    <option value="waves">🌊 极光波浪</option>
+                    <option value="none">无特效</option>
+                    <option value="snow">凛冬飞雪</option>
+                    <option value="bars">律动频谱</option>
+                    <option value="waves">极光波浪</option>
                 </select>
+                <details class="effect-select-menu" id="effect-menu" hidden>
+                    <summary class="glass-btn" id="effect-menu-trigger" role="button" aria-expanded="false" aria-controls="effect-options" aria-label="视觉特效：无特效">
+                        <span class="effect-current-icon" id="effect-current-icon" aria-hidden="true"></span>
+                        <span id="effect-current-label">无特效</span>
+                        <svg class="toolbar-icon effect-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <div class="effect-options" id="effect-options" role="radiogroup" aria-label="视觉特效">
+                        <label class="effect-option"><input id="effect-option-none" type="radio" name="visual-effect" value="none" checked><svg id="effect-icon-none" class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg><span>无特效</span><span class="effect-option-check" aria-hidden="true">✓</span></label>
+                        <label class="effect-option"><input id="effect-option-snow" type="radio" name="visual-effect" value="snow"><svg id="effect-icon-snow" class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 20-1.25-2.5L6 18M10 4 8.75 6.5 6 6m8 14 1.25-2.5L18 18m-4-14 1.25 2.5L18 6m-1 15-3-6h-4m7-12-3 6 1.5 3M2 12h6.5L10 9m10 1-1.5 2 1.5 2M22 12h-6.5L14 15M4 10l1.5 2L4 14m3 7 3-6-1.5-3M7 3l3 6h4"/></svg><span>凛冬飞雪</span><span class="effect-option-check" aria-hidden="true">✓</span></label>
+                        <label class="effect-option"><input id="effect-option-bars" type="radio" name="visual-effect" value="bars"><svg id="effect-icon-bars" class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg><span>律动频谱</span><span class="effect-option-check" aria-hidden="true">✓</span></label>
+                        <label class="effect-option"><input id="effect-option-waves" type="radio" name="visual-effect" value="waves"><svg id="effect-icon-waves" class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12q2.5 2 5 0t5 0 5 0 5 0M2 19q2.5 2 5 0t5 0 5 0 5 0M2 5q2.5 2 5 0t5 0 5 0 5 0"/></svg><span>极光波浪</span><span class="effect-option-check" aria-hidden="true">✓</span></label>
+                    </div>
+                </details>
             </div>
-            <!-- Lucide Logs icon and mobile folder-open/cloud/list/settings icons (https://lucide.dev), ISC License.
+            <!-- Lucide Logs icon and toolbar folder-open/cloud/list/settings/search/repeat-2/sparkles/snowflake/audio-lines/waves-horizontal/chevron-down icons (https://lucide.dev), ISC License.
             Copyright (c) 2026 Lucide Icons and Contributors
             Permission to use, copy, modify, and/or distribute this software for any
             purpose with or without fee is hereby granted, provided that the above
@@ -221,12 +242,12 @@
             </button>
         </div>
         <div class="tool-group">
-            <button id="toggle-analyze" class="glass-btn desktop-only" aria-label="打开智能分析" aria-expanded="false">🔍 智能分析</button>
-            <button id="toggle-loop-panel" class="glass-btn desktop-only" aria-label="打开循环设定" aria-expanded="false">🔁 循环设定</button>
-            <button id="toggle-list" class="glass-btn" title="播放列表" aria-label="打开播放列表" aria-expanded="false"><span class="desktop-only" aria-hidden="true">📜</span><svg class="mobile-toolbar-icon mobile-only" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13"/></svg><span class="btn-text">列表</span></button>
+            <button id="toggle-analyze" class="glass-btn desktop-only" title="智能分析" aria-label="打开智能分析" aria-expanded="false"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span>智能分析</span></button>
+            <button id="toggle-loop-panel" class="glass-btn desktop-only" title="循环设定" aria-label="打开循环设定" aria-expanded="false"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m2 9 3-3 3 3M13 18H7a2 2 0 0 1-2-2V6m17 9-3 3-3-3M11 6h6a2 2 0 0 1 2 2v10"/></svg><span>循环设定</span></button>
+            <button id="toggle-list" class="glass-btn" title="播放列表" aria-label="打开播放列表" aria-expanded="false"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13"/></svg><span class="btn-text">列表</span></button>
             <!-- 移动端高级菜单 -->
             <div class="advanced-menu-container mobile-only">
-                <button id="toggle-advanced" class="glass-btn" title="高级菜单" aria-label="高级菜单"><svg class="mobile-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg><span>高级</span></button>
+                <button id="toggle-advanced" class="glass-btn" title="高级菜单" aria-label="高级菜单"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg><span>高级</span></button>
                 <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
                     <button class="advanced-menu-item" data-action="debug" aria-label="打开日志"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5h1M3 12h1M3 19h1M8 5h1M8 12h1M8 19h1M13 5h8M13 12h8M13 19h8"/></svg></span><span class="advanced-menu-text">Log</span></button>
                     <button class="advanced-menu-item" data-action="analyze"><span class="advanced-menu-icon" aria-hidden="true">🔍</span><span class="advanced-menu-text">智能分析</span></button>
@@ -286,8 +307,16 @@
         </div>
 
         <button class="glass-btn big-btn" id="ana-run" data-action="analyze" style="margin-top:10px;">✨ 开始精确匹配</button>
+        <div id="ana-result" hidden>
+            <output id="ana-details" class="analysis-result-details" aria-label="循环匹配结果"></output>
+            <div class="analysis-result-actions">
+                <button class="glass-btn" type="button" data-action="preview-analysis">试听接缝</button>
+                <button class="glass-btn" type="button" id="ana-apply" data-action="apply-analysis" disabled>应用</button>
+                <button class="glass-btn" type="button" id="ana-restore" data-action="restore-analysis" disabled>还原</button>
+            </div>
+        </div>
         <button class="glass-btn big-btn" data-action="export-sli" style="margin-top:8px; background:#27ae60;">💾 导出 .sli 文件</button>
-        <div id="ana-msg" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
+        <div id="ana-msg" role="status" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
     </div>
 
     <div class="loop-panel panel-float" id="loop-panel" hidden inert aria-hidden="true">
@@ -328,55 +357,62 @@
     </div>
 
     <div class="main-container">
-        <div class="left-panel">
-            <div class="cover-wrapper" id="cover-wrap">
-                <div class="default-disc"></div>
-                <div class="cover-images" id="cover-images"><img src="" class="album-img" id="album-img" crossorigin="anonymous" alt="专辑封面"></div>
-                <div class="loading-tip" id="loading-tip">Decoding Audio...</div>
-            </div>
-            <div class="progress-section">
-                <div class="time-display">
-                    <span id="curr-time">00:00</span>
-                    <output id="playback-engine" class="playback-engine" aria-live="polite"></output>
-                    <span id="loop-status" style="color:#e74c3c; display:none; font-weight:bold; font-size:0.8rem">∞ SEAMLESS</span>
-                    <span id="total-time">00:00</span>
+        <div class="player-stage">
+            <div class="left-panel">
+                <div class="cover-wrapper" id="cover-wrap">
+                    <div class="default-disc"></div>
+                    <div class="cover-images" id="cover-images"><img src="" class="album-img" id="album-img" crossorigin="anonymous" alt="专辑封面"></div>
+                    <div class="loading-tip" id="loading-tip">Decoding Audio...</div>
                 </div>
-                <div class="progress-bar-bg" id="prog-bg" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="buffer-line" id="buffer-line"></div>
-                    <div class="progress-line" id="prog-line"></div>
-                    <div class="loop-marker" id="marker-a" data-label="A"></div>
-                    <div class="loop-marker" id="marker-b" data-label="B"></div>
+                <div class="progress-section">
+                    <div class="time-display">
+                        <span id="curr-time">00:00</span>
+                        <output id="playback-engine" class="playback-engine" aria-live="polite"></output>
+                        <span id="loop-status" style="color:#e74c3c; display:none; font-weight:bold; font-size:0.8rem">∞ SEAMLESS</span>
+                        <span id="total-time">00:00</span>
+                    </div>
+                    <div class="progress-bar-bg" id="prog-bg" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div class="buffer-line" id="buffer-line"></div>
+                        <div class="progress-line" id="prog-line"></div>
+                        <div class="loop-marker" id="marker-a" data-label="A"></div>
+                        <div class="loop-marker" id="marker-b" data-label="B"></div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div class="right-panel">
-            <div class="track-header">
-                <div class="track-title" id="track-title">Aurora Player</div>
-                <div class="track-artist" id="track-artist">System Ready</div>
-            </div>
-            <div class="lyrics-area">
-                <div class="lyrics-box" id="lyrics-box" tabindex="0" role="region" aria-label="歌词" data-lyric-region>
-                    <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+            <div class="right-panel">
+                <div class="track-header">
+                    <div class="track-title" id="track-title">Aurora Player</div>
+                    <div class="track-artist" id="track-artist">System Ready</div>
                 </div>
-                <output class="lyric-browse-time" id="lyric-browse-time" aria-label="浏览位置" hidden></output>
-                <button class="lyric-return" id="lyric-return-current" type="button" aria-label="回到当前歌词" title="回到当前歌词" data-direction="here" hidden>
-                    <svg class="lyric-return-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                    <svg class="lyric-return-locate" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
-                    <span>回到当前</span>
-                </button>
-            </div>
-            <div class="controls-row">
-                <button class="btn" id="mode-btn" aria-label="播放模式：列表循环"><svg id="icon-list-loop" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><svg id="icon-random" style="display:none" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg><svg id="icon-single" style="display:none" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg></button>
-                <button class="btn" id="prev-btn" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
-                <button class="btn btn-play" id="play-btn" aria-label="播放"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-                <button class="btn" id="next-btn" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
-                <div class="vol-container">
-                    <div class="vol-popup" id="vol-popup" hidden inert aria-hidden="true"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
-                    <button class="btn" id="vol-btn" title="音量" aria-label="打开音量控制" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
+                <div class="lyrics-area">
+                    <div class="lyrics-box" id="lyrics-box" tabindex="0" role="region" aria-label="歌词" data-lyric-region>
+                        <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+                    </div>
+                    <output class="lyric-browse-time" id="lyric-browse-time" aria-label="浏览位置" hidden></output>
+                    <button class="lyric-return" id="lyric-return-current" type="button" aria-label="回到当前歌词" title="回到当前歌词" data-direction="here" hidden>
+                        <svg class="lyric-return-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                        <svg class="lyric-return-locate" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
+                        <span>回到当前</span>
+                    </button>
                 </div>
-                <button class="btn desktop-only" id="download-btn" title="下载" aria-label="下载" style="margin-left:8px"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
-                <button class="btn desktop-only" id="lyric-toggle-btn" title="切换歌词显示(原文/原+译)" style="margin-left:8px; opacity:0.45"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM4 12h16v2H4zM4 18h16v2H4z"/></svg></button>
+                <div class="controls-row">
+                    <button class="btn" id="mode-btn" aria-label="播放模式：列表循环"><svg id="icon-list-loop" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><svg id="icon-random" style="display:none" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg><svg id="icon-single" style="display:none" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg></button>
+                    <button class="btn" id="prev-btn" aria-label="上一首"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg></button>
+                    <button class="btn btn-play" id="play-btn" aria-label="播放"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+                    <button class="btn" id="next-btn" aria-label="下一首"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
+                    <div class="vol-container">
+                        <div class="vol-popup" id="vol-popup" hidden inert aria-hidden="true"><input type="range" class="vol-range" id="vol-range" min="0" max="1" step="0.01" value="1"></div>
+                        <button class="btn" id="vol-btn" title="音量" aria-label="打开音量控制" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
+                    </div>
+                    <button class="btn desktop-only" id="download-btn" title="下载" aria-label="下载" style="margin-left:8px"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+                    <button class="btn desktop-only lyric-mode-button" id="lyric-toggle-btn" type="button" title="暂无歌词" aria-label="暂无歌词" data-lyric-mode="original" disabled>
+                        <span class="lyric-mode-symbol" aria-hidden="true">
+                            <svg class="lyric-mode-icon" viewBox="0 0 24 24" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg>
+                            <span class="lyric-mode-mark"><span data-lyric-mark="original">词</span><span data-lyric-mark="both">译</span><span data-lyric-mark="roma">音</span></span>
+                        </span>
+                    </button>
+                </div>
             </div>
         </div>
         <footer class="project-footer" aria-label="项目版本与源码">

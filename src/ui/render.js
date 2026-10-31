@@ -120,7 +120,7 @@ export function createRender({
             lastBasicRenderAt = timestamp;
             updatePlaybackFrame();
         } else if (playbackService.playbackState.isPlaying && nextLyricDelay() === 0) {
-            try { lyricsService.refreshLyricHighlightAndCenter(); } catch(e) {}
+            lyricsService.refreshLyricHighlightAndCenter();
         }
         if (effectActive) renderVisuals();
         if (playbackService.playbackState.isPlaying || effectActive) scheduleRender();
@@ -136,7 +136,7 @@ export function createRender({
         }
         if(playbackService.playbackState.duration) {
             setPlaybackProgress(now / playbackService.playbackState.duration);
-            prefetchService.warmNextStreamIfNeeded?.(playbackService.playbackState.duration - now);
+            prefetchService.warmNextStreamIfNeeded(playbackService.playbackState.duration - now);
             const nextIdx = prefetchService.getLikelyNextPlaylistIndex();
             const nextTrack = nextIdx === null ? null : queueService.playlist[nextIdx];
             const triggerSec = nextTrack?.netease
@@ -147,11 +147,11 @@ export function createRender({
                 && (playbackService.playbackState.duration - now) <= triggerSec
                 && !prefetchService.hasPreloaded && !prefetchService.prefetchAttempted) {
                 prefetchService.prefetchAttempted = true; // 立即标记为已尝试，防止重复发起
-                try { prefetchService.prefetchNextSong(nextIdx); } catch(e) {}
+                void prefetchService.prefetchNextSong(nextIdx);
             }
         }
         // 刷新歌词高亮与居中（会做防抖判断）
-        try { lyricsService.refreshLyricHighlightAndCenter(); } catch(e) {}
+        lyricsService.refreshLyricHighlightAndCenter();
     }
 
     function updateTheme(img) {

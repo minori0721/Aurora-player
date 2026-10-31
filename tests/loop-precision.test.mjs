@@ -13,7 +13,7 @@ function fixture() {
     let position = 0, loop;
     const playback = {_currentPlayActionToken:1,audioBuffer:{duration:30},playbackState:{duration:30,isPlaying:false},
         getCurrentTime:() => position,getActiveCustomLoop:() => loop.loopState.active ? loop.loopState : null};
-    loop = createLoop({dom:{el},queue,playback,prefetch:{},debug:{log(){}},lyrics:{},playlistView:{refreshPlaylistItem(){}}});
+    loop = createLoop({dom:{el},queue,playback,prefetch:{prefetchUpcomingNeteaseDetails(){},prewarmNextNeteaseSongUrl(){}},debug:{log(){}},lyrics:{},playlistView:{refreshPlaylistItem(){}}});
     loop.initialize();
     const enable = checked => {el.loopEnable.checked=checked;el.loopEnable.dispatchEvent({type:'change',target:el.loopEnable});};
     const edit = (point,value) => {const field=point==='start'?el.loopStart:el.loopEnd;field.value=value;field.dispatchEvent({type:'input',target:field});};
@@ -67,4 +67,49 @@ test('SLI sample positions remain unchanged after a loop toggle', () => {
     f.enable(false);f.enable(true);
     assert.equal(Math.round(f.loop.loopState.start*44100),176418);
     assert.equal(Math.round(f.loop.loopState.end*44100),529239);
+});
+
+test('current-track loop configuration includes disabled precise/manual ranges but ignores stale inputs', () => {
+    const f = fixture();
+    assert.equal(f.loop.getLoopConfiguration(), null);
+    f.loop.applyLoop(start, end);
+    f.enable(false);
+    assert.deepEqual(f.loop.getLoopConfiguration(), { active: false, start, end, source: 'manual' });
+    f.queue.curIdx = 1; f.playback._currentPlayActionToken++; f.loop.resetLoopUI();
+    assert.equal(f.loop.getLoopConfiguration(), null);
+    f.edit('start', '2'); f.edit('end', '7');
+    assert.deepEqual(f.loop.getLoopConfiguration(), { active: false, start: 2, end: 7, source: 'manual' });
+});
+
+test('a valid current SLI is protected before activation and invalid SLI is not', () => {
+    const f = fixture(), track = f.queue.playlist[0];
+    track.sliStatus = 'valid'; track.sliData = { status: 'valid', toSamples: 44100, fromSamples: 441000 };
+    assert.deepEqual(f.loop.getLoopConfiguration(), { active: false, start: 1, end: 10, source: 'sli' });
+    track.sliData.fromSamples = 44100 * 40;
+    assert.equal(f.loop.getLoopConfiguration(), null);
+});
+
+test('restoring a loop keeps its source, activation and exact sample positions', () => {
+    const f = fixture();
+    f.loop.applyLoop(start, end, 'sli');
+    const original = f.loop.getLoopConfiguration();
+    f.loop.applyLoop(2, 8, 'analysis');
+    assert.equal(f.loop.restoreLoopConfiguration(original), true);
+    assert.deepEqual(f.loop.getLoopConfiguration(), original);
+    f.enable(false);
+    const disabled = f.loop.getLoopConfiguration();
+    f.loop.applyLoop(2, 8, 'analysis');
+    assert.equal(f.loop.restoreLoopConfiguration(disabled), true);
+    assert.deepEqual(f.loop.getLoopConfiguration(), disabled);
+    assert.equal(f.loop.loopState.active, false);
+    assert.equal(f.loop.restoreLoopConfiguration(null), true);
+    assert.equal(f.loop.getLoopConfiguration(), null);
+    assert.equal(f.el.loopStart.value, '0.000'); assert.equal(f.el.loopEnd.value, '0.000');
+});
+
+test('an invalid restoration cannot disable a valid current loop', () => {
+    const f = fixture(); f.loop.applyLoop(start, end);
+    const original = f.loop.getLoopConfiguration();
+    assert.equal(f.loop.restoreLoopConfiguration({ active: true, start: 5, end: 50 }), false);
+    assert.deepEqual(f.loop.getLoopConfiguration(), original);
 });

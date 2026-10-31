@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createPlaylistSync } from '../src/netease/playlist-sync.js';
 import { createPersistence } from '../src/storage/playlist.js';
 import { pickNewestPlaylistState } from '../src/storage/playlist-schema.js';
-import { createHost, FakeElement } from './helpers/host.mjs';
+import { createHost, FakeElement, withBaseQueue } from './helpers/host.mjs';
 import { createPlaylistView } from '../src/playlist/view.js';
 import { PlaybackPlan } from '../src/playlist/plan.js';
 
@@ -16,7 +16,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resol
 
 function fixture(ids = [1, 2, 3]) {
     const calls = [], events = [], changes = [];
-    const queue = { playlist: ids.map(entry), curIdx: Math.min(1, ids.length - 1) };
+    const queue = withBaseQueue({ playlist: ids.map(entry), curIdx: Math.min(1, ids.length - 1) });
     const auth = { authGeneration: 1, neteaseCookie: 'MUSIC_U=synthetic-only', accountAbortControllers: new Set() };
     const state = { handler: url => url.pathname === '/playlist/detail' ? reply(ids) : { code: 200, songs: [] }, visible: [] };
     const services = {
@@ -57,9 +57,10 @@ test('manual queue does not detach the source or let a base refresh replace acti
     Object.defineProperties(f.queue, {
         playlist: { get: () => model.items }, basePlaylist: { get: () => model.base },
         curIdx: { get: () => model.index, set: index => model.setIndex(index) },
-        baseCurIdx: { get: () => model.baseIndex }, isTemporary: { get: () => model.isTemporary }
+        baseCurIdx: { get: () => model.baseIndex }, isTemporary: { get: () => model.isTemporary },
+        baseStructureRevision: { get: () => model.baseStructureRevision }
     });
-    f.queue.reconcileBasePlaylist = index => model.reconcile(index);
+    f.queue.replaceBaseTracks = (tracks, index) => model.replaceBaseTracks(tracks, index);
     f.sync.remember(source, model.base);
     const manual = entry(90); model.playNow(manual); model.enqueue([entry(91)]);
     assert.equal(f.sync.getSource().id, source.id);
@@ -76,9 +77,10 @@ test('removing a base anchor during manual playback resumes at its surviving nex
     Object.defineProperties(f.queue, {
         playlist: { get: () => model.items }, basePlaylist: { get: () => model.base },
         curIdx: { get: () => model.index, set: index => model.setIndex(index) },
-        baseCurIdx: { get: () => model.baseIndex }, isTemporary: { get: () => model.isTemporary }
+        baseCurIdx: { get: () => model.baseIndex }, isTemporary: { get: () => model.isTemporary },
+        baseStructureRevision: { get: () => model.baseStructureRevision }
     });
-    f.queue.reconcileBasePlaylist = index => model.reconcile(index);
+    f.queue.replaceBaseTracks = (tracks, index) => model.replaceBaseTracks(tracks, index);
     model.playNow(entry(90)); f.playback.playbackState.status = 'playing';
     f.state.handler = () => reply([3, 2]);
     await f.sync.restore(source, model.base);
@@ -170,10 +172,22 @@ test('same cover metadata changes do not reload the image, changed cover updates
     }
 });
 
-test('source survives queue saves but detaches on manual array mutation', () => {
+test('source survives queue saves but detaches on a base structure mutation', () => {
     const f = fixture(); f.sync.remember(source);
     assert.equal(f.sync.getSource().id, source.id);
-    f.queue.playlist.reverse(); assert.equal(f.sync.getSource(), null);
+    f.queue.sortBaseTracks((a, b) => b.songId - a.songId); assert.equal(f.sync.getSource(), null);
+});
+
+test('reading a source repeatedly does not walk a large unchanged queue', () => {
+    const f = fixture(Array.from({ length: 10000 }, (_, index) => index + 1));
+    f.sync.remember(source);
+    let reads = 0;
+    const original = f.queue.playlist;
+    f.queue.playlist = new Proxy(original, { get(target, key) { if (/^\d+$/.test(String(key))) reads++; return Reflect.get(target, key); } });
+    // Bind once against the real public array; subsequent reads are constant-time.
+    f.sync.remember(source); reads = 0;
+    for (let i = 0; i < 1000; i++) assert.equal(f.sync.getSource().id, source.id);
+    assert.equal(reads, 0);
 });
 
 test('visible metadata selection respects the sidebar viewport, filtering and the 20-song cap', t => {
@@ -203,7 +217,7 @@ test('delayed response cannot overwrite a new queue, in-place edits, or changed 
         f.state.handler = () => new Promise(resolve => { release = resolve; });
         const promise = f.sync.restore(source, f.queue.playlist);
         if (change === 'queue') f.queue.playlist = [entry(90)];
-        if (change === 'edit') f.queue.playlist.reverse();
+        if (change === 'edit') f.queue.sortBaseTracks((a, b) => b.songId - a.songId);
         if (change === 'generation') f.auth.authGeneration++;
         if (change === 'cookie') f.auth.neteaseCookie = '';
         if (change === 'abort') for (const controller of f.auth.accountAbortControllers) controller.abort();
@@ -244,7 +258,7 @@ test('freshness and empty linked snapshots survive normalization without revivin
 });
 
 test('persistence restores immediately, hands source to background sync, and saves it again', async t => {
-    const host = createHost().host, selected = song(2), queue = { playlist: [], curIdx: -1 };
+    const host = createHost().host, selected = song(2), queue = withBaseQueue({ playlist: [], curIdx: -1 });
     const saved = { schema: 3, revision: 1, savedAt: 1, listId: 'restore', selectedIndex: 0, source,
         tracks: [{ type: 'netease', id: 2, title: selected.name, displayName: 'Song 2 - Artist', durationMs: 120000,
             artists: selected.ar, album: selected.al, detailCheckedAt: 123 }] };

@@ -191,7 +191,8 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===============
 
 Location: selected inline SVGs in src/index.html
-Icons: logs, folder-open, cloud, list and settings
+Icons: logs, folder-open, cloud, list, settings, search, repeat-2, sparkles,
+snowflake, audio-lines, waves-horizontal, chevron-down and captions
 Source: https://github.com/lucide-icons/lucide
 License reference: https://github.com/lucide-icons/lucide/blob/1802f33f6c270395fcd981067f22719140e2ffbc/LICENSE
 License: ISC

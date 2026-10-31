@@ -115,10 +115,6 @@ const STYLE_PROPERTIES = ['fontFamily', 'fontSize', 'fontStyle', 'fontStretch', 
     'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle'];
 
 export function createLyricWrapping(content, { environment = window, document: doc = document } = {}) {
-    // Layout is an optional enhancement; a host without DOM measurement keeps native wrapping.
-    if (typeof content?.cloneNode !== 'function' || typeof environment.getComputedStyle !== 'function') {
-        return { refresh() {}, reset() {}, invalidate() {}, layout() { return false; } };
-    }
     let records = [], fingerprint = '', lineOrder = new WeakMap();
     const processed = new Set(), cache = new Map();
 

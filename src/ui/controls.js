@@ -1,5 +1,6 @@
 import { fmtTime } from '../shared/text.js';
 import { createToolbarVisibility } from './toolbar-visibility.js';
+import { createEffectsMenu } from './effects-menu.js';
 
 export function createControls({
     analysis: analysisService,
@@ -78,10 +79,11 @@ export function createControls({
         initialize() {
             if (initialized) return;
             initialized = true;
+            createEffectsMenu({ select: domService.el.effectSel }).initialize();
             const toolbar = document.querySelector('.top-bar');
             if (toolbar) toolbarVisibility = createToolbarVisibility({ toolbar,
                 readStatus: () => playbackService.playbackState.status,
-                isBlocked: () => isDraggingProgress || !!document.querySelector('.panel-float.show, .playlist-sidebar.show, .advanced-menu.show, .netease-panel.show, .download-modal.show, dialog[open]')
+                isBlocked: () => isDraggingProgress || !!document.querySelector('.panel-float.show, .playlist-sidebar.show, .advanced-menu.show, .netease-panel.show, .download-modal.show, dialog[open], .effect-select-menu[open]')
                     || document.getElementById('debug-console')?.style.display === 'block'
             });
             domService.el.playBtn.onclick = playbackService.togglePlayback;
@@ -185,17 +187,14 @@ export function createControls({
                 debugService.scheduleDebugScroll();
             };
 
-            domService.neteaseBtn.onclick = () => {
-                lyricsService.neteaseSearchEnabled = !lyricsService.neteaseSearchEnabled;
-                debugService.log(`网易云歌词搜索：${lyricsService.neteaseSearchEnabled ? '已开启' : '已关闭'}`);
-            };
-            domService.cloudLyricsSwitch?.addEventListener('change', event => {
+            for (const input of domService.cloudLyricsSwitches || []) input.addEventListener('change', event => {
                 lyricsService.neteaseSearchEnabled = event.target.checked;
                 debugService.log(`网易云歌词搜索：${lyricsService.neteaseSearchEnabled ? '已开启' : '已关闭'}`);
             });
             for (const input of domService.lyricModeInputs || []) input.addEventListener('change', () => {
                 if (input.checked) lyricsService.setLyricDisplayMode(input.value);
             });
+            domService.lyricToggleBtn?.addEventListener('click', () => lyricsService.cycleLyricDisplayMode());
 
             if (domService.advancedBtn && domService.advancedMenu) {
                 domService.advancedBtn.addEventListener('click', function(e) {

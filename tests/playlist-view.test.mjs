@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlaylistView } from '../src/playlist/view.js';
-import { createHost } from './helpers/host.mjs';
+import { createHost, withBaseQueue } from './helpers/host.mjs';
 import { PlaybackPlan } from '../src/playlist/plan.js';
 
 function fixture(t, count) {
@@ -13,8 +13,8 @@ function fixture(t, count) {
     const setProperty = container.style.setProperty.bind(container.style);
     container.style.setProperty = (name, value) => { writes.push([name, value]); setProperty(name, value); };
     const track = index => ({ name: `Track ${index + 1}`, netease: true });
-    const queue = { playlist: Array.from({ length: count }, (_, index) => track(index)), curIdx: -1,
-        playTrackFromPlaylist: index => plays.push(index) };
+    const queue = withBaseQueue({ playlist: Array.from({ length: count }, (_, index) => track(index)), curIdx: -1,
+        playTrackFromPlaylist: index => plays.push(index), indexOfTrack(track) { return this.playlist.indexOf(track); } });
     const view = createPlaylistView({
         dom: { el: { plSidebar: elements.get('root'), plContainer: container,
             plTemporary: elements.get('temporary'), plTemporaryContainer: elements.get('manual-rows'),

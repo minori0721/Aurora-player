@@ -55,18 +55,12 @@ export function createMetadata({
     // 等待计算的音质信息（MP3等）
     let currentAudioQuality = '';
 
-    let initialized = false;
     return {
         updateMediaSession,
         applyMetadata,
         get pendingQualityInfo() { return pendingQualityInfo; },
         set pendingQualityInfo(value) { pendingQualityInfo = value; },
         get currentAudioQuality() { return currentAudioQuality; },
-        set currentAudioQuality(value) { currentAudioQuality = value; },
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        set currentAudioQuality(value) { currentAudioQuality = value; }
     };
 }

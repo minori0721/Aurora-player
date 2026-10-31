@@ -10,6 +10,9 @@ export function installPort(target, service) {
 }
 
 export function sealPorts(ports) {
-    for (const service of Object.values(ports)) Object.freeze(service);
+    for (const [name, service] of Object.entries(ports)) {
+        if (!Reflect.ownKeys(service).length) throw new Error(`Service not installed: ${name}`);
+        Object.freeze(service);
+    }
     return Object.freeze(ports);
 }

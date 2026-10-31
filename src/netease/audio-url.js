@@ -280,18 +280,12 @@ export function createResolver({
             resolveNeteaseAudioUrl(songId, cookieParam, level, { ...options, signal }, ttl, strategy));
     }
 
-    let initialized = false;
     return {
         isNeteaseTrialOnly,
         getNeteaseMatchStrategy,
         clearNeteaseResolvedAudioCache,
         invalidateNeteaseResolvedAudioCache,
         fetchNeteaseMatchAudio,
-        resolveNeteaseAudioUrlWithTimeout,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        resolveNeteaseAudioUrlWithTimeout
     };
 }

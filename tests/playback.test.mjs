@@ -1,7 +1,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlayback } from '../src/audio/playback.js';
-import { FakeAudioContext, FakeElement } from './helpers/host.mjs';
+import { FakeAudioContext, FakeElement, withBaseQueue } from './helpers/host.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 beforeEach(() => {
@@ -12,18 +12,69 @@ beforeEach(() => {
 
 function fixture() {
     const el = Object.fromEntries(['coverWrap', 'loadTip', 'playBtn', 'currTime', 'totalTime', 'bufferLine'].map(name => [name, new FakeElement()]));
-    const queue = { playlist: [{ name: 'first' }, { name: 'second' }], curIdx: 0, playMode: 0, playlistPendingAdvance: false, handleNext() {} };
+    const queue = withBaseQueue({ playlist: [{ name: 'first' }, { name: 'second' }], curIdx: 0, playMode: 0, playlistPendingAdvance: false, handleNext() {} });
     const loop = { loopState: { active: false } };
     const player = createPlayback({
         dom: { el }, queue, loop, download: {},
         analysis: { cancelPreviewTimer() {}, cancelLoopAnalysisRun() {} },
-        controls: { cancelProgressDrag() {} }, lyrics: { cancelLocalLyricSession() {} },
+        controls: { cancelProgressDrag() {}, syncToolbarVisibility() {} }, lyrics: { cancelLocalLyricSession() {}, syncWordLyricPlayback() {} },
         content: { updateMusicMiniPlayer() {} }, onlinePlaylist: { currentPlaylistData: null },
         debug: { log() {} }, render: { scheduleRender() {}, setPlaybackProgress() {} }
     });
     player.initialize();
     return { player, queue, loop, audio: FakeAudioContext.instances.at(-1) };
 }
+
+test('invalid internal playback status rejects without rewriting the current state', () => {
+    const { player } = fixture();
+    player.setPlaybackStatus('paused');
+    assert.throws(() => player.setPlaybackStatus('playng'), /Invalid playback status/);
+    assert.equal(player.playbackState.status, 'paused');
+});
+
+test('temporary audition uses the same PCM but its own loop clock, and normal playback restores the configured loop', () => {
+    const { player, audio, loop } = fixture();
+    player.audioBuffer = audio.decoded; player.playbackState.duration = audio.decoded.duration;
+    loop.loopState = { active: true, start: 2, end: 8 };
+    const decoded = player.audioBuffer;
+    assert.equal(player.startLoopPreview(4, 12), true);
+    assert.equal(player.sourceNode.loopStart, 4); assert.equal(player.sourceNode.loopEnd, 12);
+    assert.equal(player.sourceNode.buffer, decoded);
+    audio.currentTime = 3;
+    assert.equal(player.getCurrentTime(), 5.5);
+    assert.deepEqual(loop.loopState, { active: true, start: 2, end: 8 });
+    player.cancelLoopPreview();
+    assert.equal(player.sourceNode.loopStart, 2); assert.equal(player.sourceNode.loopEnd, 8);
+    assert.equal(player.getCurrentTime(), 5.5);
+    assert.equal(player.audioBuffer, decoded); assert.equal(audio.decodeCalls.length, 0);
+});
+
+test('invalid auditions retain the current source and pause discards the temporary loop', () => {
+    const { player, audio, loop } = fixture();
+    player.audioBuffer = audio.decoded; player.playbackState.duration = audio.decoded.duration;
+    player.startAudio(2); const original = player.sourceNode;
+    for (const range of [[NaN, 12], [-1, 12], [12, 4], [1, audio.decoded.duration + 1]]) {
+        assert.equal(player.startLoopPreview(...range), false);
+        assert.equal(player.sourceNode, original);
+    }
+    player.startLoopPreview(4, 12);
+    player.playbackState.pauseTime = player.getCurrentTime(); player.stopAudio('paused');
+    assert.equal(player.getActiveCustomLoop(), null);
+    player.startAudio(player.playbackState.pauseTime);
+    assert.equal(player.sourceNode.loop, false); assert.equal(loop.loopState.active, false);
+});
+
+test('an interrupted audition pauses without advancing the queue or restarting the permanent loop', () => {
+    const { player, audio, loop, queue } = fixture();
+    player.audioBuffer = audio.decoded; player.playbackState.duration = audio.decoded.duration;
+    loop.loopState = { active: true, start: 2, end: 8 };
+    let advanced = 0; queue.handleNext = () => { advanced++; };
+    player.startLoopPreview(4, 12); const source = player.sourceNode, count = audio.sources.length;
+    source.onended();
+    assert.equal(player.playbackState.status, 'paused');
+    assert.equal(audio.sources.length, count); assert.equal(advanced, 0);
+    assert.equal(player.getActiveCustomLoop().start, 2);
+});
 
 test('pause during loading retains download and compressed data until resume', async () => {
     const { player, audio } = fixture();

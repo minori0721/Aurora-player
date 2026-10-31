@@ -33,7 +33,8 @@ function prefetchFixture(size = 1024, lyrics) {
     globalThis.matchMedia = () => ({ matches: false });
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
     const auth = { neteaseQuality: 'exhigh', neteaseCookie: '', authGeneration: 1 };
-    const queue = { playlist: [{ name: 'current' }, { netease: true, songId: 2, name: 'next', songData: { id: 2, size } }], curIdx: 0, playMode: 0 };
+    const queue = { playlist: [{ name: 'current' }, { netease: true, songId: 2, name: 'next', songData: { id: 2, size } }], curIdx: 0, playMode: 0,
+        getNextPlaylistIndex: () => 1, indexOfTrack(track) { return this.playlist.indexOf(track); } };
     const calls = { urls: 0, bodies: 0, invalidations: 0 };
     const resolved = { audioInfo: { url: 'https://cdn.test/a', size }, audioUrl: 'https://cdn.test/a', candidates: ['https://cdn.test/a'] };
     const resolver = {
@@ -46,7 +47,8 @@ function prefetchFixture(size = 1024, lyrics) {
         fetchAudioDataWithFallback: async () => { calls.bodies++; return { buffer: new ArrayBuffer(8), byteLength: 8, audioUrl: 'https://cdn.test/a' }; }
     };
     const playback = { getActiveCustomLoop: () => null, playbackState: { isPlaying: true } };
-    const prefetch = createPrefetch({ auth, queue, resolver, playback, lyrics, transfer: transfers, debug: { log() {} } });
+    const prefetch = createPrefetch({ auth, queue, resolver, playback, lyrics: lyrics || { prefetchLyricById() {}, cancelLyricPrefetch() {} },
+        songDetails: { cancelPrefetch() {}, reset() {}, refresh() {} }, transfer: transfers, debug: { log() {} } });
     return { prefetch, auth, queue, calls, resolver, transfers, resolved, playback };
 }
 
@@ -138,4 +140,57 @@ test('an expired URL refreshes once; an account change prevents late preload ado
     assert.equal(late.prefetch.hasPreloaded, false);
     assert.equal(late.prefetch.nextSongRawData, null);
     late.prefetch.cancelNextPreload();
+});
+
+test('playback takes an in-flight preload once, without another resolution or body request', async () => {
+    const f = prefetchFixture(); let finish;
+    f.transfers.fetchAudioDataWithFallback = () => { f.calls.bodies++; return new Promise(resolve => { finish = resolve; }); };
+    await f.prefetch.prefetchNextSong(1); await tick();
+    const taking = f.prefetch.takeNeteasePreload(2);
+    const buffer = new ArrayBuffer(8);
+    finish({ buffer, byteLength: 8, audioUrl: 'https://cdn.test/a' });
+    const result = await taking;
+    assert.equal(result.ab, buffer); assert.equal(f.calls.urls, 1); assert.equal(f.calls.bodies, 1);
+    assert.equal(f.prefetch.nextSongRawData, null);
+    assert.equal(await f.prefetch.takeNeteasePreload(2), null);
+    assert.equal(Object.getOwnPropertyDescriptor(f.prefetch, 'hasPreloaded').set, undefined);
+});
+
+test('preload cancellation invalidates state before synchronous cleanup and repeated cancel is safe', async () => {
+    const f = prefetchFixture(); let finish, observed = false;
+    f.transfers.fetchAudioDataWithFallback = (urls, { signal }) => new Promise(resolve => {
+        finish = resolve;
+        signal.addEventListener('abort', () => {
+            observed = true;
+            assert.equal(f.prefetch.nextPreloadKind, 'none');
+            assert.equal(f.prefetch.nextSongRawData, null);
+            assert.equal(f.prefetch.nextSongFetchPromise, null);
+        }, { once: true });
+    });
+    await f.prefetch.prefetchNextSong(1); await tick();
+    const task = f.prefetch.nextSongFetchPromise;
+    f.prefetch.cancelNextPreload();
+    assert.equal(observed, true);
+    const descriptor = Object.getOwnPropertyDescriptor(f.prefetch, 'nextPreloadStatus');
+    assert.equal(descriptor.set, undefined);
+    f.prefetch.cancelNextPreload();
+    assert.equal(f.prefetch.nextPreloadKind, 'none');
+    assert.equal(f.prefetch.nextSongRawData, null);
+    finish({ buffer: new ArrayBuffer(8), byteLength: 8 });
+    await assert.rejects(task, error => error.stale);
+});
+
+test('cancelling an acquiring consumer cannot publish a late preload to another account', async () => {
+    const f = prefetchFixture(); let finish;
+    f.transfers.fetchAudioDataWithFallback = () => new Promise(resolve => { finish = resolve; });
+    await f.prefetch.prefetchNextSong(1); await tick();
+    const controller = new AbortController();
+    const taking = f.prefetch.takeNeteasePreload(2, { signal: controller.signal });
+    controller.abort(); await assert.rejects(taking, { name: 'AbortError' });
+    f.auth.authGeneration++;
+    const task = f.prefetch.nextSongFetchPromise;
+    finish({ buffer: new ArrayBuffer(8), byteLength: 8 });
+    await assert.rejects(task, error => error.stale);
+    await tick(); assert.equal(f.prefetch.hasPreloaded, false);
+    f.prefetch.cancelNextPreload();
 });

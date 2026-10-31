@@ -252,7 +252,6 @@ export function createTransfer({} = {}) {
         });
     }
 
-    let initialized = false;
     return {
         get NETEASE_URL_TIMEOUT_MS() { return NETEASE_URL_TIMEOUT_MS; },
         awaitWithSignal,
@@ -261,11 +260,6 @@ export function createTransfer({} = {}) {
         fetchAudioHeader,
         createAbortError,
         abortableDelay,
-        fetchJsonWithStageTimeout,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        fetchJsonWithStageTimeout
     };
 }

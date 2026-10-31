@@ -1,5 +1,6 @@
 import { findBestMatchByMode, getLoopMatchModeLabel, releaseAnalysisBuffer } from './algorithms.js';
 import { createLoopAnalysisInput, describeLoopAnalysisInput } from './input.js';
+import { formatSliLoop } from '../playlist/sli.js';
 import { LOOP_WORKER_SOURCE } from 'aurora:loop-worker';
 
 export function createAnalysis({
@@ -34,14 +35,85 @@ export function createAnalysis({
     let analysisInputRevision = 0;
 
     let previewStopTimer = null;
+    let previewSession = null, analysisResult = null, previewRevision = 0;
 
     function cancelPreviewTimer() {
+        previewRevision++;
         if (previewStopTimer) clearTimeout(previewStopTimer);
         previewStopTimer = null;
+        const session = previewSession;
+        previewSession = null;
+        if (session && playbackService.isPlaybackActionCurrent(session.token)
+            && playbackService.transportVersion === session.version) playbackService.cancelLoopPreview();
+    }
+
+    function clearAnalysisResult() {
+        analysisResult = null;
+        domService.el.anaResult.hidden = true;
+        domService.el.anaDetails.textContent = '';
+        domService.el.anaApply.disabled = domService.el.anaRestore.disabled = true;
+    }
+
+    const configurationKey = value => value ? JSON.stringify([value.active, value.start, value.end, value.source]) : '';
+
+    function currentAnalysisResult() {
+        const result = analysisResult;
+        if (result && playbackService.isPlaybackActionCurrent(result.token)
+            && (queueService.playlist[queueService.curIdx] || null) === result.track
+            && playbackService.audioBuffer === result.buffer && analysisInputRevision === result.revision
+            && parseFloat(domService.el.anaStart.value) === result.roughA && parseFloat(domService.el.anaEnd.value) === result.roughB
+            && (domService.el.anaMode?.value || 'balanced') === result.mode
+            && loopService.getLoopEditVersion(result.track) === result.loopVersion
+            && configurationKey(loopService.getLoopConfiguration()) === result.loopKey) return result;
+        clearAnalysisResult();
+        return null;
+    }
+
+    function updateResultActions() {
+        domService.el.anaResult.hidden = false;
+        domService.el.anaApply.disabled = analysisResult.applied;
+        domService.el.anaRestore.disabled = !analysisResult.applied;
+    }
+
+    function refreshResultLoopIdentity(result) {
+        result.loopVersion = loopService.getLoopEditVersion(result.track);
+        result.loopKey = configurationKey(loopService.getLoopConfiguration());
+    }
+
+    function applyAnalysisResult(automatic = false) {
+        const result = currentAnalysisResult();
+        if (!result || result.applied) return false;
+        cancelPreviewTimer();
+        const previous = loopService.getLoopConfiguration();
+        if (!loopService.applyLoop(result.start, result.end, 'analysis')) {
+            clearAnalysisResult();
+            domService.el.anaMsg.textContent = '候选未能应用，请重新分析';
+            return false;
+        }
+        result.previous = previous;
+        result.applied = true;
+        refreshResultLoopIdentity(result);
+        updateResultActions();
+        domService.el.anaMsg.textContent = `${automatic ? '已自动应用' : '已应用'}候选 · 匹配评分 ${result.confidence.toFixed(1)}/100${result.tookText}${result.confidence < 80 ? '，建议试听' : ''}`;
+        return true;
+    }
+
+    function restoreAnalysisResult() {
+        const result = currentAnalysisResult();
+        if (!result?.applied) return false;
+        cancelPreviewTimer();
+        if (!loopService.restoreLoopConfiguration(result.previous)) return false;
+        result.applied = false;
+        refreshResultLoopIdentity(result);
+        updateResultActions();
+        domService.el.anaMsg.textContent = result.previous ? '已还原原循环设置' : '已取消此次循环';
+        return true;
     }
 
     // --- 核心：自动循环匹配算法 (周期搜索 + 联合接缝精修) ---
     function cancelLoopAnalysisRun() {
+        clearAnalysisResult();
+        domService.el.anaMsg.textContent = '';
         const run = loopAnalysisRun;
         if (!run) return;
         loopAnalysisRun = null;
@@ -54,12 +126,13 @@ export function createAnalysis({
 
     function invalidateAnalysisInput() {
         analysisInputRevision++;
+        cancelPreviewTimer();
         cancelLoopAnalysisRun();
     }
 
     async function runAnalysis() {
         if (domService.el.anaRun?.disabled) return;
-        if (!playbackService.audioBuffer && !playbackService.isStreaming) { domService.el.anaMsg.textContent = "Please load audio first!"; return; }
+        if (!playbackService.audioBuffer && !playbackService.isStreaming) { domService.el.anaMsg.textContent = '请先加载音频'; return; }
 
         const roughA = parseFloat(domService.el.anaStart.value);
         const roughB = parseFloat(domService.el.anaEnd.value);
@@ -67,9 +140,12 @@ export function createAnalysis({
             domService.el.anaMsg.textContent = "请输入有效的 A/B 时间，区间至少 0.25 秒"; return;
         }
 
+        cancelPreviewTimer();
+        clearAnalysisResult();
+
         const mode = domService.el.anaMode?.value || 'balanced';
         const modeLabel = getLoopMatchModeLabel(mode);
-        domService.el.anaMsg.textContent = `Analyzing... (${modeLabel})`;
+        domService.el.anaMsg.textContent = `正在分析… (${modeLabel})`;
         domService.el.anaMsg.style.color = "var(--accent)";
         const runButtonText = domService.el.anaRun?.textContent;
         if (domService.el.anaRun) {
@@ -83,6 +159,8 @@ export function createAnalysis({
         const inputRevision = analysisInputRevision;
         const track = queueService.playlist[queueService.curIdx] || null;
         const loopEditVersion = loopService.getLoopEditVersion(track);
+        const previousConfiguration = loopService.getLoopConfiguration();
+        const previousKey = configurationKey(previousConfiguration);
         const run = { buttonText: runButtonText || "✨ 开始精确匹配", cancelWait: null, applied: false };
         loopAnalysisRun = run;
         const isCurrent = () => loopAnalysisRun === run && playbackService.isPlaybackActionCurrent(playToken)
@@ -90,6 +168,7 @@ export function createAnalysis({
             && parseFloat(domService.el.anaStart.value) === roughA && parseFloat(domService.el.anaEnd.value) === roughB
             && (domService.el.anaMode?.value || 'balanced') === mode
             && (run.applied || loopService.getLoopEditVersion(track) === loopEditVersion)
+            && (run.applied || configurationKey(loopService.getLoopConfiguration()) === previousKey)
             && (!sourceBuffer || sourceBuffer === playbackService.audioBuffer && expectedAudioId === getLoopAnalysisAudioId(playbackService.audioBuffer));
 
         try {
@@ -118,18 +197,20 @@ export function createAnalysis({
                 : Math.max(0, (1 - result.diff) * 100);
             const tookText = result.elapsedMs ? ` / ${result.elapsedMs.toFixed(0)}ms` : "";
 
-            if (confidence >= 80) {
-                loopService.applyLoop(result.start, result.end);
-                run.applied = true;
-                domService.el.anaMsg.textContent = `✨ 找到了! [${modeLabel}] (匹配评分: ${confidence.toFixed(1)}/100${tookText})`;
-                domService.el.anaMsg.style.color = "#27ae60";
-                debugService.log(`循环匹配成功 [${modeLabel}]：${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s，评分 ${confidence.toFixed(1)}/100${tookText}`, 'success');
-            } else if (confidence >= 30) {
-                loopService.applyLoop(result.start, result.end);
-                run.applied = true;
-                domService.el.anaMsg.textContent = `⚠️ 已给出候选 [${modeLabel}] (匹配评分: ${confidence.toFixed(1)}/100${tookText})，建议先试听。`;
-                domService.el.anaMsg.style.color = "#f39c12";
-                debugService.log(`循环候选 [${modeLabel}]：${result.start.toFixed(4)}s -> ${result.end.toFixed(4)}s，评分 ${confidence.toFixed(1)}/100${tookText}`, 'warn');
+            if (confidence >= 30) {
+                if (!Number.isFinite(result.start) || !Number.isFinite(result.end) || result.start < 0
+                    || result.end <= result.start || result.end > sourceBuffer.duration) throw new Error('分析返回了无效区间');
+                analysisResult = { start: result.start, end: result.end, confidence, tookText, token: playToken, track, buffer: sourceBuffer,
+                    revision: inputRevision, roughA, roughB, mode, loopVersion: loopEditVersion, loopKey: previousKey, applied: false };
+                const signed = value => `${value >= 0 ? '+' : ''}${value.toFixed(5)}s`;
+                const period = result.end - result.start, roughPeriod = roughB - roughA;
+                domService.el.anaDetails.textContent = `A ${result.start.toFixed(5)}s (${signed(result.start - roughA)})\nB ${result.end.toFixed(5)}s (${signed(result.end - roughB)})\n周期 ${roughPeriod.toFixed(5)}s → ${period.toFixed(5)}s (${signed(period - roughPeriod)})`
+                    + (previousConfiguration ? `\n原循环周期 ${(previousConfiguration.end - previousConfiguration.start).toFixed(5)}s` : '');
+                updateResultActions();
+                domService.el.anaMsg.style.color = confidence >= 80 ? '#27ae60' : '#b06b00';
+                domService.el.anaMsg.textContent = `已生成候选 [${modeLabel}] · 匹配评分 ${confidence.toFixed(1)}/100${tookText}，原循环保持不变`;
+                if (!previousConfiguration) run.applied = applyAnalysisResult(true);
+                debugService.log(`循环候选 [${modeLabel}]：${result.start.toFixed(5)}s -> ${result.end.toFixed(5)}s，评分 ${confidence.toFixed(1)}/100${tookText}，${run.applied ? '已自动应用' : '等待确认'}`, confidence >= 80 ? 'success' : 'warn');
             } else {
                 domService.el.anaMsg.textContent = `❌ 没有可靠接缝 [${modeLabel}] (最高评分: ${confidence.toFixed(1)}/100${tookText})，请把 A/B 粗点靠近重复段。`;
                 domService.el.anaMsg.style.color = "#e74c3c";
@@ -137,7 +218,7 @@ export function createAnalysis({
             }
         } catch (e) {
             if (!isCurrent() || e?.cancelled) return;
-            domService.el.anaMsg.textContent = "Error: " + e.message;
+            domService.el.anaMsg.textContent = '分析失败：' + e.message;
             console.error(e);
         } finally {
             if (loopAnalysisRun === run && domService.el.anaRun) {
@@ -308,6 +389,31 @@ export function createAnalysis({
         else domService.el.anaEnd.value = t.toFixed(3);
     }
 
+    function armPreviewStop(durationMs) {
+        const token = playbackService._currentPlayActionToken, source = playbackService.sourceNode;
+        const track = queueService.playlist[queueService.curIdx], version = playbackService.transportVersion;
+        const session = { token, version };
+        previewSession = session;
+        previewStopTimer = setTimeout(() => {
+            if (previewSession !== session) return;
+            previewStopTimer = null;
+            previewSession = null;
+            if (!playbackService.isPlaybackActionCurrent(token) || queueService.playlist[queueService.curIdx] !== track
+                || playbackService.sourceNode !== source || playbackService.transportVersion !== version) return;
+            playbackService.playbackState.pauseTime = playbackService.getCurrentTime();
+            playbackService.stopAudio('paused');
+        }, durationMs);
+    }
+
+    function previewAnalysisResult() {
+        const result = currentAnalysisResult();
+        if (!result) return false;
+        cancelPreviewTimer();
+        if (!playbackService.startLoopPreview(result.start, result.end)) return false;
+        armPreviewStop(6000);
+        return true;
+    }
+
     // 辅助：试听
     async function previewPoint(type) {
         const t = parseFloat(type==='a' ? domService.el.anaStart.value : domService.el.anaEnd.value);
@@ -318,30 +424,23 @@ export function createAnalysis({
             return;
         }
         cancelPreviewTimer();
+        const revision = previewRevision;
         const token = playbackService._currentPlayActionToken;
-        const track = queueService.playlist[queueService.curIdx] || null;
         if (playbackService.isStreaming) {
             const version = playbackService.transportVersion;
             try {
                 await playbackService.ensureCompleteAudio('循环点试听');
-                if (!playbackService.isPlaybackActionCurrent(token) || version !== playbackService.transportVersion) return;
+                if (revision !== previewRevision || !playbackService.isPlaybackActionCurrent(token) || version !== playbackService.transportVersion) return;
                 await playbackService.activateCompleteAudio('循环点试听');
-                if (!playbackService.isPlaybackActionCurrent(token)) return;
+                if (revision !== previewRevision || !playbackService.isPlaybackActionCurrent(token)) return;
             } catch (error) {
-                if (playbackService.isPlaybackActionCurrent(token)) domService.el.anaMsg.textContent = error.message;
+                if (revision === previewRevision && playbackService.isPlaybackActionCurrent(token)) domService.el.anaMsg.textContent = error.message;
                 return;
             }
         }
-        playbackService.startAudio(Math.max(0, t - 3));
-        const previewSource = playbackService.sourceNode;
-        const previewVersion = playbackService.transportVersion;
+        if (playbackService.startAudio(Math.max(0, t - 3)) === false) return;
         const previewDurationMs = Math.max(250, Math.min(6000, (duration - Math.max(0, t - 3)) * 1000));
-        previewStopTimer = setTimeout(() => {
-            previewStopTimer = null;
-            if (token !== playbackService._currentPlayActionToken || queueService.playlist[queueService.curIdx] !== track || playbackService.sourceNode !== previewSource || previewVersion !== playbackService.transportVersion) return;
-            playbackService.playbackState.pauseTime = playbackService.getCurrentTime();
-            playbackService.stopAudio('paused');
-        }, previewDurationMs);
+        armPreviewStop(previewDurationMs);
     }
 
     // 导出 .sli 文件
@@ -357,7 +456,9 @@ export function createAnalysis({
         const fromSamples = Math.round(loopService.loopState.end * rate);
         const toSamples = Math.round(loopService.loopState.start * rate);
 
-        const sliContent = `From = ${fromSamples};\nTo = ${toSamples};`;
+        let sliContent;
+        try { sliContent = formatSliLoop(fromSamples, toSamples); }
+        catch (error) { domService.el.anaMsg.textContent = error.message; return; }
 
         // 创建 Blob 并下载
         const blob = new Blob([sliContent], { type: 'text/plain' });
@@ -385,6 +486,9 @@ export function createAnalysis({
         previewPoint,
         exportSLI,
         runAnalysis,
+        applyAnalysisResult,
+        restoreAnalysisResult,
+        previewAnalysisResult,
         cancelPreviewTimer,
         cancelLoopAnalysisRun,
         resetLoopAnalysisWorkerAudio,
@@ -392,7 +496,7 @@ export function createAnalysis({
             if (initialized) return;
             initialized = true;
             for (const control of [domService.el.anaStart, domService.el.anaEnd, domService.el.anaMode,
-                domService.el.loopStart, domService.el.loopEnd, domService.el.loopEnable]) {
+                domService.el.loopStart, domService.el.loopEnd, domService.el.loopEnable, domService.el.baseRateInput]) {
                 control.addEventListener('input', invalidateAnalysisInput);
                 control.addEventListener('change', invalidateAnalysisInput);
             }

@@ -63,7 +63,7 @@ export function createLocalPlayback({
                 if (track.file) {
                     track.needsFile = false;
                     playlistViewService.refreshPlaylistItem(i);
-                    if (typeof persistenceService.schedulePlaylistStateSave === 'function') persistenceService.schedulePlaylistStateSave();
+                    persistenceService.schedulePlaylistStateSave();
                 }
             } catch (error) {
                 if (!isCurrent()) return;
@@ -115,7 +115,7 @@ export function createLocalPlayback({
                         const ok = await prefetchService.waitForPrefetchCompletion(prefetchService.LOCAL_PREFETCH_TRIGGER_SEC * 100, preloadToken);
                         playbackService.assertPlaybackActionCurrent(myPlayToken, track);
                         if (!ok || !prefetchService.hasPreloaded || !prefetchService.nextSongRawData) {
-                            try { prefetchService.cancelNextPreload(); } catch(e) {}
+                            prefetchService.cancelNextPreload();
                         }
                     }
 
@@ -131,7 +131,7 @@ export function createLocalPlayback({
                     if (!isCurrent()) return;
                     if (e.stale || e.message === 'stale') throw e;
                     debugService.log('本地预取数据复用失败，回退正常读取：' + (e && e.message), 'warn');
-                    try { prefetchService.cancelNextPreload(); } catch(_) {}
+                    prefetchService.cancelNextPreload();
                     ab = await track.file.arrayBuffer();
                     playbackService.assertPlaybackActionCurrent(myPlayToken, track);
                 }
@@ -224,13 +224,7 @@ export function createLocalPlayback({
         }
     }
 
-    let initialized = false;
     return {
-        playTrack,
-        initialize() {
-            if (initialized) return;
-            initialized = true;
-
-        }
+        playTrack
     };
 }

@@ -1,3 +1,21 @@
+export function withBaseQueue(queue) {
+    Object.defineProperties(queue, {
+        basePlaylist: { configurable: true, get() { return this.playlist; } },
+        baseCurIdx: { configurable: true, get() { return this.curIdx; } }
+    });
+    queue.baseStructureRevision = 0;
+    queue.replaceBaseTracks = function(tracks, index = this.curIdx) {
+        this.basePlaylist.splice(0, this.basePlaylist.length, ...tracks);
+        this.curIdx = index; this.baseStructureRevision++;
+    };
+    queue.removeBaseTrack = function(index, selectedIndex = this.curIdx) {
+        this.basePlaylist.splice(index, 1); this.curIdx = selectedIndex; this.baseStructureRevision++;
+    };
+    queue.sortBaseTracks = function(compare) { this.basePlaylist.sort(compare); this.baseStructureRevision++; };
+    queue.appendBaseTracks = function(tracks) { if (tracks.length) { this.basePlaylist.push(...tracks); this.baseStructureRevision++; } };
+    return queue;
+}
+
 export class FakeElement {
     constructor(id = '') {
         this.id = id;
@@ -122,7 +140,7 @@ export function createHost(html = '') {
         history: { state: null, replaceState(value) { this.state = value; }, pushState(value) { this.state = value; }, back() {}, forward() {} },
         innerWidth: 1440, innerHeight: 900, devicePixelRatio: 1,
         AudioContext: FakeAudioContext, HTMLElement: FakeElement, Element: FakeElement,
-        Image: FakeElement, Blob, URL, URLSearchParams, AbortController, DOMException, TextDecoder,
+        Image: FakeElement, Blob, URL, URLSearchParams, AbortController, DOMException, TextDecoder, Event,
         Uint8Array, Uint32Array, Float32Array, ArrayBuffer, DataView, Response, ReadableStream,
         performance, console: { log: (...args) => logs.push(args), warn: (...args) => logs.push(args), error: (...args) => logs.push(args) },
         matchMedia: () => ({ matches: false, addEventListener() {} }),

@@ -9,7 +9,7 @@ const html = fs.readFileSync(new URL('../src/index.html', import.meta.url), 'utf
 
 function fixture(t, { playing = true, duration = 100 } = {}) {
     const { host } = createHost(html), saved = new Map();
-    for (const [key, value] of Object.entries({ document: host.document, Element: FakeElement })) {
+    for (const [key, value] of Object.entries({ document: host.document, Element: FakeElement, window: host })) {
         saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
         Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
     }
@@ -43,8 +43,10 @@ function fixture(t, { playing = true, duration = 100 } = {}) {
         getCurrentTime: () => state.pauseTime,
         gainNode: { gain: { value: 1 } }
     };
+    const lyrics = { neteaseSearchEnabled: false, setLyricDisplayMode: mode => calls.push(['lyric-mode', mode]),
+        cycleLyricDisplayMode: () => calls.push(['lyric-cycle']) };
     const controls = createControls({ dom, playback, queue,
-        analysis: { cancelPreviewTimer() {} }, debug: {}, lyrics: {}, playlistView: {},
+        analysis: { cancelPreviewTimer() {} }, debug: { log: message => calls.push(['log', message]) }, lyrics, playlistView: {},
         panels: { modalController: { active: null } }, render: { setPlaybackProgress() {} } });
     controls.initialize();
     const pointer = (type, x = 100, overrides = {}) => {
@@ -54,9 +56,30 @@ function fixture(t, { playing = true, duration = 100 } = {}) {
         dom.el.progBg.dispatchEvent(event);
         return event;
     };
-    return { dom, progress, start, end, playback, state, queue, calls, controls, pointer, doc: host.document,
+    return { dom, progress, start, end, playback, state, queue, calls, controls, lyrics, pointer, doc: host.document,
         select: (...next) => { ranges = next; }, get ranges() { return ranges; }, get cleared() { return cleared; } };
 }
+
+test('desktop and mobile native settings bind once and dispatch a single state update per action', t => {
+    const f = fixture(t); f.controls.initialize();
+    assert.equal(f.dom.cloudLyricsSwitches.length, 2);
+    for (const input of f.dom.cloudLyricsSwitches) {
+        assert.equal(input.listeners.get('change').size, 1);
+        input.checked = true; input.dispatchEvent({ type: 'change', target: input });
+        assert.equal(f.lyrics.neteaseSearchEnabled, true);
+    }
+    assert.equal(f.calls.filter(call => call[0] === 'log').length, 2);
+    assert.equal(f.dom.lyricModeInputs.length, 3);
+    for (const input of f.dom.lyricModeInputs) {
+        input.value = 'roma'; input.checked = true;
+        assert.equal(input.listeners.get('change').size, 1);
+        input.dispatchEvent({ type: 'change', target: input });
+    }
+    assert.equal(f.calls.filter(call => call[0] === 'lyric-mode').length, 3);
+    assert.equal(f.dom.lyricToggleBtn.listeners.get('click').size, 1);
+    f.dom.lyricToggleBtn.click();
+    assert.equal(f.calls.filter(call => call[0] === 'lyric-cycle').length, 1);
+});
 
 test('progress CSS disables only control text selection and keeps the native slider keyboard entry', () => {
     const css = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
@@ -64,6 +87,39 @@ test('progress CSS disables only control text selection and keeps the native sli
     assert.match(rule, /-webkit-user-select:\s*none/);
     assert.match(rule, /(?:^|;)\s*user-select:\s*none/);
     assert.match(html, /id="prog-bg"[^>]+role="slider"[^>]+tabindex="0"/);
+});
+
+test('loop status sits above the time labels without adding a grid row or changing cover layout', () => {
+    const css = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
+    const time = css.match(/\.time-display\s*\{([^}]*)\}/)?.[1];
+    const status = css.match(/#loop-status\s*\{([^}]*)\}/)?.[1];
+    assert.match(time, /position:\s*relative/);
+    assert.match(status, /position:\s*absolute/);
+    assert.match(status, /right:\s*0/);
+    assert.doesNotMatch(status, /grid-area|margin|padding/);
+});
+
+test('mobile player budgets one viewport for playback and leaves the project footer in document flow', () => {
+    const base = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
+    const css = fs.readFileSync(new URL('../src/styles/responsive.css', import.meta.url), 'utf8');
+    assert.match(base, /\.player-stage\s*\{\s*display:\s*contents/);
+    assert.match(css, /\.player-stage\s*\{[^}]*height:\s*100dvh;[^}]*min-height:\s*min-content/);
+    assert.match(css, /\.right-panel\s*\{[^}]*flex:\s*1 0 auto/);
+    assert.match(css, /\.project-footer\s*\{[^}]*position:\s*static/);
+    assert.match(html, /class="player-stage"/);
+    assert.match(html, /<\/div>\s*<\/div>\s*<footer class="project-footer"/);
+    assert.match(css, /max-height:\s*500px\) and \(orientation:\s*landscape\)/);
+});
+
+test('mobile lyric return keeps its original size and translucent glass without reserving a lyric row', () => {
+    const css = fs.readFileSync(new URL('../src/styles/responsive.css', import.meta.url), 'utf8');
+    const mobile = css.slice(css.indexOf('@media screen and (max-width: 900px)'));
+    assert.match(mobile, /\.lyrics-area\s*\{[^}]*margin-bottom:\s*0/);
+    assert.match(mobile, /\.lyric-return,\s*\.lyric-browse-time\s*\{[^}]*height:\s*44px/);
+    assert.doesNotMatch(mobile, /\.lyric-return::after/);
+    const glass = mobile.match(/\.lyric-return\s*\{([^}]+)\}/)[1];
+    assert.match(glass, /backdrop-filter:/);
+    assert.doesNotMatch(glass, /(?:^|;)\s*(?:opacity|animation|transform):/);
 });
 
 test('owned progress selection clears even before audio loads and time clicks do not seek', t => {
