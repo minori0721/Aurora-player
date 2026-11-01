@@ -46,7 +46,8 @@ function fixture(t, { playing = true, duration = 100 } = {}) {
     const lyrics = { neteaseSearchEnabled: false, setLyricDisplayMode: mode => calls.push(['lyric-mode', mode]),
         cycleLyricDisplayMode: () => calls.push(['lyric-cycle']) };
     const controls = createControls({ dom, playback, queue,
-        analysis: { cancelPreviewTimer() {} }, debug: { log: message => calls.push(['log', message]) }, lyrics, playlistView: {},
+        analysis: { cancelPreviewTimer() {} }, debug: { log: message => calls.push(['log', message]) }, lyrics,
+        playlistView: { scrollPlaylistToCurrent: () => calls.push(['playlist-current']), scrollPlaylistToTop: () => calls.push(['playlist-top']) },
         panels: { modalController: { active: null } }, render: { setPlaybackProgress() {} } });
     controls.initialize();
     const pointer = (type, x = 100, overrides = {}) => {
@@ -79,6 +80,15 @@ test('desktop and mobile native settings bind once and dispatch a single state u
     assert.equal(f.dom.lyricToggleBtn.listeners.get('click').size, 1);
     f.dom.lyricToggleBtn.click();
     assert.equal(f.calls.filter(call => call[0] === 'lyric-cycle').length, 1);
+});
+
+test('playlist shortcut buttons retain their existing actions', t => {
+    const f = fixture(t);
+    for (const button of [f.dom.el.plScrollCurrent, f.dom.el.plScrollTop]) {
+        assert.equal(typeof button.onclick, 'function');
+        button.click();
+    }
+    assert.deepEqual(f.calls.filter(call => call[0].startsWith('playlist-')), [['playlist-current'], ['playlist-top']]);
 });
 
 test('progress CSS disables only control text selection and keeps the native slider keyboard entry', () => {

@@ -224,7 +224,7 @@
                     </div>
                 </details>
             </div>
-            <!-- Lucide Logs icon and toolbar folder-open/cloud/list/settings/search/repeat-2/sparkles/snowflake/audio-lines/waves-horizontal/chevron-down icons (https://lucide.dev), ISC License.
+            <!-- Lucide Logs icon, toolbar folder-open/cloud/list/settings/search/repeat-2/sparkles/snowflake/audio-lines/waves-horizontal/chevron-down icons, and playlist locate-fixed/arrow-up icons (https://lucide.dev), ISC License.
             Copyright (c) 2026 Lucide Icons and Contributors
             Permission to use, copy, modify, and/or distribute this software for any
             purpose with or without fee is hereby granted, provided that the above
@@ -250,43 +250,56 @@
                 <button id="toggle-advanced" class="glass-btn" title="高级菜单" aria-label="高级菜单"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg><span>高级</span></button>
                 <div class="advanced-menu" id="advanced-menu" hidden inert aria-hidden="true">
                     <button class="advanced-menu-item" data-action="debug" aria-label="打开日志"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5h1M3 12h1M3 19h1M8 5h1M8 12h1M8 19h1M13 5h8M13 12h8M13 19h8"/></svg></span><span class="advanced-menu-text">Log</span></button>
-                    <button class="advanced-menu-item" data-action="analyze"><span class="advanced-menu-icon" aria-hidden="true">🔍</span><span class="advanced-menu-text">智能分析</span></button>
-                    <button class="advanced-menu-item" data-action="loop"><span class="advanced-menu-icon" aria-hidden="true">🔁</span><span class="advanced-menu-text">循环设定</span></button>
+                    <button class="advanced-menu-item" data-action="analyze"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" viewBox="0 0 24 24" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></span><span class="advanced-menu-text">智能分析</span></button>
+                    <button class="advanced-menu-item" data-action="loop"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" viewBox="0 0 24 24" focusable="false"><path d="m2 9 3-3 3 3M13 18H7a2 2 0 0 1-2-2V6m17 9-3 3-3-3M11 6h6a2 2 0 0 1 2 2v10"/></svg></span><span class="advanced-menu-text">循环设定</span></button>
                     <label class="advanced-setting">
-                        <span class="advanced-setting-name"><span class="advanced-menu-icon" aria-hidden="true">📝</span><span class="advanced-menu-text">云词搜索</span></span>
+                        <span class="advanced-setting-name"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" viewBox="0 0 24 24" focusable="false"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></span><span class="advanced-menu-text">云词搜索</span></span>
                         <span class="settings-switch">
                             <input id="cloud-lyrics-switch" type="checkbox" role="switch" aria-label="本地歌曲自动匹配云词">
                             <span class="settings-switch-track" aria-hidden="true"></span>
                         </span>
                     </label>
                     <div class="advanced-setting">
-                        <span class="advanced-setting-name" id="lyric-mode-label"><span class="advanced-menu-icon" aria-hidden="true">🈂️</span><span class="advanced-menu-text">歌词</span></span>
+                        <span class="advanced-setting-name" id="lyric-mode-label"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" viewBox="0 0 24 24" focusable="false"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg></span><span class="advanced-menu-text">歌词</span></span>
                         <div class="lyric-mode-control" role="radiogroup" aria-labelledby="lyric-mode-label">
                             <label title="仅原文"><input id="lyric-mode-original" type="radio" name="lyric-display-mode" value="original" aria-label="仅原文" disabled><span>词</span></label>
                             <label title="原文＋翻译"><input id="lyric-mode-both" type="radio" name="lyric-display-mode" value="both" aria-label="原文加翻译" disabled><span>译</span></label>
                             <label title="原文＋罗马音"><input id="lyric-mode-roma" type="radio" name="lyric-display-mode" value="roma" aria-label="原文加罗马音" disabled><span>音</span></label>
                         </div>
                     </div>
-                    <button class="advanced-menu-item" data-action="effects"><span class="advanced-menu-icon" aria-hidden="true">✨</span><span class="advanced-menu-text">视觉特效</span></button>
+                    <div class="advanced-setting">
+                        <span class="advanced-setting-name"><span class="advanced-menu-icon" aria-hidden="true"><svg class="tool-icon" viewBox="0 0 24 24" focusable="false"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg></span><span class="advanced-menu-text">特效</span></span>
+                        <div class="effect-mode-control" role="group" aria-label="视觉特效">
+                            <button id="effect-mode-snow" type="button" value="snow" title="凛冬飞雪" aria-label="凛冬飞雪" aria-pressed="false"><span><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 20-1.25-2.5L6 18M10 4 8.75 6.5 6 6m8 14 1.25-2.5L18 18m-4-14 1.25 2.5L18 6m-1 15-3-6h-4m7-12-3 6 1.5 3M2 12h6.5L10 9m10 1-1.5 2 1.5 2M22 12h-6.5L14 15M4 10l1.5 2L4 14m3 7 3-6-1.5-3M7 3l3 6h4"/></svg></span></button>
+                            <button id="effect-mode-bars" type="button" value="bars" title="律动频谱" aria-label="律动频谱" aria-pressed="false"><span><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg></span></button>
+                            <button id="effect-mode-waves" type="button" value="waves" title="极光波浪" aria-label="极光波浪" aria-pressed="false"><span><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12q2.5 2 5 0t5 0 5 0 5 0M2 19q2.5 2 5 0t5 0 5 0 5 0M2 5q2.5 2 5 0t5 0 5 0 5 0"/></svg></span></button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="panel-float" id="analyze-panel" hidden inert aria-hidden="true">
-        <h4 class="panel-title">Loop Analyzer (智能对齐分析)<button class="panel-close" aria-label="关闭智能分析">&times;</button></h4>
+        <div class="bottom-sheet-header" id="analysis-sheet-header">
+            <button class="bottom-sheet-handle" id="analysis-sheet-handle" type="button" aria-label="展开或收拢智能分析" aria-expanded="true" aria-controls="analysis-sheet-body" title="收拢智能分析"><span aria-hidden="true"></span></button>
+            <h4 class="panel-title"><span class="sheet-label-full">Loop Analyzer (智能对齐分析)</span><span class="sheet-label-short">智能分析</span><button class="panel-close" type="button" aria-label="关闭智能分析">&times;</button></h4>
+        </div>
+        <div class="bottom-sheet-body" id="analysis-sheet-body">
         <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
             不知道在哪里设置循环点？试试智能分析！<br>
             1. 粗略设置 A/B 点 (前后误差<2s)<br>
             2. 点击“开始匹配”会自动寻找最佳接缝哦！
         </div>
-        <div class="panel-row">
-            <span>Rough Start (A)</span>
-            <input type="number" id="ana-start" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略起点 A">
-        </div>
-        <div class="panel-row">
-            <span>Rough End (B)</span>
-            <input type="number" id="ana-end" class="panel-input" step="0.1" placeholder="0.0" aria-label="智能分析粗略终点 B">
+        <div class="sheet-points">
+            <label class="panel-row" for="ana-start">
+                <span class="sheet-label-full">Rough Start (A)</span><span class="sheet-label-short">起点 A</span>
+                <input type="number" id="ana-start" class="panel-input" step="0.1" inputmode="decimal" placeholder="0.0" aria-label="智能分析粗略起点 A">
+            </label>
+            <label class="panel-row" for="ana-end">
+                <span class="sheet-label-full">Rough End (B)</span><span class="sheet-label-short">终点 B</span>
+                <input type="number" id="ana-end" class="panel-input" step="0.1" inputmode="decimal" placeholder="0.0" aria-label="智能分析粗略终点 B">
+            </label>
         </div>
         <div class="panel-row">
             <span>匹配算法</span>
@@ -317,19 +330,27 @@
         </div>
         <button class="glass-btn big-btn" data-action="export-sli" style="margin-top:8px; background:#27ae60;">💾 导出 .sli 文件</button>
         <div id="ana-msg" role="status" style="font-size:0.75rem; text-align:center; min-height:1.2em; margin-top:5px;"></div>
+        </div>
     </div>
 
     <div class="loop-panel panel-float" id="loop-panel" hidden inert aria-hidden="true">
-        <h4 class="panel-title">Loop Controller<button class="panel-close" aria-label="关闭循环设定">&times;</button></h4>
+        <div class="bottom-sheet-header" id="loop-sheet-header">
+            <button class="bottom-sheet-handle" id="loop-sheet-handle" type="button" aria-label="展开或收拢循环设定" aria-expanded="true" aria-controls="loop-sheet-body" title="收拢循环设定"><span aria-hidden="true"></span></button>
+            <h4 class="panel-title"><span class="sheet-label-full">Loop Controller</span><span class="sheet-label-short">循环设定</span><button class="panel-close" type="button" aria-label="关闭循环设定">&times;</button></h4>
+        </div>
+        <div class="bottom-sheet-body" id="loop-sheet-body">
         <div class="panel-row"><span>开启循环</span><input type="checkbox" id="loop-enable" aria-label="开启循环"></div>
         <div class="panel-row" style="background:rgba(0,0,0,0.05); padding:5px; border-radius:5px;"><span title="修正采样率">Base Rate (Hz)</span><input type="number" id="base-rate" class="panel-input" value="44100" step="100" aria-label="循环基准采样率"></div>
-        <div class="panel-row"><span>Start (A)</span><input type="number" id="loop-start" class="panel-input" step="0.001" value="0" aria-label="循环起点 A"></div>
-        <div class="panel-row"><span>End (B)</span><input type="number" id="loop-end" class="panel-input" step="0.001" value="0" aria-label="循环终点 B"></div>
+        <div class="sheet-points">
+            <label class="panel-row" for="loop-start"><span class="sheet-label-full">Start (A)</span><span class="sheet-label-short">起点 A</span><input type="number" id="loop-start" class="panel-input" step="0.001" inputmode="decimal" value="0" aria-label="循环起点 A"></label>
+            <label class="panel-row" for="loop-end"><span class="sheet-label-full">End (B)</span><span class="sheet-label-short">终点 B</span><input type="number" id="loop-end" class="panel-input" step="0.001" inputmode="decimal" value="0" aria-label="循环终点 B"></label>
+        </div>
         <div style="display:flex; gap:10px; margin-top:5px;">
             <button class="glass-btn" style="flex:1; justify-content:center;" data-action="set-loop" data-point="a">Set A</button>
             <button class="glass-btn" style="flex:1; justify-content:center;" data-action="set-loop" data-point="b">Set B</button>
         </div>
         <div id="loop-msg" style="font-size:0.7rem; color:green; height:15px; text-align:right;"></div>
+        </div>
     </div>
 
     <div class="playlist-sidebar" id="playlist-sidebar" hidden inert aria-hidden="true">
@@ -351,9 +372,9 @@
         </div>
         <div class="playlist-empty" id="pl-search-empty" role="status" aria-live="polite" hidden>播放列表为空</div>
     </div>
-    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="playlist quick actions" hidden inert>
-        <button class="playlist-fab" id="pl-scroll-current" title="定位到当前播放" aria-label="定位到当前播放">🎯</button>
-        <button class="playlist-fab" id="pl-scroll-top" title="回到列表顶部" aria-label="回到列表顶部">⬆️</button>
+    <div class="playlist-fab-group" id="playlist-fab-group" aria-label="播放列表快捷操作" hidden inert>
+        <button class="playlist-fab" id="pl-scroll-current" type="button" title="定位到当前播放" aria-label="定位到当前播放"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button class="playlist-fab" id="pl-scroll-top" type="button" title="回到列表顶部" aria-label="回到列表顶部"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
     </div>
 
     <div class="main-container">

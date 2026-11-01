@@ -6,6 +6,7 @@ export function createEffectsMenu(options) {
     const menu = doc.getElementById('effect-menu'), trigger = doc.getElementById('effect-menu-trigger');
     const label = doc.getElementById('effect-current-label'), icon = doc.getElementById('effect-current-icon');
     const inputs = Object.keys(EFFECT_NAMES).map(mode => doc.getElementById(`effect-option-${mode}`)).filter(Boolean);
+    const buttons = ['snow', 'bars', 'waves'].map(mode => doc.getElementById(`effect-mode-${mode}`)).filter(Boolean);
     const compact = env.matchMedia('(max-width: 900px)');
     const listeners = [];
     let initialized = false, navigating = false;
@@ -15,8 +16,20 @@ export function createEffectsMenu(options) {
         label.textContent = EFFECT_NAMES[mode];
         trigger.setAttribute('aria-label', `视觉特效：${EFFECT_NAMES[mode]}`);
         for (const input of inputs) input.checked = input.value === mode;
+        for (const button of buttons) {
+            const selected = button.value === mode;
+            button.setAttribute('aria-pressed', String(selected));
+            button.title = EFFECT_NAMES[button.value] + (selected ? '（再次点击关闭）' : '');
+        }
         const copy = doc.getElementById(`effect-icon-${mode}`)?.cloneNode?.(true);
         if (copy) { copy.removeAttribute('id'); icon.replaceChildren(copy); }
+    }
+
+    function chooseEffect(mode) {
+        if (!Object.prototype.hasOwnProperty.call(EFFECT_NAMES, mode)) return;
+        if (select.value === mode) { sync(); return; }
+        select.value = mode;
+        select.dispatchEvent(new env.Event('change', { bubbles: true }));
     }
 
     function close(restoreFocus = false) {
@@ -37,14 +50,9 @@ export function createEffectsMenu(options) {
         initialize() {
             if (initialized || !select || !menu || !trigger || !label || !icon || inputs.length !== 4) return;
             initialized = true;
+            for (const button of buttons) listen(button, 'click', () => chooseEffect(select.value === button.value ? 'none' : button.value));
             for (const input of inputs) {
-                const choose = () => {
-                    if (!Object.prototype.hasOwnProperty.call(EFFECT_NAMES, input.value)) return;
-                    const changed = select.value !== input.value;
-                    select.value = input.value;
-                    if (changed) select.dispatchEvent(new env.Event('change', { bubbles: true }));
-                    else sync();
-                };
+                const choose = () => chooseEffect(input.value);
                 listen(input, 'change', choose);
                 listen(input, 'click', event => {
                     choose();

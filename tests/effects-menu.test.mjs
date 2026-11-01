@@ -7,7 +7,8 @@ import { FakeElement } from './helpers/host.mjs';
 const names = { none: '无特效', snow: '凛冬飞雪', bars: '律动频谱', waves: '极光波浪' };
 function fixture() {
     const ids = ['effect-menu', 'effect-menu-trigger', 'effect-current-label', 'effect-current-icon',
-        ...Object.keys(names).flatMap(mode => [`effect-option-${mode}`, `effect-icon-${mode}`])];
+        ...Object.keys(names).flatMap(mode => [`effect-option-${mode}`, `effect-icon-${mode}`]),
+        ...['snow', 'bars', 'waves'].map(mode => `effect-mode-${mode}`)];
     const elements = new Map(ids.map(id => [id, new FakeElement(id)]));
     const document = new FakeElement(), compact = new FakeElement(), select = new FakeElement();
     document.hidden = false; compact.matches = false; select.hidden = false; select.value = 'none';
@@ -22,12 +23,14 @@ function fixture() {
         input.value = mode; menu.children.push(input);
         elements.get(`effect-icon-${mode}`).cloneNode = () => Object.assign(new FakeElement(), { mode });
     }
+    for (const mode of ['snow', 'bars', 'waves']) elements.get(`effect-mode-${mode}`).value = mode;
     select.addEventListener('change', () => { changes++; });
     const controller = createEffectsMenu({ select, env: { document, Event, matchMedia: () => compact } });
     controller.initialize();
     return { controller, select, document, compact, menu, trigger, elements,
         get changes() { return changes; }, get focused() { return focused; },
         input: mode => elements.get(`effect-option-${mode}`),
+        button: mode => elements.get(`effect-mode-${mode}`),
         label: elements.get('effect-current-label'), icon: elements.get('effect-current-icon') };
 }
 
@@ -36,6 +39,33 @@ test('effects enhance the native select without changing its value or dispatchin
     assert.equal(f.select.value, 'none'); assert.equal(f.changes, 0);
     assert.equal(f.select.hidden, true); assert.equal(f.menu.hidden, false);
     assert.equal(f.label.textContent, names.none); assert.equal(f.input('none').checked, true);
+});
+
+test('mobile segments select one effect, toggle it off, and synchronize the desktop menu once per click', () => {
+    const f = fixture();
+    for (const mode of ['snow', 'bars', 'waves']) assert.equal(f.button(mode).getAttribute('aria-pressed'), 'false');
+    for (const [index, mode] of ['snow', 'bars', 'waves'].entries()) {
+        f.button(mode).click();
+        assert.equal(f.select.value, mode); assert.equal(f.changes, index * 2 + 1);
+        assert.equal(f.input(mode).checked, true); assert.equal(f.label.textContent, names[mode]);
+        for (const candidate of ['snow', 'bars', 'waves']) assert.equal(f.button(candidate).getAttribute('aria-pressed'), String(candidate === mode));
+        assert.ok(f.button(mode).title.includes('再次点击关闭'));
+        f.button(mode).click();
+        assert.equal(f.select.value, 'none'); assert.equal(f.changes, index * 2 + 2);
+        assert.equal(f.input('none').checked, true); assert.equal(f.button(mode).title, names[mode]);
+    }
+});
+
+test('desktop and native changes update mobile segments without extra change events', () => {
+    const f = fixture();
+    f.input('bars').click();
+    assert.equal(f.changes, 1); assert.equal(f.button('bars').getAttribute('aria-pressed'), 'true');
+    f.button('waves').click();
+    assert.equal(f.changes, 2); assert.equal(f.button('bars').getAttribute('aria-pressed'), 'false');
+    assert.equal(f.button('waves').getAttribute('aria-pressed'), 'true');
+    f.select.value = 'none'; f.select.dispatchEvent({ type: 'change' });
+    assert.equal(f.changes, 3);
+    for (const mode of ['snow', 'bars', 'waves']) assert.equal(f.button(mode).getAttribute('aria-pressed'), 'false');
 });
 
 test('each effect selects its own SVG and emits only one change for a native click/change pair', () => {
@@ -99,10 +129,12 @@ test('outside clicks, focus leaving, backgrounding and switching to mobile dismi
 test('effect enhancement initializes once and disposal restores the native fallback', () => {
     const f = fixture(); f.controller.initialize();
     assert.equal(f.input('snow').listeners.get('click').size, 1);
+    assert.equal(f.button('snow').listeners.get('click').size, 1);
     f.controller.dispose();
     assert.equal(f.select.hidden, false); assert.equal(f.menu.hidden, true);
     assert.equal(f.document.listeners.get('click').size, 0);
     f.input('snow').click(); assert.equal(f.select.value, 'none');
+    f.button('snow').click(); assert.equal(f.select.value, 'none');
 });
 
 test('desktop controls preserve the original corner radius and keep lyric modes in the playback row', () => {

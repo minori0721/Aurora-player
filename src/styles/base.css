@@ -89,6 +89,8 @@ body {
 /* 分析面板特别样式 */
 #analyze-panel { right: 350px; width: 300px; max-height: calc(100dvh - 100px); overflow-y: auto; } /* 放在循环面板左边 */
 #analyze-panel:not(.show) { transform: translateX(calc(100% + 370px)); } /* 确保能完全滑出屏幕 */
+.bottom-sheet-header, .bottom-sheet-body, .sheet-points { display: contents; }
+.bottom-sheet-handle, .sheet-label-short { display: none; }
 .analyze-btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px; }
 .analysis-result-details { display: block; white-space: pre-line; overflow-wrap: anywhere; font-size: .75rem; line-height: 1.7; font-variant-numeric: tabular-nums; }
 .analysis-result-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; margin-top: 8px; }
@@ -322,11 +324,11 @@ body {
 .playlist-fab-group { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 12px; opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity 0.25s ease, transform 0.25s ease; z-index: 96; }
 .playlist-sidebar.show + .playlist-fab-group { opacity: 1; pointer-events: auto; transform: translateY(0); }
 .playlist-fab {
-    width: 46px; height: 46px; border-radius: 50%;
+    width: 46px; height: 46px; padding: 0; border-radius: 50%; box-sizing: border-box;
     border: 1px solid var(--border);
     border-top: 1px solid var(--glass-highlight);
     border-left: 1px solid var(--glass-highlight);
-    background: rgba(255,255,255,0.65);
+    background: var(--glass);
     -webkit-backdrop-filter: blur(15px); backdrop-filter: blur(15px);
     box-shadow:
         inset 2px 2px 5px var(--glass-highlight),
@@ -337,12 +339,15 @@ body {
     transition: background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .playlist-fab:hover {
-    background: #fff; transform: translateY(-3px);
+    background: rgba(255,255,255,0.5); transform: translateY(-3px);
     box-shadow:
         inset 2px 2px 8px var(--glass-highlight),
         inset -2px -2px 8px var(--glass-shadow),
         0 15px 25px rgba(0,0,0,0.15);
 }
+.playlist-fab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.playlist-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.playlist-fab:active { transform: scale(0.95); }
 .pl-item { width: 100%; min-height: 50px; padding: 10px 12px; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-size: 0.95rem; text-align: left; color: var(--text-sub); background: transparent; margin-bottom: 5px; display: flex; align-items: center; gap: 10px; }
 .pl-item:hover { background: rgba(0,0,0,0.05); }
 .pl-item.active { background: #fff; color: var(--text-main); font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }

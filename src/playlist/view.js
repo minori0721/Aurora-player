@@ -13,7 +13,7 @@ export function createPlaylistView({
     const pausePlaylistCovers = () => playlistCovers.suspend();
 
     let activePlaylistRow = null;
-    let playlistIndexDigits = 0;
+    let playlistIndexDigits = 0, sharedIndexDigits = 0;
     let searchQueue = queueService.playlist, searchTerms = [], searchKeys = [], visibleCount = 0;
     let searchFrame = 0, composing = false, unfilteredScrollTop = 0;
     let temporaryRows = new Map(), renderedTemporary = [];
@@ -188,6 +188,11 @@ export function createPlaylistView({
         }
         temporaryRows = new Map();
         renderedTemporary = queueService.temporaryEntries || [];
+        const digits = Math.max(3, String(Math.max(base().length, renderedTemporary.length)).length);
+        if (digits !== sharedIndexDigits) {
+            sharedIndexDigits = digits;
+            domService.el.plSidebar.style.setProperty('--playlist-shared-index-digits', String(digits));
+        }
         domService.el.plTemporaryContainer.style.setProperty('--playlist-index-digits', String(Math.max(3, String(renderedTemporary.length).length)));
         domService.el.plTemporaryContainer.classList.toggle('pl-large', renderedTemporary.length > 500);
         domService.el.plTemporaryContainer.innerHTML = '';

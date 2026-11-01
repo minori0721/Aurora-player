@@ -183,6 +183,50 @@ test('mobile download uses the desktop icon and forwards to the existing downloa
     assert.equal(calls, 1);
 });
 
+test('analysis and loop drawers expose separate named handles and preserve desktop coexistence', async () => {
+    const collapsedRule = built.html.match(/\.bottom-sheet-collapsed \.bottom-sheet-body\{([^}]+)\}/)?.[1];
+    assert.ok(collapsedRule); assert.doesNotMatch(collapsedRule, /padding/);
+    for (const [prefix, label] of [['analysis-sheet', '智能分析'], ['loop-sheet', '循环设定']]) {
+        assert.match(built.html, new RegExp(`id="${prefix}-handle"[^>]*aria-label="展开或收拢${label}"[^>]*aria-controls="${prefix}-body"`));
+        assert.match(built.html, new RegExp(`class="bottom-sheet-body" id="${prefix}-body"`));
+    }
+    const f = boot(); await settle();
+    f.elements.get('toggle-analyze').click(); f.elements.get('toggle-loop-panel').click();
+    for (const id of ['analyze-panel', 'loop-panel']) assert.equal(f.elements.get(id).getAttribute('aria-hidden'), 'false');
+    assert.equal(f.requests.length, 0);
+});
+
+test('mobile drawers hide each other without replacing inputs, including a desktop-to-mobile transition', async () => {
+    const listeners = new Set(), compact = { matches: false, addEventListener(type, callback) { listeners.add(callback); } };
+    const f = boot({ matchMedia: query => query === '(max-width: 900px)' ? compact : { matches: false, addEventListener() {} } });
+    await settle();
+    for (const id of ['analysis-sheet-body', 'loop-sheet-body']) f.elements.get(id).scrollHeight = 300;
+    const input = f.elements.get('loop-start'); input.value = '12.345';
+    f.elements.get('toggle-analyze').click(); f.elements.get('toggle-loop-panel').click();
+    compact.matches = true; for (const callback of listeners) callback({ matches: true });
+    assert.equal(f.elements.get('analyze-panel').getAttribute('aria-hidden'), 'true');
+    assert.equal(f.elements.get('loop-panel').getAttribute('aria-hidden'), 'false');
+    f.elements.get('toggle-analyze').click();
+    assert.equal(f.elements.get('loop-panel').getAttribute('aria-hidden'), 'true');
+    assert.equal(f.elements.get('analyze-panel').getAttribute('aria-hidden'), 'false');
+    f.elements.get('toggle-loop-panel').click();
+    assert.equal(f.elements.get('analyze-panel').getAttribute('aria-hidden'), 'true');
+    assert.equal(f.elements.get('loop-start'), input); assert.equal(input.value, '12.345');
+    assert.equal(f.requests.length, 0);
+});
+
+test('resizing to mobile keeps the remaining drawer when the most recently opened drawer was closed', async () => {
+    const listeners = new Set(), compact = { matches: false, addEventListener(type, callback) { listeners.add(callback); } };
+    const f = boot({ matchMedia: query => query === '(max-width: 900px)' ? compact : { matches: false, addEventListener() {} } });
+    await settle();
+    f.elements.get('analysis-sheet-body').scrollHeight = 300;
+    f.elements.get('toggle-analyze').click();
+    f.elements.get('toggle-loop-panel').click(); f.elements.get('toggle-loop-panel').click();
+    compact.matches = true; for (const callback of listeners) callback({ matches: true });
+    assert.equal(f.elements.get('analyze-panel').getAttribute('aria-hidden'), 'false');
+    assert.equal(f.elements.get('loop-panel').getAttribute('aria-hidden'), 'true');
+});
+
 test('desktop and mobile toolbar share labeled inline SVG controls and their original actions', async () => {
     for (const id of ['btn-import', 'toggle-netease-panel', 'toggle-list', 'toggle-advanced']) {
         const markup = built.html.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/button>`))?.[0];
@@ -220,7 +264,10 @@ test('desktop cycle button and mobile radio settings keep their positions, modes
     assert.match(lyricButton, /class="lyric-mode-symbol" aria-hidden="true"/);
     assert.match(lyricButton, /<svg class="lyric-mode-icon"[^>]*focusable="false"/);
     assert.deepEqual([...lyricButton.matchAll(/data-lyric-mark="([^"]+)"/g)].map(match => match[1]), ['original', 'both', 'roma']);
-    assert.match(built.html, /snowflake, audio-lines, waves-horizontal, chevron-down and captions/);
+    const lucideNotice = built.html.slice(built.html.indexOf('6. Lucide icons'), built.html.indexOf('7. Google Material Icons'));
+    for (const icon of ['snowflake', 'audio-lines', 'waves-horizontal', 'chevron-down', 'captions', 'locate-fixed', 'arrow-up']) {
+        assert.ok(lucideNotice.includes(icon), `Missing icon notice: ${icon}`);
+    }
     const topBar = built.html.slice(built.html.indexOf('<div class="top-bar">'), built.html.indexOf('<div class="panel-float"'));
     assert.doesNotMatch(topBar, /lyric-mode-desktop-/);
     assert.ok(built.html.indexOf('id="lyric-toggle-btn"') > built.html.indexOf('id="download-btn"'));

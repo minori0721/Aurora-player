@@ -219,15 +219,6 @@ export function createControls({
                             panelsService.toggleFloatingPanel('analyze-panel');
                         } else if (action === 'loop') {
                             panelsService.toggleFloatingPanel('loop-panel');
-                        } else if (action === 'effects') {
-                            // 循环切换特效
-                            const options = ['none', 'snow', 'bars', 'waves'];
-                            const names = ['无特效', '凛冬飞雪', '律动频谱', '极光波浪'];
-                            const current = options.indexOf(domService.el.effectSel.value);
-                            const next = (current + 1) % options.length;
-                            domService.el.effectSel.value = options[next];
-                            domService.el.effectSel.dispatchEvent(new Event('change'));
-                            alert(`特效: ${names[next]}`);
                         }
                     });
                 });

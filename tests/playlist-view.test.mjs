@@ -32,7 +32,20 @@ function fixture(t, count) {
     });
     const flush = () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(performance.now()); } };
     return { view, queue, container, writes, plays, requests, track, host, elements, flush,
-        digits: () => container.style['--playlist-index-digits'] };
+        digits: () => container.style['--playlist-index-digits'],
+        sharedDigits: () => elements.get('root').style['--playlist-shared-index-digits'] };
+}
+
+function usePlaybackPlan(f) {
+    const model = new PlaybackPlan();
+    model.reset(f.queue.playlist);
+    Object.defineProperties(f.queue, {
+        playlist: { get: () => model.items }, basePlaylist: { get: () => model.base },
+        curIdx: { get: () => model.index }, temporaryEntries: { get: () => model.temporary },
+        manualState: { get: () => ({ pending: model.pending }) }
+    });
+    f.queue.indexOfTrack = track => model.indexOf(track);
+    return model;
 }
 
 for (const [count, digits] of [[0, 3], [9, 3], [99, 3], [100, 3], [999, 3], [1000, 4], [9999, 4], [10000, 5]]) {
@@ -136,13 +149,7 @@ test('selection and refresh preserve the shared width; replacing a long playlist
 });
 
 test('manual queue updates keep every base row and cover, and search includes both sections', t => {
-    const f = fixture(t, 1000), model = new PlaybackPlan(); model.reset(f.queue.playlist); model.select(2);
-    Object.defineProperties(f.queue, {
-        playlist: { get: () => model.items }, basePlaylist: { get: () => model.base },
-        curIdx: { get: () => model.index }, temporaryEntries: { get: () => model.temporary },
-        manualState: { get: () => ({ pending: model.pending }) }
-    });
-    f.queue.indexOfTrack = track => model.indexOf(track);
+    const f = fixture(t, 1000), model = usePlaybackPlan(f); model.select(2);
     f.view.renderPlaylist(); const original = f.container.children.slice(), cover = original[2].children[1];
     model.playNow({ name: 'Manual title', netease: true });
     model.enqueue([{ name: 'Next title', netease: true }]);
@@ -157,5 +164,38 @@ test('manual queue updates keep every base row and cover, and search includes bo
     assert.deepEqual(manual.children.map(row => row.hidden), [false, true]);
     model.clearPending(); f.view.ensurePlaylistRenderedAndActive();
     assert.equal(manual.children.length, 1); assert.equal(f.elements.get('clear-manual').disabled, true);
+    assert.equal(f.requests.length, 0);
+});
+
+for (const [baseCount, temporaryCount, digits] of [[1, 1, 3], [1000, 1, 4], [1, 1000, 4], [10000, 1, 5]]) {
+    test(`${baseCount} base and ${temporaryCount} temporary rows share a ${digits}-digit desktop column`, t => {
+        const f = fixture(t, baseCount), model = usePlaybackPlan(f);
+        model.enqueue(Array.from({ length: temporaryCount }, (_, index) => ({ name: `Manual ${index + 1}`, netease: true })));
+        f.view.renderPlaylist();
+        const manual = f.elements.get('manual-rows'), firstBase = f.container.children[0];
+        assert.equal(f.sharedDigits(), String(digits));
+        assert.equal(f.digits(), String(Math.max(3, String(baseCount).length)));
+        assert.equal(manual.style['--playlist-index-digits'], String(Math.max(3, String(temporaryCount).length)));
+        f.view.setSearchQuery('manual 1');
+        assert.equal(f.sharedDigits(), String(digits));
+        assert.equal(f.container.children[0], firstBase);
+        assert.ok(f.container.children.every(row => row.hidden));
+        model.clearPending(); f.view.ensurePlaylistRenderedAndActive();
+        assert.equal(f.sharedDigits(), String(Math.max(3, String(baseCount).length)));
+        assert.equal(f.container.children[0], firstBase);
+        assert.equal(f.requests.length, 0);
+    });
+}
+
+test('incremental base growth updates both desktop columns without recreating rows', t => {
+    const f = fixture(t, 999), model = usePlaybackPlan(f);
+    model.enqueue([{ name: 'Manual', netease: true }]);
+    f.view.renderPlaylist(); const firstBase = f.container.children[0];
+    model.appendBaseTracks([f.track(999)]); f.view.appendPlaylistRows(999);
+    assert.equal(f.sharedDigits(), '4');
+    assert.equal(f.container.children[0], firstBase);
+    f.view.setSearchQuery('manual');
+    assert.equal(f.sharedDigits(), '4');
+    assert.equal(f.elements.get('manual-rows').style['--playlist-index-digits'], '3');
     assert.equal(f.requests.length, 0);
 });

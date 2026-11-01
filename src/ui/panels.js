@@ -1,8 +1,19 @@
+import { createBottomSheet } from './bottom-sheet.js';
+
 export function createPanels({
     controls: controlsService,
     dom: domService,
     playlistView: playlistViewService
 } = {}) {
+    const compact = window.matchMedia('(max-width: 900px)');
+    const sheets = new Map([
+        ['analyze-panel', 'analysis-sheet', '智能分析'], ['loop-panel', 'loop-sheet', '循环设定']
+    ].map(([id, prefix, label]) => [id, createBottomSheet({
+        panel: document.getElementById(id), header: document.getElementById(`${prefix}-header`),
+        handle: document.getElementById(`${prefix}-handle`), body: document.getElementById(`${prefix}-body`),
+        controls: document.querySelector('.controls-row'), toolbar: document.querySelector('.top-bar'), label
+    })]));
+    let lastSheetId = null;
     const floatingPanels = new Map([
         ['playlist-sidebar', 'toggle-list', 400], ['loop-panel', 'toggle-loop-panel', 300],
         ['analyze-panel', 'toggle-analyze', 300], ['vol-popup', 'vol-btn', 300],
@@ -21,6 +32,10 @@ export function createPanels({
         if (!state) return false;
         const { panel, triggerId, duration } = state;
         open = Boolean(open);
+        if (open && sheets.has(id)) {
+            lastSheetId = id;
+            if (compact.matches) hideOtherSheets(id);
+        }
         clearTimeout(state.timer);
         cancelAnimationFrame(state.frame);
         state.timer = state.frame = 0;
@@ -40,6 +55,7 @@ export function createPanels({
         if (open) {
             const wasHidden = panel.hidden;
             panel.hidden = false;
+            sheets.get(id)?.setOpen(true);
             if (fab) fab.hidden = false;
             if (wasHidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
                 // Establish the closed pose before starting the entry transition.
@@ -54,6 +70,7 @@ export function createPanels({
             } else panel.classList.add('show');
             if (id === 'playlist-sidebar' && panel.classList.contains('show')) playlistViewService.observePlaylistCovers();
         } else {
+            sheets.get(id)?.setOpen(false);
             if (panel.contains(document.activeElement) || fab?.contains(document.activeElement)) {
                 const trigger = document.getElementById(triggerId);
                 if (trigger?.getClientRects().length) trigger.focus({ preventScroll: true });
@@ -84,6 +101,12 @@ export function createPanels({
 
     function toggleFloatingPanel(id) {
         return setFloatingPanel(id, !floatingPanels.get(id)?.open);
+    }
+
+    function hideOtherSheets(keepId) {
+        for (const id of sheets.keys()) {
+            if (id !== keepId && floatingPanels.get(id).open) setFloatingPanel(id, false);
+        }
     }
 
     const modalController = {
@@ -146,6 +169,11 @@ export function createPanels({
         initialize() {
             if (initialized) return;
             initialized = true;
+            sheets.forEach(sheet => sheet.initialize());
+            compact.addEventListener('change', () => {
+                if (compact.matches) hideOtherSheets(floatingPanels.get(lastSheetId)?.open
+                    ? lastSheetId : [...sheets.keys()].find(id => floatingPanels.get(id).open));
+            });
             document.getElementById('playlist-fab-group').hidden = true;
 
             document.addEventListener('keydown', event => {

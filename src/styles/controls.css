@@ -44,7 +44,7 @@
 .advanced-menu-item:active { background: rgba(0,0,0,0.1); }
 .advanced-menu-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; line-height: 1; }
 .advanced-menu-text { white-space: nowrap; }
-.advanced-menu-item .tool-icon { width: 16px; height: 16px; }
+.advanced-menu-icon .tool-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .advanced-setting {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     min-height: 44px; padding: 0 15px; font-size: 0.85rem; color: var(--text-main);
@@ -55,19 +55,20 @@ label.advanced-setting { cursor: pointer; }
 .settings-switch input, .lyric-mode-control input {
     position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer;
 }
-.settings-switch-track { position: relative; width: 36px; height: 22px; border-radius: 11px; background: #aeb6be; transition: background 160ms ease; pointer-events: none; }
+.settings-switch-track { position: relative; width: 36px; height: 22px; border-radius: 11px; background: transparent; box-shadow: inset 0 0 0 1px rgba(44,62,80,0.22); transition: background 160ms ease; pointer-events: none; }
 .settings-switch-track::after {
     content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px;
     border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 160ms ease;
 }
 .settings-switch input:checked + .settings-switch-track { background: #248453; }
 .settings-switch input:checked + .settings-switch-track::after { transform: translateX(14px); }
-.settings-switch input:focus-visible + .settings-switch-track, .lyric-mode-control input:focus-visible + span { outline: 2px solid var(--text-main); outline-offset: 3px; }
-.lyric-mode-control { position: relative; display: grid; grid-template-columns: repeat(3, 44px); flex: 0 0 auto; height: 44px; font-size: 0.8rem; }
-.lyric-mode-control::before { content: ''; position: absolute; inset: 6px 0; border-radius: 16px; background: rgba(40,55,70,0.07); pointer-events: none; }
-.lyric-mode-control label { position: relative; display: grid; place-items: center; width: 44px; height: 44px; }
-.lyric-mode-control span { display: grid; place-items: center; width: 40px; height: 28px; border-radius: 14px; color: var(--text-sub); pointer-events: none; }
-.lyric-mode-control input:checked + span { color: var(--text-main); background: rgba(255,255,255,0.9); box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; }
+.settings-switch input:focus-visible + .settings-switch-track, .lyric-mode-control input:focus-visible + span, .effect-mode-control button:focus-visible > span { outline: 2px solid var(--text-main); outline-offset: 3px; }
+.lyric-mode-control, .effect-mode-control { position: relative; display: grid; grid-template-columns: repeat(3, 44px); flex: 0 0 auto; height: 44px; font-size: 0.8rem; }
+.lyric-mode-control::before, .effect-mode-control::before { content: ''; position: absolute; inset: 6px 0; border-radius: 16px; background: rgba(40,55,70,0.07); pointer-events: none; }
+.lyric-mode-control label, .effect-mode-control button { position: relative; display: grid; place-items: center; width: 44px; height: 44px; }
+.lyric-mode-control span, .effect-mode-control button > span { display: grid; place-items: center; width: 40px; height: 28px; border-radius: 14px; color: var(--text-sub); pointer-events: none; }
+.lyric-mode-control input:checked + span, .effect-mode-control button[aria-pressed="true"] > span { color: var(--text-main); background: rgba(255,255,255,0.9); box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; }
+.effect-mode-control button { padding: 0; border: 0; border-radius: 16px; background: transparent; cursor: pointer; }
 .lyric-mode-control input:disabled { cursor: not-allowed; }
 .lyric-mode-control input:disabled + span { opacity: 0.35; }
 .lyric-mode-button { font-family: inherit; line-height: 1; }
@@ -90,7 +91,8 @@ label.advanced-setting { cursor: pointer; }
 .desktop-only { display: flex; }
 
 @media screen and (min-width: 901px) {
-    #pl-container { margin-left: -15px; width: calc(100% + 15px); }
+    #pl-container, #pl-temporary-container { margin-left: -15px; width: calc(100% + 15px); }
+    .pl-item-index { width: max(22px, calc(var(--playlist-shared-index-digits, 3) * 1ch)); }
     .top-bar { align-items: center; gap: 12px; }
     .top-bar .tool-group { align-items: center; min-width: 0; }
     .top-bar .glass-btn { height: 38px; box-sizing: border-box; flex: 0 0 auto; }
