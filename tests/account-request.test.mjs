@@ -118,11 +118,13 @@ test('unconfirmed HTTP200 is uncertain; safe unsupported-import messages remain 
 });
 
 test('timeout covers JSON consumption and unregisters its controller, even when JSON ignores abort', async t => {
-    const f = fixture(t), json = deferred();
-    f.state.handler = () => ({ ok: true, status: 200, json: () => json.promise });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const f = fixture(t), json = deferred(), jsonStarted = deferred();
+    f.state.handler = () => ({ ok: true, status: 200, json: () => { jsonStarted.resolve(); return json.promise; } });
     const result = f.request('/song/like', {}, { timeoutMs: 15 });
     const assertion = assert.rejects(result, error => error.name === 'TimeoutError' && error.uncertain && error.status === 200);
-    await settle(); assert.equal(f.auth.accountAbortControllers.size, 1);
+    await jsonStarted.promise; assert.equal(f.auth.accountAbortControllers.size, 1);
+    t.mock.timers.tick(15);
     await assertion;
     assert.equal(f.calls[0].options.signal.aborted, true); assert.equal(f.auth.accountAbortControllers.size, 0);
     json.resolve({ code: 200 }); await settle();
