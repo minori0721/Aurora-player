@@ -1,4 +1,5 @@
 import { createAccountRequest } from './account-request.js';
+import { coverImageUrl } from '../shared/cover-url.js';
 
 const LIKE_LIMIT = 1000;
 const BATCH_SIZE = 200;
@@ -260,7 +261,15 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         for (const item of list) {
             const id = numericId(item?.id);
             if (id && numericId(item.creator?.userId) === userId && !result.has(id)) {
-                result.set(id, { id, name: String(item.name || '未命名歌单').slice(0, 300), specialType: Number(item.specialType) });
+                const count = typeof item.trackCount === 'number' || typeof item.trackCount === 'string' && /^\d+$/.test(item.trackCount)
+                    ? Number(item.trackCount) : NaN;
+                let cover = '';
+                try {
+                    const url = new URL(coverImageUrl(item.coverImgUrl || '', 100));
+                    if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) cover = url.href;
+                } catch (_) {}
+                result.set(id, { id, name: String(item.name || '未命名歌单').slice(0, 300), specialType: Number(item.specialType),
+                    cover, trackCount: Number.isSafeInteger(count) && count >= 0 ? count : null });
             }
         }
         return [...result.values()];
@@ -403,7 +412,7 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         dialog.className = 'song-actions-dialog';
         dialog.setAttribute('aria-labelledby', 'song-actions-picker-title');
         dialog.setAttribute('aria-describedby', 'song-actions-picker-song');
-        dialog.innerHTML = '<header class="song-actions-header"><h2 id="song-actions-picker-title">收藏到歌单</h2><button type="button" class="song-actions-close" aria-label="关闭" title="关闭">' + CLOSE + '</button></header>'
+        dialog.innerHTML = '<header class="song-actions-header"><h2 id="song-actions-picker-title">收藏到歌单</h2><button type="button" class="song-actions-close netease-close" aria-label="关闭" title="关闭">' + CLOSE + '</button></header>'
             + '<p id="song-actions-picker-song" class="song-actions-song"></p><div class="song-actions-list"></div>'
             + '<p class="song-actions-status" role="status" aria-live="polite" aria-atomic="true"></p>'
             + '<button type="button" class="song-actions-retry" hidden>重试</button>';
@@ -474,7 +483,25 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
                     button.type = 'button';
                     button.className = 'song-actions-playlist';
                     button.dataset.playlistId = String(item.id);
-                    button.textContent = item.name;
+                    button.title = item.name;
+                    const cover = document.createElement('span');
+                    cover.className = 'song-actions-playlist-cover';
+                    cover.setAttribute('aria-hidden', 'true');
+                    if (item.cover) {
+                        const image = document.createElement('img');
+                        image.alt = ''; image.width = image.height = 40;
+                        image.loading = 'lazy'; image.decoding = 'async'; image.referrerPolicy = 'no-referrer';
+                        image.addEventListener('error', () => { image.hidden = true; image.removeAttribute('src'); }, { once: true });
+                        image.src = item.cover;
+                        cover.appendChild(image);
+                    }
+                    const info = document.createElement('span'), name = document.createElement('span'), count = document.createElement('span');
+                    info.className = 'song-actions-playlist-info';
+                    name.className = 'song-actions-playlist-name'; name.textContent = item.name;
+                    count.className = 'song-actions-playlist-count';
+                    count.hidden = item.trackCount === null;
+                    count.textContent = item.trackCount === null ? '' : `${item.trackCount} 首`;
+                    info.append(name, count); button.append(cover, info);
                     button.addEventListener('click', () => { void select(item.id); });
                     view.list.appendChild(button);
                 });

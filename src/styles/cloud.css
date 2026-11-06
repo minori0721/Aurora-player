@@ -19,11 +19,7 @@
 .cloud-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .cloud-task-actions button { min-height: 44px; font-size: 0.85rem; padding: 8px 14px; }
 .cloud-task-actions button[hidden] { display: none; }
-.cloud-task-open { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: max(16px, env(safe-area-inset-left)); z-index: 80; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
-.cloud-task-open[hidden] { display: none; }
-.cloud-task-open svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 900px) {
     .download-panel { max-height: calc(100dvh - 20px); }
     .download-destination label { padding-inline: 7px; }
-    .cloud-task-open { font-size: 0.8rem; padding: 8px 12px; }
 }

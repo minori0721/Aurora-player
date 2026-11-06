@@ -1,5 +1,6 @@
 import { cleanCookie } from '../shared/text.js';
-import { formatSampleRate, inferAudioTypeFromUrl } from '../audio/quality.js';
+import { formatSampleRate, inferAudioTypeFromUrl, parseFlacStreamInfoFromBuffer } from '../audio/quality.js';
+import { readMp3StreamInfo } from '../audio/mp3.js';
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
 
 export function createDownload({
@@ -12,7 +13,8 @@ export function createDownload({
     playback: playbackService,
     resolver: resolverService,
     cloud: cloudService,
-    songActions: songActionsService
+    songActions: songActionsService,
+    transfer: transferService
 } = {}) {
     let _currentPlaying = null;
     let destination = 'device';
@@ -63,18 +65,6 @@ export function createDownload({
         return null;
     }
 
-    function formatNeteaseQualityDetail(detail) {
-        if (!detail) return '';
-        const parts = [];
-        const br = Number(detail.br || 0);
-        const size = Number(detail.size || 0);
-        const sr = Number(detail.sr || 0);
-        if (br > 0) parts.push(`${Math.round(br / 1000)}kbps`);
-        if (sr > 0) parts.push(formatSampleRate(sr));
-        if (size > 0) parts.push(`${(size / 1024 / 1024).toFixed(1)}MB`);
-        return parts.join(' · ');
-    }
-
     function closeDownloadModal() {
         cancelDownloadProbes();
         panelsService.modalController.close(domService.downloadModal);
@@ -86,7 +76,6 @@ export function createDownload({
         get _currentPlaying() { return _currentPlaying; },
         set _currentPlaying(value) { _currentPlaying = value; songActionsService?.setCurrentTrack(value); },
         cancelDownloadProbes,
-        openCloudTasks,
         initialize() {
             if (initialized) return;
             initialized = true;
@@ -113,6 +102,11 @@ export function createDownload({
             // 弹出下载模态并检测各音质可用性
             domService.downloadBtn.onclick = async function() {
                 const playing = _currentPlaying || null;
+                if ((!playing || playing.playToken !== playbackService._currentPlayActionToken || !playing.netease)
+                    && cloudService.getSnapshot().length) {
+                    openCloudTasks();
+                    return;
+                }
                 if (!playing || playing.playToken !== playbackService._currentPlayActionToken) {
                     alert('当前没有正在播放的可下载歌曲');
                     return;
@@ -141,7 +135,28 @@ export function createDownload({
                 const probeAuth = authService.captureAuthSnapshot();
                 const probeIsCurrent = () => probeToken === downloadProbeToken && !probeSignal.aborted && authService.isAuthSnapshotCurrent(probeAuth);
                 const probeOptions = { useQueue: true, signal: probeSignal, priority: 'normal' };
-                const qualityDetailPromise = cacheService.cachedFetchJson(
+                const matchJobs = new Map(), headerJobs = new Map(), metadataUpdates = [];
+                const inspectMatch = audioUrl => {
+                    if (headerJobs.has(audioUrl)) return headerJobs.get(audioUrl);
+                    const job = (async () => {
+                        let size = 0;
+                        const readRange = start => transferService.fetchAudioHeader(audioUrl, {
+                            signal: probeSignal, start,
+                            onMetadata(info) { if (info.size > 0) size = info.size; }
+                        });
+                        const header = await readRange(0);
+                        if (!header) return {};
+                        const flac = parseFlacStreamInfoFromBuffer(header);
+                        if (flac) return { type: 'flac', sr: flac.sampleRate, bitsPerSample: flac.bitsPerSample, size };
+                        const mp3 = await readMp3StreamInfo(readRange, { header, totalBytes: size });
+                        return mp3 ? { type: 'mp3', sr: mp3.sampleRate, br: mp3.bitrateKbps ? mp3.bitrateKbps * 1000 : 0,
+                            mode: mp3.mode, size } : { size };
+                    })();
+                    headerJobs.set(audioUrl, job);
+                    return job;
+                };
+                let qualityDetailPromise;
+                const getQualityDetail = () => qualityDetailPromise ||= cacheService.cachedFetchJson(
                     apiService.buildApiUrl(`/song/music/detail?id=${songId}${cookieParam}`),
                     probeOptions,
                     300_000
@@ -171,12 +186,6 @@ export function createDownload({
                         try {
                             const metaEl = it.querySelector('.quality-meta');
                             const rightArea = it.querySelector('.quality-action');
-                            const detailPayload = await qualityDetailPromise;
-                            if (!probeIsCurrent()) return;
-                            const detail = extractNeteaseQualityDetail(detailPayload, level);
-                            const detailText = formatNeteaseQualityDetail(detail);
-                            if (detailText) metaEl.textContent = `${detailText} · 检测下载链接…`;
-
                             let data = null;
                             let useMatchForVip = false;
                             let matchSource = '';
@@ -198,7 +207,11 @@ export function createDownload({
                             if (!data || !data.url) {
                                 useMatchForVip = true;
                                 try {
-                                    const matchResult = await resolverService.fetchNeteaseMatchAudio(songId, probeOptions, 30_000, resolverService.getNeteaseMatchStrategy(level), level);
+                                    const strategy = resolverService.getNeteaseMatchStrategy(level);
+                                    const key = JSON.stringify(strategy);
+                                    if (!matchJobs.has(key)) matchJobs.set(key,
+                                        resolverService.fetchNeteaseMatchAudio(songId, probeOptions, 30_000, strategy, level));
+                                    const matchResult = await matchJobs.get(key);
                                     if (!probeIsCurrent()) return;
                                     matchFailure = matchResult.error || null;
                                     if (matchResult.audioUrl) {
@@ -231,48 +244,27 @@ export function createDownload({
 
                                 // 2. 智能推断真实格式
                                 // 官方档位描述不一定属于 match 返回的实际文件。
-                                const fallbackDetail = !useMatchForVip && data.level === level ? detail : null;
-                                const br = data.br || fallbackDetail?.br || 0;
-                                const size = data.size || fallbackDetail?.size || 0;
-                                const sampleRate = data.sr || fallbackDetail?.sr || 0;
-
-                                const realExt = inferAudioTypeFromUrl(data.url, data.type);
-                                const isLossless = realExt === 'flac';
-
-                                // 3. 构建用户易读的信息文本
-                                let metaText = realExt ? realExt.toUpperCase() : '格式未知';
-
-                                // 如果使用了 match 接口兜底
-                                if (useMatchForVip) {
-                                    metaText += matchSource ? ` (match兜底/${matchSource})` : " (match兜底)";
-                                }
-
-                                // 检测是否发生了“越级”获取（例如点标准音质，实际给了无损）
-                                const isUpgrade = (level === 'standard' || level === 'higher') && isLossless;
-                                if (isUpgrade) {
-                                    metaText += " (自动升级)"; // 提示
-                                }
-
-                                // 拼接码率 (例如: 320kbps)
-                                if (br > 0) metaText += ` ${Math.round(br/1000)}kbps`;
-                                if (sampleRate > 0) metaText += ` ${formatSampleRate(sampleRate)}`;
-
-                                // 拼接大小 (例如: 12.5MB)
-                                if (size > 0) {
-                                    const sizeMB = (size / 1024 / 1024).toFixed(1);
-                                    metaText += ` ${sizeMB}MB`;
-                                }
-
-                                // 4. 更新界面显示
-                                metaEl.textContent = metaText;
-                                // 根据不同情况设置颜色：match 兜底用绿色，升级用红色
-                                if (useMatchForVip) {
-                                    metaEl.style.color = '#27ae60'; // 绿色表示已通过 match 兜底
-                                } else if (isUpgrade) {
-                                    metaEl.style.color = '#e74c3c'; // 红色表示音质升级
-                                } else {
-                                    metaEl.style.color = 'var(--text-sub)'; // 默认颜色
-                                }
+                                let fallbackDetail = null;
+                                let realExt = inferAudioTypeFromUrl(data.url, data.type);
+                                const updateMeta = () => {
+                                    const br = data.br || fallbackDetail?.br || 0;
+                                    const size = data.size || fallbackDetail?.size || 0;
+                                    const sampleRate = data.sr || fallbackDetail?.sr || 0;
+                                    const parts = [realExt ? realExt.toUpperCase() : '格式未知'];
+                                    if (br > 0) parts.push(`${Math.round(br / 1000)}kbps`);
+                                    else if (data.mode === 'VBR') parts.push('VBR');
+                                    if (sampleRate > 0) parts.push(`${formatSampleRate(sampleRate)}${realExt === 'flac' && data.bitsPerSample ? `/${data.bitsPerSample}bit` : ''}`);
+                                    if (size > 0) parts.push(`${(size / 1024 / 1024).toFixed(1)}MB`);
+                                    if (useMatchForVip) parts.push(matchSource ? `(match兜底/${matchSource})` : '(match兜底)');
+                                    if (['lossless', 'hires'].includes(level) && realExt === 'mp3') parts.push('· 未取得无损');
+                                    else if (level === 'hires' && realExt === 'flac' && data.bitsPerSample
+                                        && data.bitsPerSample <= 16 && sampleRate <= 48000) parts.push('· 实际为无损');
+                                    const isUpgrade = ['standard', 'higher'].includes(level) && realExt === 'flac';
+                                    if (isUpgrade) parts.push('(自动升级)');
+                                    metaEl.textContent = parts.join(' ');
+                                    metaEl.style.color = useMatchForVip ? '#27ae60' : isUpgrade ? '#e74c3c' : 'var(--text-sub)';
+                                };
+                                updateMeta();
 
                                 // 5. 生成下载按钮
                                 rightArea.innerHTML = '';
@@ -309,6 +301,19 @@ export function createDownload({
                                     a.remove();
                                 };
                                 rightArea.appendChild(dlBtn);
+                                if (useMatchForVip) metadataUpdates.push(inspectMatch(data.url).then(info => {
+                                    if (!probeIsCurrent()) return;
+                                    data = { ...data, ...info };
+                                    realExt = info.type || realExt;
+                                    updateMeta();
+                                }).catch(() => {}));
+                                else if (data.level === level && (!data.br || !data.sr || !data.size)) {
+                                    metadataUpdates.push(getQualityDetail().then(payload => {
+                                        if (!probeIsCurrent()) return;
+                                        fallbackDetail = extractNeteaseQualityDetail(payload, level);
+                                        updateMeta();
+                                    }));
+                                }
 
                             } else {
                                 // ----------------- 获取失败 (变灰处理) -----------------
@@ -343,6 +348,7 @@ export function createDownload({
                     while (probeIsCurrent() && probeJobs.length) await probeJobs.shift()();
                 };
                 await Promise.all([runProbes(), runProbes()]);
+                await Promise.all(metadataUpdates);
                 if (downloadProbeController === probeController) downloadProbeController = null;
             };
         }

@@ -124,7 +124,7 @@ export function createTransfer({} = {}) {
         }
     }
 
-    async function fetchAudioHeader(audioUrl, { signal, maxBytes = 4096, timeoutMs = 3000, start = 0 } = {}) {
+    async function fetchAudioHeader(audioUrl, { signal, maxBytes = 4096, timeoutMs = 3000, start = 0, onMetadata } = {}) {
         if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 65536) throw new RangeError('Invalid audio header size');
         if (!Number.isSafeInteger(start) || start < 0 || start > 64 * 1024 * 1024) throw new RangeError('Invalid audio header offset');
         return withRequestTimeout(signal, timeoutMs, '音频文件头读取超时', async requestSignal => {
@@ -132,7 +132,7 @@ export function createTransfer({} = {}) {
                 headers: { Range: `bytes=${start}-${start + maxBytes - 1}` }, credentials: 'omit', signal: requestSignal
             }), requestSignal);
             const range = response.headers.get('content-range');
-            const match = range?.match(/^bytes\s+(\d+)-(\d+)\/(?:\d+|\*)$/i);
+            const match = range?.match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i);
             // Content-Range may be hidden by CORS. A visible, invalid range is never usable.
             if (response.status !== 206 || Number(response.headers.get('content-length')) > maxBytes
                 || range && (!match || Number(match[1]) !== start || Number(match[2]) < start
@@ -140,6 +140,8 @@ export function createTransfer({} = {}) {
                 response.body?.cancel().catch(() => {});
                 return null;
             }
+            const size = Number(match?.[3]);
+            onMetadata?.({ size: Number.isSafeInteger(size) && size > 0 ? size : 0 });
             const reader = response.body.getReader();
             const cancel = () => { reader.cancel().catch(() => {}); };
             requestSignal.addEventListener('abort', cancel, { once: true });

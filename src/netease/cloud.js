@@ -124,7 +124,7 @@ export function uploadCloudBlob(blob, data, { signal, onProgress = () => {} } = 
     });
 }
 
-export function createCloud({ api, auth, debug, download, resolver, playback, cloudWorkerSource = '',
+export function createCloud({ api, auth, debug, resolver, playback, cloudWorkerSource = '',
     prepare = createCloudPreparation(cloudWorkerSource), fetcher = fetch, upload = uploadCloudBlob, accountRequest } = {}) {
     const request = accountRequest || createAccountRequest({ api, auth });
     const tasks = [], nodes = new Map();
@@ -373,11 +373,6 @@ export function createCloud({ api, auth, debug, download, resolver, playback, cl
     function render() {
         if (!initialized) return;
         const root = document.getElementById('cloud-task-status');
-        const launcher = document.getElementById('cloud-task-open');
-        if (launcher) {
-            launcher.hidden = !tasks.length;
-            document.getElementById('cloud-task-label').textContent = tasks.some(task => !TERMINAL.has(task.status)) ? '云盘任务' : '云盘结果';
-        }
         if (!root) return;
         for (const task of tasks) {
             let node = nodes.get(task.id);
@@ -431,7 +426,6 @@ export function createCloud({ api, auth, debug, download, resolver, playback, cl
         initialize() {
             if (initialized) return;
             initialized = true;
-            document.getElementById('cloud-task-open')?.addEventListener('click', () => download.openCloudTasks());
             render();
         }
     };

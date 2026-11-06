@@ -277,6 +277,40 @@ test('complete shared playlists avoid reads and include only playlists created b
     assert.deepEqual(f.dialog().querySelectorAll('.song-actions-playlist').map(node => node.dataset.playlistId), ['1', '3']);
 });
 
+test('playlist picker retains cover and track count from shared data without extra API reads', async t => {
+    const cover = 'https://p3.music.126.net/picker-cover/123456.jpg';
+    const f = fixture(t, { shared: [playlist(9, 7, { name: 'Long <playlist> title', coverImgUrl: cover, trackCount: 1234 }),
+        playlist(10, 7, { coverImgUrl: 'javascript:alert(1)' }), playlist(11, 7, { trackCount: '0' })] });
+    await f.actions.openPlaylistPicker(song(1));
+    const rows = f.dialog().querySelectorAll('.song-actions-playlist');
+    assert.equal(rows[0].querySelector('.song-actions-playlist-name').textContent, 'Long <playlist> title');
+    assert.equal(rows[0].querySelector('.song-actions-playlist-count').textContent, '1234 首');
+    assert.equal(rows[0].title, 'Long <playlist> title');
+    const image = rows[0].querySelector('img');
+    assert.equal(image.src, cover + '?param=100y100');
+    assert.equal(image.loading, 'lazy'); assert.equal(image.decoding, 'async');
+    assert.equal(image.width, 40); assert.equal(image.height, 40); assert.equal(image.alt, '');
+    assert.equal(image.referrerPolicy, 'no-referrer');
+    assert.equal(rows[1].querySelectorAll('img').length, 0);
+    assert.equal(rows[1].querySelector('.song-actions-playlist-count').hidden, true);
+    assert.equal(rows[2].querySelector('.song-actions-playlist-count').hidden, false);
+    assert.equal(rows[2].querySelector('.song-actions-playlist-count').textContent, '0 首');
+    image.dispatchEvent({ type: 'error' });
+    assert.equal(image.hidden, true); assert.ok(rows[0].querySelector('.song-actions-playlist-cover'));
+    assert.equal(f.calls.length, 0);
+    f.dialog().close(); await f.actions.openPlaylistPicker(song(2));
+    assert.equal(f.calls.length, 0, 'reopening reuses the same account playlist cache');
+});
+
+test('picker markup shares the cloud-music close style and list-only scrolling keeps it outside rows', async () => {
+    const source = await fs.readFile(new URL('../src/netease/song-actions.js', import.meta.url), 'utf8');
+    assert.match(source, /class="song-actions-close netease-close"/);
+    const css = await fs.readFile(new URL('../src/styles/song-actions.css', import.meta.url), 'utf8');
+    assert.match(css, /\.song-actions-dialog\[open\][^{]*\{[^}]*display: flex/);
+    assert.match(css, /\.song-actions-list\s*\{[^}]*min-height: 0;[^}]*overflow-y: auto/);
+    assert.doesNotMatch(css, /\.song-actions-close:hover/);
+});
+
 test('partial shared playlists resume pagination and dedupe records without invoking the main loader', async t => {
     const shared = Array.from({ length: 30 }, (_, i) => playlist(i + 1));
     const f = fixture(t, { shared, complete: false });
@@ -475,7 +509,7 @@ test('picker supports inline load error, retry, safe text labels and empty state
     assert.match(f.dialog().querySelector('.song-actions-status').textContent, /500/);
     fail = false; f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
     assert.equal(f.dialog().querySelector('.song-actions-retry').hidden, true);
-    assert.equal(f.dialog().querySelector('.song-actions-playlist').textContent, '<img onerror=secret>');
+    assert.equal(f.dialog().querySelector('.song-actions-playlist-name').textContent, '<img onerror=secret>');
     assert.equal(f.dialog().querySelector('.song-actions-song').textContent, '<script>secret</script>');
     f.actions.reset(); f.myPlaylists.myPlaylistsComplete = true; f.myPlaylists.myPlaylistsData = [];
     await f.actions.openPlaylistPicker(song(2)); assert.match(f.dialog().querySelector('.song-actions-status').textContent, /暂无/);

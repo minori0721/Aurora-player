@@ -4,12 +4,74 @@ import { createResolver } from '../src/netease/audio-url.js';
 import { createCache } from '../src/storage/cache.js';
 import { createTransfer } from '../src/audio/transfer.js';
 import { createMemoryIndexedDb } from './helpers/indexeddb.mjs';
+import { MATCH_SOURCE_ORDERS } from '../src/netease/match-sources.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const response = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers });
 const good = () => response({ code: 200, data: 'https://cdn.test/full.flac' });
 const idle = { priority: 'idle' };
 const manual = { priority: 'normal' };
+
+test('source profiles separate playback, lossless and Hi-Res with bounded preferred candidates', t => {
+    const f = fixture(t);
+    assert.equal(f.resolver.getNeteaseMatchStrategy('hires'), 'hires');
+    assert.equal(f.resolver.getNeteaseMatchStrategy('lossless'), 'lossless');
+    assert.equal(f.resolver.getNeteaseMatchStrategy('higher'), 'balanced');
+    for (const sources of Object.values(MATCH_SOURCE_ORDERS)) {
+        assert.equal(sources.at(-1), null);
+        assert.ok(sources.length >= 3);
+        assert.equal(new Set(sources).size, sources.length);
+        assert.ok(sources.slice(0, -1).every(source => /^[a-z0-9_-]+$/.test(source)));
+    }
+});
+
+for (const strategy of ['lossless', 'hires']) {
+    test(`${strategy} keeps a playable MP3 while checking the other preferred FLAC source`, async t => {
+        const f = fixture(t), [first, second] = MATCH_SOURCE_ORDERS[strategy];
+        f.state.handler = url => response({ code: 200, data: `https://cdn.test/${url.searchParams.get('source')}.${url.searchParams.get('source') === first ? 'mp3' : 'flac'}` });
+        const result = await f.match(manual, strategy);
+        assert.equal(result.source, second);
+        assert.deepEqual(f.matchCalls.map(call => call.url.searchParams.get('source')), [first, second]);
+    });
+}
+
+test('lossless returns an existing MP3 after the preferred sources rather than waiting on degraded sources', async t => {
+    const f = fixture(t);
+    const first = MATCH_SOURCE_ORDERS.lossless[0];
+    f.state.handler = url => url.searchParams.get('source') === first
+        ? response({ code: 200, data: 'https://cdn.test/full.mp3' }) : response({}, 500);
+    assert.equal((await f.match(manual, 'lossless')).source, first);
+    assert.equal(f.matchCalls.length, 2);
+});
+
+test('failed preferred sources retain the fast MP3 fallback', async t => {
+    const f = fixture(t);
+    const sources = MATCH_SOURCE_ORDERS.hires.slice(0, 3), fallback = sources[2];
+    f.state.handler = url => url.searchParams.get('source') === fallback
+        ? response({ code: 200, data: 'https://cdn.test/full.mp3' }) : response({}, 500);
+    assert.equal((await f.match(manual, 'hires')).source, fallback);
+    assert.deepEqual(f.matchCalls.map(call => call.url.searchParams.get('source')), sources);
+});
+
+test('newly configured preferred sources use the same lossless fallback rules', async t => {
+    const previous = MATCH_SOURCE_ORDERS.lossless;
+    t.after(() => { MATCH_SOURCE_ORDERS.lossless = previous; });
+    MATCH_SOURCE_ORDERS.lossless = ['newa', 'newb', 'msls', null];
+    const f = fixture(t);
+    f.state.handler = url => response({ code: 200,
+        data: `https://cdn.test/full.${url.searchParams.get('source') === 'newa' ? 'mp3' : 'flac'}` });
+    assert.equal((await f.match(manual, 'lossless')).source, 'newb');
+    assert.deepEqual(f.matchCalls.map(call => call.url.searchParams.get('source')), ['newa', 'newb']);
+});
+
+test('matched files do not inherit official trial file size, duration, hash or quality fields', async t => {
+    const f = fixture(t);
+    f.state.handler = url => url.pathname === '/song/url/v1'
+        ? response({ code: 200, data: [{ url: null, size: 481115, time: 30000, md5: 'trial', br: 128000, sr: 48000, level: 'standard' }] }) : good();
+    const result = await f.resolve();
+    assert.equal(result.audioInfo.type, 'flac');
+    for (const key of ['size', 'time', 'md5', 'br', 'sr', 'level']) assert.equal(result.audioInfo[key], undefined);
+});
 
 function fixture(t) {
     const calls = [], indexedDB = createMemoryIndexedDb();

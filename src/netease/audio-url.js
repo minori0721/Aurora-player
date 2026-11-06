@@ -1,5 +1,6 @@
 import { cleanCookie, hashCacheScope, toHttps } from '../shared/text.js';
 import { inferAudioTypeFromUrl } from '../audio/quality.js';
+import { MATCH_SOURCE_ORDERS } from './match-sources.js';
 
 export function createResolver({
     api: apiService,
@@ -36,11 +37,6 @@ export function createResolver({
         return Number(info.fee) === 1 && Number(info.payed || 0) === 0 && durationMs > 0 && durationMs <= 35_000 && info.urlSource === 0;
     }
 
-    const NETEASE_MATCH_SOURCE_ORDERS = {
-        balanced: ['msls', 'qijieya', 'baka', 'bikonoo', 'gdmusic', 'unm', null],
-        lossless: ['bikonoo', 'msls', 'qijieya', 'baka', 'gdmusic', 'unm', null]
-    };
-
     const NETEASE_RESOLVED_AUDIO_CACHE_TTL = 10 * 60_000;
 
     const NETEASE_RESOLVED_AUDIO_CACHE_MAX_ENTRIES = 200;
@@ -52,12 +48,12 @@ export function createResolver({
     let entitlementRevision = 0;
 
     function getNeteaseMatchStrategy(level = authService.neteaseQuality) {
-        return (level === 'lossless' || level === 'hires') ? 'lossless' : 'balanced';
+        return level === 'hires' ? 'hires' : level === 'lossless' ? 'lossless' : 'balanced';
     }
 
     function getNeteaseMatchSources(strategy = 'balanced') {
         if (Array.isArray(strategy)) return strategy;
-        return NETEASE_MATCH_SOURCE_ORDERS[strategy] || NETEASE_MATCH_SOURCE_ORDERS.balanced;
+        return MATCH_SOURCE_ORDERS[strategy] || MATCH_SOURCE_ORDERS.balanced;
     }
 
     function clearNeteaseResolvedAudioCache({ entitlementsChanged = false } = {}) {
@@ -134,6 +130,10 @@ export function createResolver({
 
     async function fetchNeteaseMatchAudio(songId, options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy(), level = authService.neteaseQuality) {
         let skippedTrial = false;
+        let fallback = null;
+        const preferLossless = strategy === 'lossless' || strategy === 'hires';
+        const sources = getNeteaseMatchSources(strategy);
+        const preferredSources = new Set(preferLossless ? sources.slice(0, 2) : []);
         const failures = [];
         const generation = cacheGeneration;
         const accountKey = getNeteaseResolvedAudioCacheKey(songId, level);
@@ -143,8 +143,9 @@ export function createResolver({
         };
         for (const [key, entry] of matchFailures) if (entry.until <= Date.now()) matchFailures.delete(key);
 
-        for (const source of getNeteaseMatchSources(strategy)) {
+        for (const source of sources) {
             assertActive();
+            if (fallback && !preferredSources.has(source)) return { ...fallback, skippedTrial };
             const failureKey = `${accountKey}|${source || 'auto'}`;
             let previous = matchFailures.get(failureKey);
             if (previous?.until <= Date.now()) { matchFailures.delete(failureKey); previous = null; }
@@ -168,21 +169,19 @@ export function createResolver({
                 if (dataIsTrial || proxyIsTrial) skippedTrial = true;
                 if (canCommit()) matchFailures.delete(failureKey);
 
-                if (dataUrl && !dataIsTrial) {
-                    return {
-                        audioUrl: dataUrl,
-                        proxyUrl: proxyUrl && !proxyIsTrial ? proxyUrl : '',
+                const audioUrl = dataUrl && !dataIsTrial ? dataUrl : proxyUrl && !proxyIsTrial ? proxyUrl : '';
+                if (audioUrl) {
+                    const candidate = {
+                        audioUrl,
+                        proxyUrl: audioUrl === dataUrl && proxyUrl && !proxyIsTrial ? proxyUrl : '',
                         source: source || 'auto',
                         skippedTrial
                     };
-                }
-                if (proxyUrl && !proxyIsTrial) {
-                    return {
-                        audioUrl: proxyUrl,
-                        proxyUrl: '',
-                        source: source || 'auto',
-                        skippedTrial
-                    };
+                    if (preferredSources.has(source) && inferAudioTypeFromUrl(audioUrl) !== 'flac') {
+                        fallback ||= candidate;
+                        continue;
+                    }
+                    return inferAudioTypeFromUrl(audioUrl) === 'flac' ? candidate : fallback || candidate;
                 }
                 failures.push({ source: source || 'auto', kind: dataIsTrial || proxyIsTrial ? 'trial' : 'empty', status: 0, apiCode: 0 });
             } catch (e) {
@@ -200,7 +199,7 @@ export function createResolver({
             }
         }
 
-        return { audioUrl: '', proxyUrl: '', source: '', skippedTrial, error: matchError(failures, skippedTrial) };
+        return fallback ? { ...fallback, skippedTrial } : { audioUrl: '', proxyUrl: '', source: '', skippedTrial, error: matchError(failures, skippedTrial) };
     }
 
     async function resolveNeteaseAudioUrl(songId, cookieParam = '', level = authService.neteaseQuality, options = {}, ttl = 30_000, strategy = getNeteaseMatchStrategy(level)) {
@@ -244,13 +243,8 @@ export function createResolver({
                 matchSource = matchResult.source || '';
                 audioUrl = toHttps(matchResult.audioUrl);
                 proxyUrl = toHttps(matchResult.proxyUrl || '');
-                if (!audioInfo) audioInfo = {};
-                audioInfo.url = audioUrl;
-                audioInfo.proxyUrl = proxyUrl;
-                audioInfo.type = inferAudioTypeFromUrl(audioUrl, audioInfo.type);
-                audioInfo.br = null;
-                audioInfo.sr = null;
-                audioInfo.freeTrialInfo = null;
+                audioInfo = { id: Number(songId), url: audioUrl, proxyUrl,
+                    type: inferAudioTypeFromUrl(audioUrl), freeTrialInfo: null };
             }
         }
 

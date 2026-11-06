@@ -42,6 +42,13 @@ test('source dependencies are explicit and acyclic; output is one standalone HTM
     assert.ok(built.workerSource.includes('Copyright Fedor Indutny, 2017.'));
 });
 
+test('cloud task feedback stays inside the download dialog without a floating launcher', () => {
+    assert.ok(built.html.includes('id="cloud-task-status"'));
+    assert.equal(built.html.includes('id="cloud-task-open"'), false);
+    assert.equal(built.html.includes('id="cloud-task-label"'), false);
+    assert.equal(built.html.includes('.cloud-task-open'), false);
+});
+
 test('favicon uses the two committed transparent PNGs inline, with accurate sizes and no sidecar URL', async () => {
     const icons = [...built.html.matchAll(/<link\b[^>]*\brel="icon"[^>]*>/g)].map(match => match[0]);
     assert.equal(icons.length, 2);

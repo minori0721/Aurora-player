@@ -56,6 +56,17 @@ test('header probe requests only 4 KiB without credentials or full-file helpers'
     assert.equal(parseFlacStreamInfoFromBuffer(header).bitsPerSample, 16);
 });
 
+test('header metadata reports the full file size rather than the partial response length', async t => {
+    const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+    let info;
+    globalThis.fetch = async () => partialResponse(flacHeader(), { 'content-length': '42' });
+    await transfer.fetchAudioHeader('https://cdn.test/a.flac', { onMetadata(value) { info = value; } });
+    assert.deepEqual(info, { size: 1000000 });
+    globalThis.fetch = async () => new Response(flacHeader(), { status: 206, headers: { 'content-length': '42' } });
+    await transfer.fetchAudioHeader('https://cdn.test/a.flac', { onMetadata(value) { info = value; } });
+    assert.deepEqual(info, { size: 0 });
+});
+
 test('ignored ranges and HTTP failures cancel before reading the body', async t => {
     const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
     for (const status of [200, 403, 404, 416, 500]) {

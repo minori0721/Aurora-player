@@ -24,6 +24,7 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/lyrics/timeline.js` | 普通与逐字歌词对齐、片段组合及翻译/罗马音附着 |
 | `src/netease/` | API、登录、内容浏览、路由、歌单分页、下载 |
 | `src/netease/song-details.js` | 歌曲详情前瞻、按 ID 共享请求、优先级提升与账号隔离 |
+| `src/netease/match-sources.js` | 备用音源名单及普通、无损、Hi-Res 的优先顺序 |
 | `src/netease/song-actions.js`、`account-request.js` | 喜欢状态、收藏到歌单、账号写请求与业务响应校验 |
 | `src/netease/cloud.js`、`cloud-preparation.js` | 云盘任务、直接导入、临时文件直传、入库核验及 Worker 生命周期 |
 | `src/audio/cloud-tags.js`、`cloud-worker.js` | MP3/FLAC 元数据增补、最终文件 MD5、按需离线计算 |
@@ -78,11 +79,31 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 
 运行 `npm run check`、`npm test`、`npm run build`。静态检查验证未解析变量、模块导入环、外部脚本/样式、残留内联动作及版本占位符；测试覆盖纯函数、模拟播放状态、Worker 协议与构建产物。
 
+### 音源自动维护
+
+`match-sources.yml` 每天北京时间 11:00 触发一次短测，周一当日检测完成后汇总最近七天；也可在 Actions 的 `Update music sources` 手动运行，周一手动运行会同时汇总。工作流仅使用默认分支，实际启动时间取决于 GitHub 调度。
+
+每日读取上游 `UnblockNeteaseMusic-utils` 的现用模块目录，并批量核验当天样本的公开 VIP 属性和时长。中、日、英各一首固定基准曲，另外从九首轮换曲中每天取三首，三天覆盖十二首。测试 API 优先取仓库变量 `SOURCE_CHECK_API_URL`，其次是 `API_BASE_URL`，都未设置时使用项目默认 API；不使用账号凭据。CDN 检查携带播放器的 Origin，站点来源取 `SOURCE_CHECK_ORIGIN`，默认 `https://music.moerika.com`。
+
+每日最多两个请求并发，每条执行链在请求前等待 700ms。每个来源最多六首、总计最多十二个来源，即最多 73 次 API 请求；七个来源时每天 43 次、每周 301 次，其中 match 为 294 次。文件头另向音频 CDN 读取，每段最多 4KiB，MP3 最多两段。格式、跨域和时长检查通过才计为成功。12 分钟停止分配新探测，整个每日任务上限 15 分钟；限流后停止新探测，未完成的整轮记录为无结论。
+
+每天只保存 `match-sources-daily` 附件，保留 30 天。周一从同仓库、同工作流、默认分支的历史运行读取记录，同一北京时间日期只取最后一次，排除不同 API、站点来源和检测版本的数据。重跑不会增加该日权重；失败日作为缺测。至少三个有效日且当天检测有效时才提出排序建议。
+
+周排序使用两天半衰期：`weight = 2 ** (-ageDays / 2)`，按每天的比例加权。普通模式比较可用率、MP3 率，无损比较 FLAC 率、可用率，Hi-Res 比较高精度 FLAC 率、FLAC 率、可用率。差距不足 10 个百分点时继续比较下一指标；指标近似时保留原顺序，仅将耗时中位数达到 5 秒的来源排在同等结果的其他来源之后。最新一轮至少三首全失败的来源降低优先级；全局故障或限流不参与排序。新增来源至少三个有效日各通过两首、合计三首不同歌曲才纳入建议，上游移除的来源从名单删除，暂时失败的现有来源保留。耗时代表 GitHub runner 的测试线路。高音质播放先尝试对应名单中排前的两个来源，再使用有损兜底。
+
+周建议名单通过源码检查、自动测试和单文件构建后，更新 `automation/match-sources` 分支上的同一个 PR，只提交 `src/netease/match-sources.js`；没有变化时不新建 PR。周报保存为 `match-sources-weekly` 附件，保留 30 天，包含有效日期、加权指标和建议顺序。附件只保存检测数据与文字报告，不保存音频链接或凭据。每日探测仅持有内容读权限，周汇总增加 Actions 读权限，创建 PR 的独立任务才持有仓库内容和 PR 写权限。
+
+首次启用需将工作流推送到默认分支，并在仓库 Settings → Actions → General → Workflow permissions 打开 **Allow GitHub Actions to create and approve pull requests**。工作流使用内置 `GITHUB_TOKEN`，不需要新增个人 Token。机器人 PR 的常规检查可能显示 **Approve workflows to run**，仓库维护者批准后运行。名单更新仍需人工合并，版本号和 Release 沿用现有发布规则。
+
+本地可运行 `npm run sources:check` 只比对目录，或 `npm run sources:audit` 生成单次报告和建议文件；后者的输出位于 `work/match-sources-audit/`，加 `-- --write` 才写入源码，单次建议不等同于周排序。`npm run sources:audit -- --daily` 只保存当天记录。`npm run sources:weekly` 在 Actions 中下载历史附件并生成 `work/match-sources-weekly/` 周报及候选名单。播放器运行和普通单文件构建不访问 GitHub，继续使用 HTML 内嵌的名单。
+
+### 版本发布
+
 版本号以 `package.json` 为准，构建自动写入页脚；准备版本时可用 `npm version <目标版本> --no-git-tag-version` 同步包与锁文件，再添加 changelog 对应条目。功能迭代提升次版本，修复提升补丁版本，参见 [SemVer](https://semver.org/spec/v2.0.0.html)。
 
 `check.yml` 在 Windows、Linux 上检查、测试和构建，Linux 同时保存按提交 SHA 命名的单文件产物。矩阵全部成功后，Pages 与 Release 从同次运行下载这一份产物，不重复测试或重新打包；两者使用相同的公开地址配置。重跑全部检查可替换同次运行的产物，仅重试发布任务则继续使用已有受检产物。PR 和其他分支没有发布权限。发布任务固定检出 `github.sha`，读取 package.json 的版本号；同版本已发布时跳过，否则验证 changelog 和单文件产物，通过 GitHub API 创建精确指向受检提交的标签，并在同一任务内创建草稿、上传、核对附件大小及标签归属后发布，不依赖标签事件二次触发工作流。
 
-发布任务全局串行执行。已有轻量或附注标签必须解析到当前受检提交，草稿也只能从相同提交恢复，禁止移动标签或覆盖已发布版本；网络或权限错误不能当作不存在。版本号不自动递增，重试入口为 Actions 的失败任务或发布分支上的 `Check` 手动运行。写权限仅授予发布调用与发布任务，构建和 PR 保持只读。
+发布任务全局串行执行。已有轻量或附注标签必须解析到当前受检提交，草稿也只能从相同提交恢复，禁止移动标签或覆盖已发布版本；网络或权限错误不能当作不存在。版本号不自动递增，重试入口为 Actions 的失败任务或发布分支上的 `Check` 手动运行。发布写权限仅授予发布调用与发布任务，常规构建和 PR 检查保持只读；音源维护的 PR 创建任务另按上述范围授权。
 
 `.github/workflows/pages.yml` 由 `Check` 调用，部署 `minori0721-test-1` 分支；手动部署运行该分支的 `Check`。产物转换为 Pages 附件后，通过 `github-pages` 环境和官方 Pages Actions 发布。部署权限授予调用与部署任务，检查和附件准备保持只读；部署串行执行。两个公开地址从仓库 Actions Variables 传入受检构建，未设置时使用默认值。首次使用时，将仓库 Pages 发布来源设为 `GitHub Actions`。
 

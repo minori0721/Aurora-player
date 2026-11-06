@@ -1,0 +1,128 @@
+name: Update music sources
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: match-sources-update
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      weekly: ${{ steps.sources.outputs.weekly }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Sample public audio sources
+        id: sources
+        continue-on-error: true
+        run: npm run sources:audit -- --daily
+        env:
+          SOURCE_CHECK_API_URL: ${{ vars.SOURCE_CHECK_API_URL || vars.API_BASE_URL }}
+          SOURCE_CHECK_ORIGIN: ${{ vars.SOURCE_CHECK_ORIGIN || 'https://music.moerika.com' }}
+      - name: Keep daily observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: match-sources-daily
+          path: |
+            work/match-sources-audit/daily.json
+            work/match-sources-audit/report.md
+          if-no-files-found: error
+          retention-days: 30
+
+  summarize:
+    needs: sample
+    if: needs.sample.result == 'success' && needs.sample.outputs.weekly == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      status: ${{ steps.weekly.outputs.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: match-sources-daily
+          path: work/match-sources-audit
+      - name: Summarize the last seven days
+        id: weekly
+        run: npm run sources:weekly
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Apply weekly candidate for verification
+        if: steps.weekly.outputs.status == 'ready'
+        run: cp work/match-sources-weekly/match-sources.js src/netease/match-sources.js
+      - if: steps.weekly.outputs.status == 'ready'
+        run: npm run check
+      - if: steps.weekly.outputs.status == 'ready'
+        run: npm test
+      - if: steps.weekly.outputs.status == 'ready'
+        run: npm run build
+      - name: Keep weekly report and candidate
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: match-sources-weekly
+          path: |
+            work/match-sources-weekly/report.md
+            work/match-sources-weekly/report.json
+            work/match-sources-weekly/match-sources.js
+          if-no-files-found: error
+          retention-days: 30
+
+  propose:
+    needs: summarize
+    if: needs.summarize.result == 'success' && needs.summarize.outputs.status == 'ready'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: match-sources-weekly
+          path: work/match-sources-weekly
+      - name: Apply verified catalog
+        run: cp work/match-sources-weekly/match-sources.js src/netease/match-sources.js
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: ${{ github.event.repository.default_branch }}
+          branch: automation/match-sources
+          delete-branch: true
+          add-paths: src/netease/match-sources.js
+          commit-message: 'chore: update verified music sources'
+          title: 'chore: 更新音源目录与优先级'
+          body-path: work/match-sources-weekly/report.md

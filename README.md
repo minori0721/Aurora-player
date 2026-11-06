@@ -1,6 +1,6 @@
 # <img src="src/assets/aurora.svg" width="44" height="44" align="middle" alt=""> Aurora Player（极光播放器）
 
-**当前版本：v0.1.9**
+**当前版本：v0.1.10**
 
 在线体验：[music.moerika.com](https://music.moerika.com/) · [备用站点](https://player.minori0721.dpdns.org/)
 
