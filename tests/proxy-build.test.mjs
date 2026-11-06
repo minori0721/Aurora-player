@@ -7,8 +7,8 @@ import { build, buildHtml, ROOT } from '../scripts/build.mjs';
 import { DEFAULT_CONFIG, readPublicConfig } from '../scripts/config.mjs';
 import { checkHtml } from '../scripts/check.mjs';
 
-test('proxy defaults follow Cloudflare deployment, while generic, Vercel and CI builds use music.moerika.com', () => {
-    assert.equal(DEFAULT_CONFIG.DOWNLOAD_PROXY_URL, 'https://music.moerika.com/proxy-download');
+test('proxy defaults follow Cloudflare deployment, while generic, Vercel and CI builds use the public Cloudflare proxy', () => {
+    assert.equal(DEFAULT_CONFIG.DOWNLOAD_PROXY_URL, 'https://proxy.minori0721.dpdns.org');
     for (const env of [{}, { VERCEL: '1' }, { GITHUB_ACTIONS: 'true' }, { CF_PAGES: '0' }, { WORKERS_CI: '0' }]) {
         assert.equal(readPublicConfig(env).DOWNLOAD_PROXY_URL, DEFAULT_CONFIG.DOWNLOAD_PROXY_URL);
     }

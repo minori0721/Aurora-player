@@ -1,6 +1,6 @@
 export const DEFAULT_CONFIG = Object.freeze({
     API_BASE_URL: 'https://musicproxy.minori.eu.cc',
-    DOWNLOAD_PROXY_URL: 'https://music.moerika.com/proxy-download'
+    DOWNLOAD_PROXY_URL: 'https://proxy.minori0721.dpdns.org'
 });
 
 export function isCloudflareBuild(env = {}) {

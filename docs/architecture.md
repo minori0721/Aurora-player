@@ -86,4 +86,4 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 
 `.github/workflows/pages.yml` 由 `Check` 调用，部署 `minori0721-test-1` 分支；手动部署运行该分支的 `Check`。产物转换为 Pages 附件后，通过 `github-pages` 环境和官方 Pages Actions 发布。部署权限授予调用与部署任务，检查和附件准备保持只读；部署串行执行。两个公开地址从仓库 Actions Variables 传入受检构建，未设置时使用默认值。首次使用时，将仓库 Pages 发布来源设为 `GitHub Actions`。
 
-Cloudflare Workers 使用 `server/cloudflare.js` 和 `dist/`；Pages 构建自动向 `dist/` 增加下载函数与路由配置。两者的前端默认使用同站下载入口。Vercel、GitHub Pages 和普通单文件构建默认使用 music 域名的下载代理，显式配置优先。Pages 与 Release 的工作流继续只传递 `dist/index.html`。API 后端独立部署，平台设置见 [部署指南](deployment.md)。
+Cloudflare Workers 使用 `server/cloudflare.js` 和 `dist/`；Pages 构建自动向 `dist/` 增加下载函数与路由配置。两者的前端默认使用同站下载入口。Vercel、GitHub Pages 和普通单文件构建默认使用公共 Cloudflare 下载代理，显式配置优先。Pages 与 Release 的工作流继续只传递 `dist/index.html`。API 后端独立部署，平台设置见 [部署指南](deployment.md)。

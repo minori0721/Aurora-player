@@ -56,7 +56,7 @@ Wrangler 本地部署会先运行配置中的 `npm run build:cloudflare`，Worke
 
 构建变量可按 Production、Preview 等环境分别配置，修改后重新部署生效。
 
-Vercel 默认使用 `https://music.moerika.com/proxy-download` 中转设备下载，音频文件不经过当前 Vercel 项目的函数。
+Vercel 默认使用 `https://proxy.minori0721.dpdns.org` 中转设备下载，音频文件不经过当前 Vercel 项目的函数。播放器网站与下载代理分别托管，`music.moerika.com` 保持在 Vercel。
 
 ### GitHub Pages
 
@@ -81,7 +81,7 @@ Vercel 默认使用 `https://music.moerika.com/proxy-download` 中转设备下�
 
 这些是构建期配置，修改后必须重新构建或部署。浏览器不能直接读取平台运行时环境变量，两个地址都会写入公开 HTML，不要填入 Cookie、Token 或密钥。构建脚本不会将其他环境变量注入页面。
 
-未设置下载地址时，Cloudflare 构建使用本站 `/proxy-download`；Vercel、GitHub Pages、普通构建和本地开发使用 `https://music.moerika.com/proxy-download`。显式配置的地址优先。Cloudflare 构建的 HTML 另存为本地文件后，通过 `file://` 打开会改用 music 域名的默认代理。
+未设置下载地址时，Cloudflare 构建使用本站 `/proxy-download`；Vercel、GitHub Pages、普通构建和本地开发使用 `https://proxy.minori0721.dpdns.org`。显式配置的地址优先。Cloudflare 构建的 HTML 另存为本地文件后，通过 `file://` 打开会改用该公共代理。
 
 可以修改 [scripts/config.mjs](../scripts/config.mjs) 的默认值后构建，也可以修改下载后的单文件中以下头部配置：
 
@@ -112,7 +112,7 @@ Cloudflare 的下载入口随网站一起部署，不需要另建 Worker 或绑�
 
 入口支持 GET、HEAD、OPTIONS 和单段 Range，设置附件文件名与 CORS；边接收边返回，不将整首音频读入内存，也不额外写入音频缓存。当前接受网易云 `music.126.net` 及其子域的音频链接，每次重定向重新校验地址。第三方 match 音源使用其他域名时，需要配置支持对应音源的下载代理。
 
-API 后端继续独立部署。部署后检查首页、API 请求、音频播放和设备下载；首次启用 music 域名的同站入口后，其他静态部署即可使用该默认地址。已有项目若配置了旧 `DOWNLOAD_PROXY_URL`，删除该变量并重新部署可使用新默认值，也可以继续保留旧代理。
+API 后端继续独立部署。部署后检查首页、API 请求、音频播放和设备下载。已有项目若显式配置过 `DOWNLOAD_PROXY_URL`，修改或删除该变量并重新部署后生效；Vercel 项目曾设置 `https://music.moerika.com/proxy-download` 时，应改用公共 Cloudflare 代理或自己的可用地址。
 
 ## 自动部署与 Release
 

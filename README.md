@@ -1,6 +1,6 @@
 # <img src="src/assets/aurora.svg" width="44" height="44" align="middle" alt=""> Aurora Player（极光播放器）
 
-**当前版本：v0.1.8**
+**当前版本：v0.1.9**
 
 在线体验：[music.moerika.com](https://music.moerika.com/) · [备用站点](https://player.minori0721.dpdns.org/)
 
@@ -20,12 +20,8 @@
 
 ## 本版变化
 
-- 支持喜欢歌曲、收藏到网易云歌单，以及选择音质存入音乐云盘；云盘任务可查看进度、取消与重试。
-- 长歌单按组处理离屏排版与搜索，长标题和歌手分别显示，溢出文字按需渐隐。
-- 会员状态按套餐到期时间判断，续费或权益变化后刷新后续音频链接。
-- 已关联歌单按线上有效快照同步新增、删除和顺序，公共歌单无需登录，更新时保留当前播放与浏览位置。
-- 封面增加柔影和可见加载微光，同封面跨尺寸复用地址与主题数据。
-- Cloudflare 部署自带同站下载入口，其他静态入口默认使用 music 域名代理。
+- 修复 Vercel、GitHub Pages 和本地单文件默认下载地址不可用的问题，改用已验证的公共 Cloudflare 代理。
+- Cloudflare 自部署继续使用本站下载入口，自定义代理地址保持优先。
 
 完整版本记录见 [changelog.md](changelog.md)。
 
@@ -51,7 +47,7 @@ npm run dev
 
 Cloudflare Workers、Cloudflare Pages、Vercel 和 GitHub Pages 的设置见 [部署指南](docs/deployment.md)。日常修改 `src/`，再构建生成 `dist/`。
 
-Cloudflare 部署自带同站下载入口；Vercel、GitHub Pages 和本地单文件默认使用 `music.moerika.com` 的下载代理，也可配置自己的地址。
+Cloudflare 部署自带同站下载入口；Vercel、GitHub Pages 和本地单文件默认使用公共 Cloudflare 下载代理，也可配置自己的地址。
 
 ## 使用须知
 

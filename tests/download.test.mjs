@@ -66,7 +66,7 @@ test('unknown download format and mismatched tiers never borrow the official FLA
     }
 });
 
-for (const proxy of ['/proxy-download', 'https://music.moerika.com/proxy-download', 'https://custom.example/download']) {
+for (const proxy of ['/proxy-download', 'https://proxy.minori0721.dpdns.org', 'https://custom.example/download']) {
     test(`device download uses configured entry ${proxy} without fetching the audio in page JS`, async t => {
         const f = fixture(t, false);
         const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
