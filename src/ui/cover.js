@@ -1,3 +1,5 @@
+import { coverImageKey, coverImageUrl, retryCoverImageUrl } from '../shared/cover-url.js';
+
 export const COVER_PENDING_TIMEOUT_MS = 15_000;
 export const COVER_TRANSITION_MS = 400;
 export const COVER_HOLD_TIMEOUT_MS = 2000;
@@ -57,14 +59,6 @@ export function createCovers({
         visibleImage = null; visibleKey = '';
         domService.el.coverWrap.classList.remove('has-cover');
         releaseUnused();
-    }
-
-    function coverKey(src) {
-        try {
-            const url = new URL(src, location.href);
-            if (/^https?:$/.test(url.protocol) && /(^|\.)music\.126\.net$/i.test(url.hostname)) url.searchParams.delete('param');
-            return url.href;
-        } catch (_) { return src; }
     }
 
     function prepareImage(src) {
@@ -128,19 +122,10 @@ export function createCovers({
     }
 
     function coverDisplayUrl(src, size = coverDisplaySize()) {
-        if (!src) return '';
-        try {
-            const url = new URL(src, location.href);
-            if (/^https?:$/.test(url.protocol) && /(^|\.)music\.126\.net$/i.test(url.hostname)
-                && !/\.(?:gif|apng|webp)$/i.test(url.pathname)) {
-                url.searchParams.set('param', `${size}y${size}`);
-                return url.href;
-            }
-        } catch (_) {}
-        return src;
+        return coverImageUrl(src, size);
     }
 
-    function commitMainCover(src, { onLoad = null, objectUrl = false, mimeType = '', pending = false, animate = true } = {}, generation = mainCoverGeneration) {
+    function commitMainCover(src, { onLoad = null, objectUrl = false, mimeType = '', pending = false, animate = true, retried = false } = {}, generation = mainCoverGeneration) {
         if (generation !== mainCoverGeneration) {
             if (objectUrl) URL.revokeObjectURL(src);
             return;
@@ -167,7 +152,7 @@ export function createCovers({
             if (ready || !currentImage()) return;
             ready = true;
             clearPendingTheme();
-            if (!unchanged) displayImage(image, coverKey(src), animate);
+            if (!unchanged) displayImage(image, coverImageKey(src), animate);
             renderService.updateTheme(image);
             if (onLoad) onLoad();
             contentService.updateMusicMiniPlayer();
@@ -176,6 +161,11 @@ export function createCovers({
         };
         const failed = () => {
             if (!currentImage()) return;
+            const alternate = !retried && retryCoverImageUrl(src);
+            if (alternate) {
+                commitMainCover(alternate, { onLoad, mimeType, pending, animate, retried: true }, generation);
+                return;
+            }
             setMainCover();
         };
         const loaded = () => {

@@ -1,4 +1,5 @@
 import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
+import { coverImageUrl } from '../shared/cover-url.js';
 import { parseMusicRoute, positiveMusicInteger } from './routes.js';
 import { normalizeMusicAlbum, normalizeMusicArtist, normalizeMusicSong } from './models.js';
 import { createMusicImages } from './images.js';
@@ -115,10 +116,10 @@ export function createContent({
             item.className = 'netease-item';
             item.dataset.musicContext = contextId;
             item.dataset.musicIndex = String(queueIndex);
-            const cover = song.picUrl ? `${song.picUrl}?param=120y120` : MUSIC_FALLBACK_COVER;
+            const cover = coverImageUrl(song.picUrl, 120) || MUSIC_FALLBACK_COVER;
             const coverHtml = song.album.id
-                ? `<button class="netease-item-cover-link" data-music-album="${song.album.id}" aria-label="打开专辑 ${escapeHtml(song.album.name)}"><img class="netease-item-cover" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></button>`
-                : `<span class="netease-item-cover-link"><img class="netease-item-cover" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>`;
+                ? `<button class="netease-item-cover-link music-image-frame" data-music-album="${song.album.id}" aria-label="打开专辑 ${escapeHtml(song.album.name)}"><img class="netease-item-cover" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></button>`
+                : `<span class="netease-item-cover-link music-image-frame"><img class="netease-item-cover" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>`;
             item.innerHTML = `
                 ${coverHtml}
                 <div class="netease-item-info">
@@ -134,6 +135,8 @@ export function createContent({
             menu.className = 'music-song-menu';
             menu.innerHTML = `<summary role="button" tabindex="0" aria-expanded="false" aria-label="歌曲选项：${escapeHtml(song.name)}" title="歌曲选项">&#8943;</summary>
                 <div class="music-song-options">
+                    <button type="button" data-song-like="${song.id}" data-song-title="${escapeHtml(song.name)}"><span data-song-action-label>喜欢</span></button>
+                    <button type="button" data-song-collect="${song.id}" data-song-title="${escapeHtml(song.name)}"><span data-song-action-label>收藏到歌单</span></button>
                     <button type="button" data-music-queue="next" aria-label="下一首播放">下一首播放</button>
                     <button type="button" data-music-queue="last" aria-label="加入队列">加入队列</button>
                     <button type="button" data-music-queue="from" aria-label="从这首连续播放">从这首连续播放</button>
@@ -235,10 +238,10 @@ export function createContent({
         (albums || []).map(normalizeMusicAlbum).filter(album => album.id).forEach(album => {
             const card = document.createElement('div');
             card.className = 'music-card';
-            const cover = album.picUrl ? `${album.picUrl}?param=320y320` : MUSIC_FALLBACK_COVER;
+            const cover = coverImageUrl(album.picUrl, 320) || MUSIC_FALLBACK_COVER;
             card.innerHTML = `
                 <button class="music-card-button" data-music-album="${album.id}" aria-label="打开专辑 ${escapeHtml(album.name)}">
-                    <img class="music-card-image" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                    <span class="music-image-frame music-card-artwork"><img class="music-card-image" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>
                     <div class="music-card-title">${escapeHtml(album.name)}</div>
                 </button>
                 <div class="music-card-subtitle">${musicArtistLinksHtml(album.artists)}</div>`;
@@ -254,10 +257,10 @@ export function createContent({
         (artists || []).map(normalizeMusicArtist).filter(artist => artist.id).forEach(artist => {
             const card = document.createElement('div');
             card.className = 'music-card artist';
-            const cover = artist.picUrl ? `${artist.picUrl}?param=320y320` : MUSIC_FALLBACK_ARTIST;
+            const cover = coverImageUrl(artist.picUrl, 320) || MUSIC_FALLBACK_ARTIST;
             card.innerHTML = `
                 <button class="music-card-button" data-music-artist="${artist.id}" aria-label="打开歌手 ${escapeHtml(artist.name)}">
-                    <img class="music-card-image" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                    <span class="music-image-frame music-card-artwork"><img class="music-card-image" data-src="${escapeHtml(cover)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>
                     <div class="music-card-title">${escapeHtml(artist.name)}</div>
                     <div class="music-card-subtitle">${artist.albumSize ? `${artist.albumSize} 张专辑` : '歌手'}</div>
                 </button>`;
@@ -356,11 +359,22 @@ export function createContent({
         onlinePlaylistService.currentPage = page;
         const start = page * onlinePlaylistService.SONGS_PER_PAGE;
         const pageSongs = songs.slice(start, start + onlinePlaylistService.SONGS_PER_PAGE);
-        musicImages.clear(container);
-        container.innerHTML = '';
-        const id = renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
-        const firstRow = container.querySelector('.netease-item');
-        playlistPreviewContext = firstRow ? { container, firstRow, id, context: browserService.musicBrowserState.contexts.get(id) } : null;
+        const normalized = pageSongs.map(normalizeMusicSong).filter(song => song.id);
+        const key = JSON.stringify(normalized.map(song => [song.id, song.name, song.durationMs, song.album.id,
+            song.album.name, song.picUrl, song.artists.map(artist => [artist.id, artist.name])]));
+        const retained = playlistPreviewContext;
+        if (retained?.container === container && retained.page === page && retained.key === key && container.contains(retained.firstRow)) {
+            retained.context = { ...retained.context, songs: normalized };
+            storeMusicContext(retained.id, retained.context);
+            const pagination = container.querySelector('.music-pagination');
+            if (pagination) container.removeChild(pagination);
+        } else {
+            musicImages.clear(container);
+            container.innerHTML = '';
+            const id = renderMusicSongRows(pageSongs, container, { sourceType: 'playlist-preview', page }, pageSongs);
+            const firstRow = container.querySelector('.netease-item');
+            playlistPreviewContext = firstRow ? { container, firstRow, id, page, key, context: browserService.musicBrowserState.contexts.get(id) } : null;
+        }
         renderMusicPagination(
             container,
             page + 1,
@@ -430,7 +444,7 @@ export function createContent({
             card.className = 'music-card mv';
             card.innerHTML = `
                 <a class="music-card-button" href="https://music.163.com/#/mv?id=${positiveMusicInteger(mv.id, 0)}" target="_blank" rel="noopener noreferrer" aria-label="在网易云音乐打开 MV ${escapeHtml(mv.name || '')}">
-                    <img class="music-card-image" data-src="${escapeHtml(image || MUSIC_FALLBACK_COVER)}" loading="lazy" referrerpolicy="no-referrer" alt="">
+                    <span class="music-image-frame music-card-artwork"><img class="music-card-image" data-src="${escapeHtml(image || MUSIC_FALLBACK_COVER)}" loading="lazy" referrerpolicy="no-referrer" alt=""></span>
                     <div class="music-card-title">${escapeHtml(mv.name || '未命名 MV')}</div>
                     <div class="music-card-subtitle">${mv.playCount ? `${formatMusicCount(mv.playCount)} 次播放` : 'MV'}</div>
                 </a>`;
@@ -478,7 +492,7 @@ export function createContent({
         const contextId = songs.length ? registerMusicContext(songs, { sourceType: 'album', sourceId: album.id, title: album.name }) : '';
         const year = album.publishTime ? new Date(album.publishTime).getFullYear() : '';
         const meta = [album.subType, year, songs.length ? `${songs.length} 首歌曲` : '', album.company].filter(Boolean).join(' · ');
-        const cover = album.picUrl ? `${album.picUrl}?param=500y500` : MUSIC_FALLBACK_COVER;
+        const cover = coverImageUrl(album.picUrl, 512) || MUSIC_FALLBACK_COVER;
         domService.neteasePageTitle.textContent = album.name;
         domService.neteaseBrowserView.innerHTML = `
             <section class="music-entity-hero">
@@ -660,7 +674,7 @@ export function createContent({
 
     function renderArtistShell(session, route, dynamic = null) {
         const { artist, topSongs, topContextId } = session;
-        const cover = artist.picUrl ? `${artist.picUrl}?param=500y500` : MUSIC_FALLBACK_ARTIST;
+        const cover = coverImageUrl(artist.picUrl, 512) || MUSIC_FALLBACK_ARTIST;
         const meta = [
             `${artist.musicSize || topSongs.length} 首歌曲`,
             artist.albumSize ? `${artist.albumSize} 张专辑` : '',

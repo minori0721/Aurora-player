@@ -1,6 +1,10 @@
 import { cleanCookie, toHttps } from '../shared/text.js';
 import { MUSIC_ROUTE_PREFIX, parseMusicRoute } from './routes.js';
 import { createLoginPage, LOGIN_TIMEOUT_MS } from './login.js';
+import { getMembershipStatus, parseMembership } from './membership.js';
+
+export const VIP_REFRESH_INTERVAL_MS = 5 * 60_000;
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 export function createAuth({
     api: apiService,
@@ -14,7 +18,9 @@ export function createAuth({
     onlinePlaylist: onlinePlaylistService,
     playback: playbackService,
     prefetch: prefetchService,
-    resolver: resolverService
+    resolver: resolverService,
+    songActions: songActionsService,
+    cloud: cloudService
 } = {}) {
     // ========== 网易云登录系统 ==========
     let neteaseUser = null;
@@ -22,15 +28,23 @@ export function createAuth({
     let storedNeteaseCookie = localStorage.getItem('netease_cookie') || '';
     let neteaseCookie = cleanCookie(storedNeteaseCookie);
 
-    // 当前播放音质
+    // 0=普通 1=VIP 2=SVIP 3=音乐包，null=尚未确认
     let neteaseVipType = 0;
     let vipInfoPending = false;
+    let membership = null;
+    let membershipClockOffset = 0;
+    let lastKnownVipType = null;
+    let lastVipRefreshAt = -Infinity;
+    let vipInfoRequest = null;
+    let vipExpiryTimer = null;
 
-    // 0=普通 1=VIP 2=SVIP 3=音乐包
+    // 当前播放音质，默认极高。
     let neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
 
-    // 默认极高
     let authGeneration = 0;
+    let loginStatusRequest = null;
+    let loginStatusConfirmed = null;
+    let loginStatus = neteaseCookie ? 'pending' : 'guest';
 
     const accountAbortControllers = new Set();
     let accountRequestSequence = 0;
@@ -48,6 +62,23 @@ export function createAuth({
 
     function advanceAuthGeneration() {
         authGeneration++;
+        songActionsService?.reset();
+        cloudService?.reset();
+        const generation = authGeneration;
+        Promise.resolve().then(() => {
+            if (generation === authGeneration) songActionsService?.setCurrentTrack(downloadService._currentPlaying);
+        });
+        loginStatusRequest = null;
+        loginStatusConfirmed = null;
+        loginStatus = neteaseCookie ? 'pending' : 'guest';
+        clearVipExpiryTimer();
+        membership = null;
+        membershipClockOffset = 0;
+        lastKnownVipType = null;
+        lastVipRefreshAt = -Infinity;
+        vipInfoRequest = null;
+        vipInfoPending = false;
+        neteaseVipType = 0;
         downloadService.cancelDownloadProbes();
         onlinePlaylistService.cancelPlaylistLoad('auth-changed');
         abortAccountRequests();
@@ -115,8 +146,10 @@ export function createAuth({
                     method: 'POST', cache: 'no-store', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data), signal: controller.signal
                 });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return await response.json();
+                if (!response.ok && response.status !== 301) throw new Error(`HTTP ${response.status}`);
+                const json = await response.json();
+                if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { apiCode: Number(json.data?.code ?? json.code) });
+                return json;
             })()]);
         } finally {
             window.clearTimeout(timer);
@@ -125,15 +158,65 @@ export function createAuth({
         }
     }
 
-    function refreshVipInfo(snapshot) {
-        neteaseVipType = null;
+    function clearVipExpiryTimer() {
+        if (vipExpiryTimer !== null) window.clearTimeout(vipExpiryTimer);
+        vipExpiryTimer = null;
+    }
+
+    function updateMembershipStatus() {
+        clearVipExpiryTimer();
+        const now = Date.now() + membershipClockOffset;
+        const status = getMembershipStatus(membership, now);
+        neteaseVipType = status.type;
+        if (status.type !== null) {
+            if (lastKnownVipType !== null && lastKnownVipType !== status.type) {
+                resolverService.clearNeteaseResolvedAudioCache({ entitlementsChanged: true });
+                prefetchService.cancelNextPreload({ resetDetails: false });
+            }
+            lastKnownVipType = status.type;
+        }
+        if (status.expiresAt && !document.hidden) {
+            const snapshot = captureAuthSnapshot();
+            vipExpiryTimer = window.setTimeout(() => {
+                vipExpiryTimer = null;
+                if (!isAuthSnapshotCurrent(snapshot)) return;
+                updateMembershipStatus();
+                updateUserUI();
+                if (Date.now() + membershipClockOffset >= status.expiresAt && !document.hidden) {
+                    void refreshVipInfo({ force: true });
+                }
+            }, Math.min(MAX_TIMER_MS, status.expiresAt - now));
+        }
+        return status;
+    }
+
+    function refreshVipInfo({ force = false } = {}) {
+        if (!neteaseUser || !neteaseCookie) return Promise.resolve(false);
+        if (membership) {
+            const previous = neteaseVipType;
+            updateMembershipStatus();
+            if (previous !== neteaseVipType) force = true;
+        }
+        if (vipInfoRequest) return vipInfoRequest.promise;
+        if (!force && Date.now() - lastVipRefreshAt < VIP_REFRESH_INTERVAL_MS) {
+            updateUserUI();
+            return Promise.resolve(false);
+        }
+        const snapshot = captureAuthSnapshot();
+        const job = { promise: null };
+        vipInfoRequest = job;
+        lastVipRefreshAt = Date.now();
+        if (!membership) neteaseVipType = null;
         vipInfoPending = true;
         updateUserUI();
-        void fetchVipInfo(snapshot).then(() => {
-            if (!isAuthSnapshotCurrent(snapshot)) return;
-            vipInfoPending = false;
-            updateUserUI();
+        job.promise = fetchVipInfo(snapshot).finally(() => {
+            if (vipInfoRequest === job && isAuthSnapshotCurrent(snapshot)) {
+                vipInfoRequest = null;
+                vipInfoPending = false;
+                updateUserUI();
+            }
         });
+        return job.promise;
     }
 
     function commitLogin(cookie, profile, isCurrent) {
@@ -141,16 +224,34 @@ export function createAuth({
         advanceAuthGeneration();
         neteaseCookie = cleanCookie(cookie);
         neteaseUser = profile;
+        loginStatusConfirmed = true;
+        loginStatus = 'authenticated';
         try { localStorage.setItem('netease_cookie', neteaseCookie); }
         catch (_) { debugService.log('登录状态无法保存，关闭网页后需重新登录', 'warn'); }
         const snapshot = captureAuthSnapshot();
-        refreshVipInfo(snapshot);
+        void refreshVipInfo({ force: true });
+        void onlinePlaylistService.refreshQueueSource();
         return snapshot;
     }
 
     // 检查登录状态
+    function waitForLoginStatus() {
+        if (loginStatusRequest) return loginStatusRequest;
+        if (loginStatusConfirmed !== null) return Promise.resolve(loginStatusConfirmed);
+        const snapshot = captureAuthSnapshot();
+        const promise = checkLoginStatus().then(valid => {
+            if (isAuthSnapshotCurrent(snapshot)) loginStatusConfirmed = valid;
+            return valid;
+        }).finally(() => {
+            if (loginStatusRequest === promise) loginStatusRequest = null;
+        });
+        loginStatusRequest = promise;
+        return promise;
+    }
+
     async function checkLoginStatus() {
         if (!neteaseCookie) {
+            loginStatus = 'guest';
             neteaseUser = null;
             neteaseVipType = 0;
             updateUserUI();
@@ -161,9 +262,11 @@ export function createAuth({
         try {
             const json = await accountPost('/login/status', { cookie: cleanCookie(snapshot.cookie) });
             if (!isAuthSnapshotCurrent(snapshot)) return false;
-            if (Number.isSafeInteger(Number(json.data?.profile?.userId)) && Number(json.data.profile.userId) > 0) {
+            if (Number(json.data?.code ?? json.code ?? 200) === 200
+                && Number.isSafeInteger(Number(json.data?.profile?.userId)) && Number(json.data.profile.userId) > 0) {
                 neteaseUser = json.data.profile;
-                refreshVipInfo(snapshot);
+                loginStatus = 'authenticated';
+                void refreshVipInfo({ force: true });
                 debugService.log(`已登录：${neteaseUser.nickname}`, 'success');
                 const currentRoute = parseMusicRoute();
                 if (currentRoute?.kind === 'playlist-mine' && domService.neteasePanel.classList.contains('show')) {
@@ -171,11 +274,16 @@ export function createAuth({
                 }
                 return true;
             }
+            const code = Number(json.data?.code ?? json.code);
+            loginStatus = code === 301 || code === 200 && json.data?.profile === null ? 'expired' : 'unavailable';
             neteaseUser = null;
             neteaseVipType = 0;
             updateUserUI();
         } catch (e) {
-            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('登录状态检查失败：' + e.message, 'error');
+            if (isAuthSnapshotCurrent(snapshot)) {
+                loginStatus = e.apiCode === 301 ? 'expired' : 'unavailable';
+                if (e.name !== 'AbortError') debugService.log('登录状态检查失败：' + e.message, 'error');
+            }
         }
         return false;
     }
@@ -185,27 +293,22 @@ export function createAuth({
         try {
             const json = await accountPost('/vip/info', { cookie: cleanCookie(snapshot.cookie) });
             if (!isAuthSnapshotCurrent(snapshot)) return false;
-            // redVipLevel: 0=普通 1=VIP; musicPackage=音乐包
-            const vipInfo = json.data;
-            if (!vipInfo || typeof vipInfo !== 'object') return false;
-            if (vipInfo.redVipLevel >= 7) {
-                neteaseVipType = 2; // SVIP
-                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-            } else if (vipInfo.redVipLevel >= 1) {
-                neteaseVipType = 1; // VIP
-                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-            } else if (vipInfo.musicPackage?.vipCode) {
-                neteaseVipType = 3; // 音乐包
-                neteaseQuality = localStorage.getItem('netease_quality') || 'lossless';
-            } else {
-                neteaseVipType = 0; // 普通
-                neteaseQuality = localStorage.getItem('netease_quality') || 'exhigh';
-            }
+            const parsed = Number(json.code) === 200 ? parseMembership(json.data) : null;
+            if (!parsed) throw new Error('会员信息响应无效');
+            membership = parsed;
+            membershipClockOffset = parsed.serverNow === null ? 0 : parsed.serverNow - Date.now();
+            updateMembershipStatus();
+            neteaseQuality = localStorage.getItem('netease_quality') || (neteaseVipType > 0 ? 'lossless' : 'exhigh');
             domService.qualitySelect.value = neteaseQuality;
             localStorage.setItem('netease_quality', neteaseQuality);
             return true;
         } catch (e) {
-            if (e.name !== 'AbortError' && isAuthSnapshotCurrent(snapshot)) debugService.log('会员信息获取失败', 'warn');
+            if (isAuthSnapshotCurrent(snapshot)) {
+                clearVipExpiryTimer();
+                membership = null;
+                neteaseVipType = null;
+                if (e.name !== 'AbortError') debugService.log('会员信息获取失败', 'warn');
+            }
         }
         return false;
     }
@@ -266,11 +369,17 @@ export function createAuth({
 
     let initialized = false;
     return {
-        showLogin: loginPage.open,
+        showLogin() {
+            if (!domService.neteasePanel.classList.contains('show')) browserService.openMusicBrowser?.();
+            return loginPage.open();
+        },
         refreshQRCode: loginPage.refreshQRCode,
+        refreshVipInfo,
+        waitForLoginStatus,
         neteaseLogout,
         get neteaseUser() { return neteaseUser; },
         get neteaseCookie() { return neteaseCookie; },
+        get loginStatus() { return loginStatus; },
         cancelLoginSession: loginPage.cancel,
         get neteaseQuality() { return neteaseQuality; },
         get authGeneration() { return authGeneration; },
@@ -290,6 +399,12 @@ export function createAuth({
             storedNeteaseCookie = '';
             loginPage.initialize();
             domService.qualitySelect.value = neteaseQuality;
+            const onForeground = () => {
+                if (document.hidden) clearVipExpiryTimer();
+                else void refreshVipInfo();
+            };
+            document.addEventListener('visibilitychange', onForeground);
+            window.addEventListener('focus', onForeground);
 
             domService.qualitySelect.onchange = () => {
                 neteaseQuality = domService.qualitySelect.value;
@@ -300,7 +415,7 @@ export function createAuth({
             };
 
             // 初始化时检查登录状态
-            checkLoginStatus();
+            void waitForLoginStatus();
         }
     };
 }

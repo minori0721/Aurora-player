@@ -68,6 +68,43 @@ test('matching never rewrites the cached official response as a successful offic
     assert.equal(f.calls.length, 2);
 });
 
+test('a membership change bypasses old official JSON and resolved URLs without changing the login session', async t => {
+    const f = fixture(t);
+    const official = type => response({ code: 200, data: [{ url: `https://cdn.test/full.${type}`, type, freeTrialInfo: null }] });
+    f.state.handler = () => official('mp3');
+    assert.equal((await f.resolve()).audioInfo.type, 'mp3');
+    f.state.handler = () => official('flac');
+    f.resolver.clearNeteaseResolvedAudioCache({ entitlementsChanged: true });
+    assert.equal((await f.resolve()).audioInfo.type, 'flac');
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls[0].url.searchParams.has('entitlementRevision'), false);
+    assert.ok(f.calls[1].url.searchParams.has('entitlementRevision'));
+    assert.equal(f.auth.authGeneration, 1);
+    await f.resolve(); assert.equal(f.calls.length, 2);
+    await f.resolver.invalidateNeteaseResolvedAudioCache(1);
+    assert.ok(f.invalidations.includes(f.calls[1].url.toString()));
+});
+
+test('late pre-renewal responses cannot overwrite the renewed resolver cache', async t => {
+    const f = fixture(t); let finish;
+    f.state.handler = () => new Promise(resolve => { finish = resolve; });
+    const old = f.resolve(); await settle();
+    f.resolver.clearNeteaseResolvedAudioCache({ entitlementsChanged: true });
+    f.state.handler = () => response({ code: 200, data: [{ url: 'https://cdn.test/full.flac', type: 'flac', freeTrialInfo: null }] });
+    assert.equal((await f.resolve()).audioInfo.type, 'flac');
+    finish(response({ code: 200, data: [{ url: 'https://cdn.test/full.mp3', type: 'mp3', freeTrialInfo: null }] }));
+    await old;
+    assert.equal((await f.resolve()).audioInfo.type, 'flac'); assert.equal(f.calls.length, 2);
+});
+
+test('membership changes retain the short public match cache', async t => {
+    const f = fixture(t); await f.resolve();
+    f.resolver.clearNeteaseResolvedAudioCache({ entitlementsChanged: true });
+    await f.resolve();
+    assert.equal(f.matchCalls.length, 1);
+    assert.equal(f.calls.filter(call => call.url.pathname === '/song/url/v1').length, 2);
+});
+
 test('expired URL invalidation targets the new public match key and permits one fresh resolution', async t => {
     const f = fixture(t); await f.resolve();
     await f.resolver.invalidateNeteaseResolvedAudioCache(1);

@@ -1,7 +1,9 @@
 import { cleanCookie, escapeHtml, toHttps } from '../shared/text.js';
+import { coverImageUrl } from '../shared/cover-url.js';
 import { positiveMusicInteger } from './routes.js';
 import { normalizeMusicSong } from './models.js';
 import { createPlaylistSync } from './playlist-sync.js';
+import { GUEST_PLAYLIST_COOKIE, normalizePlaylistReader, normalizePlaylistPrivacy } from './playlist-access.js';
 
 export function createOnlinePlaylist({
     api: apiService,
@@ -32,7 +34,8 @@ export function createOnlinePlaylist({
     function rememberImportedSource(data) {
         if (data?.imported && data.importToken === queueService.activePlaylistQueueToken && data.queueRef === (queueService.basePlaylist)) {
             queueSync.remember({ type: 'netease-playlist', id: data.playlistId,
-                loadedCount: data.loadedCount, totalCount: data.totalCount, loading: data.loading }, data.queueRef);
+                loadedCount: data.loadedCount, totalCount: data.totalCount, loading: data.loading,
+                readAs: data.readAs, privacy: data.privacy }, data.queueRef);
         }
     }
     let _currentPlaylistLoadToken = 0;
@@ -254,7 +257,7 @@ export function createOnlinePlaylist({
             return;
         }
 
-        if (domService.el.plContainer.children.length === previousLength) playlistViewService.appendPlaylistRows(previousLength);
+        if (playlistViewService.getRenderedPlaylistLength() === previousLength) playlistViewService.appendPlaylistRows(previousLength);
         else playlistViewService.renderPlaylist();
         debugService.log(`歌单后台追加 ${data.queueRef.length - previousLength} 首，当前 ${data.queueRef.length}/${data.totalCount} 首`, 'success');
         updatePlaylistImportButton(data);
@@ -307,11 +310,25 @@ export function createOnlinePlaylist({
         const isCurrent = () => !signal.aborted && !job.settled && playlistLoadJob === job
             && job.generation === authService.authGeneration && myLoadToken === _currentPlaylistLoadToken;
         const cookieSnapshot = authService.neteaseCookie;
-        const cookieParam = cookieSnapshot ? `&cookie=${encodeURIComponent(cleanCookie(cookieSnapshot))}` : '';
+        const guest = !cookieSnapshot || authService.loginStatus === 'expired';
+        const cookieParam = `&cookie=${encodeURIComponent(guest ? GUEST_PLAYLIST_COOKIE : cleanCookie(cookieSnapshot))}&noCookie=true`;
+        let readAs = guest ? 'guest' : normalizePlaylistReader(authService.neteaseUser?.userId);
+        if (!guest) void authService.waitForLoginStatus().then(valid => {
+            if (signal.aborted || job.generation !== authService.authGeneration || cookieSnapshot !== authService.neteaseCookie
+                || myLoadToken !== _currentPlaylistLoadToken || job.data && currentPlaylistData !== job.data) return;
+            readAs = valid ? normalizePlaylistReader(authService.neteaseUser?.userId) : null;
+            if (job.data) {
+                job.data.readAs = readAs;
+                if (job.data.imported && queueSync.getSource()?.id === String(job.data.playlistId)) {
+                    rememberImportedSource(job.data);
+                    persistenceService.schedulePlaylistStateSave(true);
+                }
+            }
+        }).catch(() => debugService.log('歌单读取身份尚未确认，保留现有来源记录', 'warn'));
 
         try {
-            const detailUrl = apiService.buildApiUrl(`/playlist/detail?id=${playlistId}&s=0${cookieParam}`);
-            const detailJson = await transferService.fetchJsonWithStageTimeout(detailUrl, { signal }, 15_000, '获取歌单信息超时');
+            const detailUrl = apiService.buildApiUrl(`/playlist/detail?id=${playlistId}&s=0${cookieParam}&timestamp=${Date.now()}`);
+            const detailJson = await transferService.fetchJsonWithStageTimeout(detailUrl, { signal, credentials: 'omit', cache: 'no-store' }, 15_000, '获取歌单信息超时');
             if (!isCurrent()) return;
             if (detailJson.code !== 200 || !detailJson.playlist) throw new Error('歌单不存在或当前账号无权访问');
 
@@ -327,6 +344,8 @@ export function createOnlinePlaylist({
             const data = {
                 ...detail,
                 playlistId,
+                readAs,
+                privacy: normalizePlaylistPrivacy(detail.privacy),
                 trackIds,
                 totalCount,
                 tracks: slots,
@@ -345,7 +364,7 @@ export function createOnlinePlaylist({
             currentPlaylistData = data;
             domService.playlistPreview.innerHTML = `
                 <div class="netease-playlist-info">
-                    <img class="netease-playlist-cover" src="${escapeHtml(toHttps(data.coverImgUrl))}?param=200y200" loading="lazy" decoding="async" alt="歌单封面">
+                    <img class="netease-playlist-cover" src="${escapeHtml(coverImageUrl(data.coverImgUrl, 200))}" loading="lazy" decoding="async" alt="歌单封面">
                     <div class="netease-playlist-meta">
                         <div class="netease-playlist-name">${escapeHtml(data.name)}</div>
                     <div class="netease-playlist-desc">${totalCount} 首歌曲 · ${data.playCount ? Math.floor(data.playCount / 10000) + '万播放' : ''}</div>
@@ -409,7 +428,7 @@ export function createOnlinePlaylist({
                 for (let attempt = 0; attempt < 4; attempt++) {
                     if (!isCurrent()) throw new DOMException('aborted', 'AbortError');
                     try {
-                        const json = await transferService.fetchJsonWithStageTimeout(url, { signal }, 12_000, `歌曲批次 ${batchIndex + 1} 超时`);
+                        const json = await transferService.fetchJsonWithStageTimeout(url, { signal, credentials: 'omit' }, 12_000, `歌曲批次 ${batchIndex + 1} 超时`);
                         if (!Array.isArray(json.songs)) throw new Error('歌曲批次响应无效');
                         return json.songs;
                     } catch (error) {
@@ -531,6 +550,7 @@ export function createOnlinePlaylist({
         settlePlaylistAdvance,
         getPersistedQueueSource: queueSync.getSource,
         restoreQueueSource: queueSync.restore,
+        refreshQueueSource: queueSync.refresh,
         resolveSyncedSelection: queueSync.resolveSelection,
         finishSyncedEmptyQueue: queueSync.finishEmptyQueue,
         initialize() {

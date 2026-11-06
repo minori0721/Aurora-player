@@ -674,6 +674,12 @@ export function createPlayback({
         get hasAudio() { return !!audioBuffer || !!streamSession; },
         get playbackPreference() { return playbackPreference; },
         get preparingCompleteAudio() { return !!completePreparation; },
+        getEncodedAudioForCloud(identity) {
+            const encoded = onlineResource?.peekEncoded?.();
+            return encoded && Number(encoded.songId) === Number(identity.songId)
+                && /^[a-f\d]{32}$/i.test(identity.md5 || '') && encoded.md5 === identity.md5
+                && Number(identity.size) > 0 && encoded.size === Number(identity.size) ? encoded.blob : null;
+        },
         prepareStream,
         ensureCompleteAudio,
         activateCompleteAudio,

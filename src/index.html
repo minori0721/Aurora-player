@@ -40,7 +40,13 @@
                 <button class="panel-close" id="download-close" aria-label="关闭下载窗口">&times;</button>
             </div>
             <div id="download-track-info" style="margin:8px 0;color:var(--text-sub);font-size:0.95rem"></div>
+            <fieldset id="download-destination" class="download-destination">
+                <legend>保存到</legend>
+                <label><input type="radio" name="download-destination" value="device" checked>设备</label>
+                <label><input type="radio" name="download-destination" value="cloud">音乐云盘</label>
+            </fieldset>
             <div id="download-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+            <div id="cloud-task-status" class="cloud-task-status" aria-label="云盘任务"></div>
             <div style="text-align:right"><button class="glass-btn" id="download-cancel">关闭</button></div>
         </div>
     </div>
@@ -405,6 +411,7 @@
                 <div class="track-header">
                     <div class="track-title" id="track-title">Aurora Player</div>
                     <div class="track-artist" id="track-artist">System Ready</div>
+                    <output id="song-action-message" class="song-action-message" role="status"></output>
                 </div>
                 <div class="lyrics-area">
                     <div class="lyrics-box" id="lyrics-box" tabindex="0" role="region" aria-label="歌词" data-lyric-region>
@@ -433,6 +440,10 @@
                             <span class="lyric-mode-mark"><span data-lyric-mark="original">词</span><span data-lyric-mark="both">译</span><span data-lyric-mark="roma">音</span></span>
                         </span>
                     </button>
+                    <div class="track-song-actions" id="track-song-actions" role="group" aria-label="歌曲收藏" hidden>
+                        <button id="track-like" type="button" class="btn" aria-label="喜欢当前歌曲" aria-pressed="false" title="喜欢当前歌曲"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button>
+                        <button id="track-collect" type="button" class="btn" aria-label="加入歌单" title="加入歌单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h9M8 18h5M3 6h.01M3 12h.01M3 18h.01M19 16v6M16 19h6"/></svg></button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -446,6 +457,7 @@
         </footer>
     </div>
 
+    <button id="cloud-task-open" type="button" class="glass-btn cloud-task-open" aria-label="查看云盘任务" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9ZM12 11v7m-3-4 3-3 3 3"/></svg><span id="cloud-task-label">云盘任务</span></button>
     <!-- aurora:app -->
 </body>
 </html>

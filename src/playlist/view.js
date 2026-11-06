@@ -1,5 +1,7 @@
 import { toHttps } from '../shared/text.js';
 import { createPlaylistCovers } from './covers.js';
+import { createPlaylistFade } from './fade.js';
+import { createPlaylistRows } from './rows.js';
 import { matchesPlaylistSearch, normalizePlaylistSearch, playlistSearchKey } from './search.js';
 
 export function createPlaylistView({
@@ -9,51 +11,50 @@ export function createPlaylistView({
     queue: queueService
 } = {}) {
     const playlistCovers = createPlaylistCovers({ root: domService.el.plSidebar, container: domService.el.plItems || domService.el.plContainer });
-    const observePlaylistCovers = () => playlistCovers.observe();
-    const pausePlaylistCovers = () => playlistCovers.suspend();
+    const playlistFade = createPlaylistFade({ root: domService.el.plSidebar, containers: [domService.el.plContainer, domService.el.plTemporaryContainer] });
+    const observePlaylistCovers = () => { playlistCovers.observe(); playlistFade.observe(); };
+    const pausePlaylistCovers = () => { playlistCovers.suspend(); playlistFade.suspend(); };
 
     let activePlaylistRow = null;
     let playlistIndexDigits = 0, sharedIndexDigits = 0;
-    let searchQueue = queueService.playlist, searchTerms = [], searchKeys = [], visibleCount = 0;
+    let searchQueue = queueService.playlist, searchTerms = [], searchKeys = [];
     let searchFrame = 0, composing = false, unfilteredScrollTop = 0;
     let temporaryRows = new Map(), renderedTemporary = [];
+    const baseRows = createPlaylistRows(domService.el.plContainer);
+    const manualRows = domService.el.plTemporaryContainer ? createPlaylistRows(domService.el.plTemporaryContainer) : null;
     const base = () => queueService.basePlaylist;
-    const rowAt = index => index < base().length ? domService.el.plContainer.children[index] : temporaryRows.get(index);
-    const rowEntries = () => [
-        ...Array.from(domService.el.plContainer.children, (row, index) => ({ row, index })),
-        ...Array.from(temporaryRows, ([index, row]) => ({ row, index }))
-    ];
+    const rowAt = index => index < base().length ? baseRows.at(index) : temporaryRows.get(index);
 
     function updateSearchUI() {
         const { plSearch, plSearchClear, plSearchEmpty } = domService.el;
         if (plSearchClear) plSearchClear.disabled = !plSearch?.value;
         if (plSearchEmpty) {
-            plSearchEmpty.hidden = visibleCount > 0;
+            plSearchEmpty.hidden = baseRows.visibleCount + (manualRows?.visibleCount || 0) > 0;
             plSearchEmpty.textContent = searchTerms.length ? '没有匹配的歌曲' : '播放列表为空';
         }
     }
 
-    function filterRow(row, track, index) {
+    function matchesTrack(track, index) {
         searchKeys[index] = playlistSearchKey(track);
-        row.hidden = !matchesPlaylistSearch(searchKeys[index], searchTerms);
-        return !row.hidden;
+        return matchesPlaylistSearch(searchKeys[index], searchTerms);
     }
 
     function setSearchQuery(value = '', { restore = true } = {}) {
         window.cancelAnimationFrame(searchFrame); searchFrame = 0;
         const hadSearch = searchTerms.length > 0;
+        const previousScrollTop = domService.el.plSidebar.scrollTop || 0;
         searchTerms = normalizePlaylistSearch(value).split(/\s+/u).filter(Boolean);
-        if (!hadSearch && searchTerms.length) unfilteredScrollTop = domService.el.plSidebar.scrollTop || 0;
+        if (!hadSearch && searchTerms.length) unfilteredScrollTop = previousScrollTop;
         if (domService.el.plSearch) domService.el.plSearch.value = String(value);
-        visibleCount = 0;
-        for (const { row, index } of rowEntries()) {
-            const match = matchesPlaylistSearch(searchKeys[index] || '', searchTerms);
-            if (row.hidden === match) row.hidden = !match;
-            if (match) visibleCount++;
-        }
-        if (restore) domService.el.plSidebar.scrollTop = searchTerms.length ? 0 : hadSearch ? unfilteredScrollTop : domService.el.plSidebar.scrollTop;
+        baseRows.filter(index => matchesPlaylistSearch(searchKeys[index] || '', searchTerms));
+        manualRows?.filter(index => matchesPlaylistSearch(searchKeys[manualRows.at(index)._queueIndex] || '', searchTerms));
         updateSearchUI();
+        const nextScrollTop = searchTerms.length ? 0 : hadSearch ? unfilteredScrollTop : previousScrollTop;
+        const hasResults = baseRows.visibleCount + (manualRows?.visibleCount || 0) > 0;
+        // Settle nonempty results before cover scheduling; empty layouts need no redundant scroll write.
+        if (restore && (searchTerms.length && hasResults || nextScrollTop !== previousScrollTop)) domService.el.plSidebar.scrollTop = nextScrollTop;
         playlistCovers.visibilityChanged();
+        playlistFade.refresh();
     }
 
     function scheduleSearch() {
@@ -66,10 +67,12 @@ export function createPlaylistView({
         if (activePlaylistRow !== nextRow) {
             if (activePlaylistRow) {
                 activePlaylistRow.classList.remove('active');
+                playlistFade.invalidate(activePlaylistRow);
                 activePlaylistRow.setAttribute('aria-current', 'false');
             }
             if (nextRow) {
                 nextRow.classList.add('active');
+                playlistFade.invalidate(nextRow);
                 nextRow.setAttribute('aria-current', 'true');
             }
             activePlaylistRow = nextRow;
@@ -98,35 +101,66 @@ export function createPlaylistView({
         row.appendChild(marker);
     }
 
+    function updatePlaylistTitle(titleEl, track) {
+        const song = track.songData;
+        const title = typeof song?.name === 'string' && song.name.trim() ? song.name : track.name;
+        const artists = Array.isArray(song?.ar) && song.ar.length ? song.ar : song?.artists;
+        const artist = Array.isArray(artists) ? artists.map(item => item?.name || item?.artistName || '').filter(Boolean).join(', ') : '';
+        const icon = !track.netease && track.needsFile ? '⚠️ ' : '';
+        let nameEl = titleEl.querySelector('.pl-song-name');
+        if (!nameEl) {
+            nameEl = document.createElement('span');
+            nameEl.className = 'pl-song-name';
+            titleEl.appendChild(nameEl);
+        }
+        nameEl.textContent = `${icon}${title}`;
+        titleEl.title = `${icon}${title}${artist ? ` - ${artist}` : ''}`;
+        let artistEl = titleEl.querySelector('.pl-song-artists');
+        let separatorEl = titleEl.querySelector('.pl-song-separator');
+        if (artist && !artistEl) {
+            separatorEl = document.createElement('span');
+            separatorEl.className = 'pl-song-separator';
+            separatorEl.textContent = ' - ';
+            separatorEl.setAttribute('aria-hidden', 'true');
+            artistEl = document.createElement('span');
+            artistEl.className = 'pl-song-artists';
+            titleEl.appendChild(separatorEl);
+            titleEl.appendChild(artistEl);
+        }
+        if (artistEl) {
+            artistEl.textContent = artist;
+            artistEl.hidden = separatorEl.hidden = !artist;
+        }
+    }
+
     function refreshPlaylistItem(index) {
         persistenceService.schedulePlaylistTrackSave(index);
-        const row = rowAt(index);
         const track = queueService.playlist[index];
-        if (!row || !track) return;
-        const wasVisible = !row.hidden;
-        const isVisible = filterRow(row, track, index);
-        visibleCount += Number(isVisible) - Number(wasVisible);
+        if (!track) return;
+        const isVisible = matchesTrack(track, index);
+        const row = rowAt(index);
+        if (!row) return;
+        const visibilityChanged = index < base().length ? baseRows.setVisible(index, isVisible)
+            : manualRows?.setVisible(row._temporaryNumber - 1, isVisible);
         updateSearchUI();
 
         row.setAttribute('aria-label', track.needsFile
             ? (track.fileHandle ? `授权并播放第 ${index + 1} 首：${track.name}` : `第 ${index + 1} 首：${track.name}，需要重新选择本地文件`)
             : row._temporaryNumber ? `播放临时点播第 ${row._temporaryNumber} 首：${track.name}` : `播放第 ${index + 1} 首：${track.name}`);
         const titleEl = row.querySelector('.pl-item-title');
-        if (titleEl) {
-            const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
-            titleEl.textContent = `${icon}${track.name}`;
-        }
+        if (titleEl) updatePlaylistTitle(titleEl, track);
         updatePlaylistCompanionMarker(row, track);
+        playlistFade.invalidate(row);
 
         const coverEl = row.querySelector('.pl-item-cover');
         if (!coverEl) return;
         const coverUrl = toHttps(track.songData?.album?.picUrl || track.songData?.al?.picUrl || '');
         playlistCovers.bind(coverEl, coverUrl);
-        if (wasVisible !== isVisible) observePlaylistCovers();
+        if (visibilityChanged) playlistCovers.visibilityChanged();
     }
 
     function ensurePlaylistRenderedAndActive() {
-        if (searchQueue !== queueService.playlist || domService.el.plContainer.children.length !== base().length) renderPlaylist();
+        if (searchQueue !== queueService.playlist || baseRows.length !== base().length) renderPlaylist();
         else {
             const temporary = queueService.temporaryEntries || [];
             if (temporary.length !== renderedTemporary.length || temporary.some((track, index) => track !== renderedTemporary[index])
@@ -165,24 +199,30 @@ export function createPlaylistView({
         d.appendChild(coverSlot);
         d.appendChild(titleEl);
         updatePlaylistCompanionMarker(d, track);
-        d.onclick = () => {
-            if (!prefetchService.isNextPreloadCompatible(queueService.playlist, index, track)) {
-                prefetchService.cancelNextPreload();
-            }
-            queueService.playTrackFromPlaylist(index);
-        };
+        d._track = track;
+        d._queueIndex = index;
         d.setAttribute('aria-label', track.needsFile
             ? (track.fileHandle ? `授权并播放第 ${index + 1} 首：${track.name}` : `第 ${index + 1} 首：${track.name}，需要重新选择本地文件`)
             : `播放第 ${index + 1} 首：${track.name}`);
-        const icon = track.netease ? '☁️ ' : (track.needsFile ? '⚠️ ' : '');
-        titleEl.textContent = `${icon}${track.name}`;
+        updatePlaylistTitle(titleEl, track);
         return d;
     }
+
+    function playRow(event) {
+        const row = event.target.closest?.('.pl-item');
+        if (!row) return;
+        const index = row._queueIndex, track = row._track;
+        if (queueService.playlist[index] !== track) return;
+        if (!prefetchService.isNextPreloadCompatible(queueService.playlist, index, track)) prefetchService.cancelNextPreload();
+        queueService.playTrackFromPlaylist(index);
+    }
+
+    domService.el.plContainer.addEventListener('click', playRow);
+    domService.el.plTemporaryContainer?.addEventListener('click', playRow);
 
     function renderTemporaryRows() {
         if (!domService.el.plTemporaryContainer) return;
         for (const row of temporaryRows.values()) {
-            if (!row.hidden) visibleCount--;
             const cover = row.querySelector('.pl-item-cover');
             if (cover) playlistCovers.bind(cover, '');
         }
@@ -195,17 +235,19 @@ export function createPlaylistView({
         }
         domService.el.plTemporaryContainer.style.setProperty('--playlist-index-digits', String(Math.max(3, String(renderedTemporary.length).length)));
         domService.el.plTemporaryContainer.classList.toggle('pl-large', renderedTemporary.length > 500);
-        domService.el.plTemporaryContainer.innerHTML = '';
+        manualRows.clear();
+        const rows = [], matches = [];
         renderedTemporary.forEach((track, number) => {
             const index = queueService.indexOfTrack(track);
             const row = createPlaylistRow(track, index, number + 1);
             row._track = track;
             row._temporaryNumber = number + 1;
             row.setAttribute('aria-label', `播放临时点播第 ${number + 1} 首：${track.name}`);
-            if (filterRow(row, track, index)) visibleCount++;
+            matches.push(matchesTrack(track, index));
             temporaryRows.set(index, row);
-            domService.el.plTemporaryContainer.appendChild(row);
+            rows.push(row);
         });
+        manualRows.append(rows, matches);
         domService.el.plTemporary.hidden = !renderedTemporary.length;
         domService.el.plBaseLabel.hidden = !renderedTemporary.length || !base().length;
         if (domService.el.plClearTemporary) domService.el.plClearTemporary.disabled = !(queueService.manualState?.pending.length);
@@ -214,7 +256,7 @@ export function createPlaylistView({
     }
 
     function appendPlaylistRows(startIndex = 0, force = false) {
-        if (!force && domService.el.plContainer.children.length !== startIndex) {
+        if (!force && baseRows.length !== startIndex) {
             renderPlaylist();
             return;
         }
@@ -224,13 +266,13 @@ export function createPlaylistView({
             playlistIndexDigits = digits;
             domService.el.plContainer.style.setProperty('--playlist-index-digits', String(digits));
         }
-        const frag = document.createDocumentFragment();
+        const rows = [], matches = [];
         for (let i = startIndex; i < base().length; i++) {
             const row = createPlaylistRow(base()[i], i);
-            if (filterRow(row, base()[i], i)) visibleCount++;
-            frag.appendChild(row);
+            matches.push(matchesTrack(base()[i], i));
+            rows.push(row);
         }
-        domService.el.plContainer.appendChild(frag);
+        baseRows.append(rows, matches);
         renderTemporaryRows();
         updatePlaylistActiveItem();
         observePlaylistCovers();
@@ -238,19 +280,36 @@ export function createPlaylistView({
         persistenceService.schedulePlaylistStateSave(true);
     }
 
-    function renderPlaylist() {
+    function renderPlaylist({ preservePosition = false } = {}) {
+        const sidebar = domService.el.plSidebar;
+        const scrollTop = sidebar.scrollTop || 0;
+        const anchors = preservePosition && scrollTop > 1 ? getVisiblePlaylistIndexes().map(index => {
+            const row = baseRows.at(index);
+            return { track: row._track, top: row.getBoundingClientRect().top };
+        }) : [];
+        const focused = preservePosition && domService.el.plContainer.contains(document.activeElement)
+            ? document.activeElement?._track : null;
         if (searchQueue !== queueService.playlist) {
             searchQueue = queueService.playlist;
             window.cancelAnimationFrame(searchFrame); searchFrame = 0;
             searchTerms = []; unfilteredScrollTop = 0; composing = false;
             if (domService.el.plSearch) domService.el.plSearch.value = '';
         }
-        searchKeys = []; visibleCount = 0;
+        searchKeys = [];
         temporaryRows = new Map();
         playlistCovers.reset();
-        domService.el.plContainer.innerHTML = '';
+        playlistFade.reset();
+        baseRows.clear();
         activePlaylistRow = null;
         appendPlaylistRows(0, true);
+        if (preservePosition) {
+            if (focused) rowAt(queueService.indexOfTrack(focused))?.focus({ preventScroll: true });
+            const anchor = anchors.find(item => queueService.indexOfTrack(item.track) >= 0);
+            if (anchor) {
+                const row = rowAt(queueService.indexOfTrack(anchor.track));
+                sidebar.scrollTop += row.getBoundingClientRect().top - anchor.top;
+            } else sidebar.scrollTop = scrollTop;
+        }
         persistenceService.schedulePlaylistStateSave(true);
     }
 
@@ -258,7 +317,9 @@ export function createPlaylistView({
         if (!domService.el.plSidebar || !queueService.playlist || queueService.playlist.length === 0 || queueService.curIdx < 0) return;
         const active = rowAt(queueService.curIdx);
         if (!active) return; // no current item in list, keep still
-        if (active.hidden) setSearchQuery('', { restore: false });
+        const visible = queueService.curIdx < base().length ? baseRows.isVisible(queueService.curIdx)
+            : manualRows?.isVisible(active._temporaryNumber - 1);
+        if (!visible) setSearchQuery('', { restore: false });
         active.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -270,19 +331,19 @@ export function createPlaylistView({
     function getVisiblePlaylistIndexes() {
         if (!domService.el.plSidebar.classList.contains('show')) return [];
         const viewport = domService.el.plSidebar.getBoundingClientRect();
-        const rows = Array.from(domService.el.plContainer.children, (row, index) => ({ row, index })).filter(item => !item.row.hidden);
-        let low = 0, high = rows.length;
+        const indexes = baseRows.visibleIndexes();
+        let low = 0, high = indexes.length;
         while (low < high) {
             const mid = (low + high) >>> 1;
-            if (rows[mid].row.getBoundingClientRect().bottom <= viewport.top) low = mid + 1;
+            if (baseRows.at(indexes[mid]).getBoundingClientRect().bottom <= viewport.top) low = mid + 1;
             else high = mid;
         }
-        const indexes = [];
-        for (let index = low; index < rows.length && indexes.length < 20; index++) {
-            if (rows[index].row.getBoundingClientRect().top >= viewport.bottom) break;
-            indexes.push(rows[index].index);
+        const visible = [];
+        for (let index = low; index < indexes.length && visible.length < 20; index++) {
+            if (baseRows.at(indexes[index]).getBoundingClientRect().top >= viewport.bottom) break;
+            visible.push(indexes[index]);
         }
-        return indexes;
+        return visible;
     }
 
     let initialized = false;
@@ -292,6 +353,7 @@ export function createPlaylistView({
         refreshPlaylistItem,
         ensurePlaylistRenderedAndActive,
         appendPlaylistRows,
+        getRenderedPlaylistLength: () => baseRows.length,
         renderPlaylist,
         scrollPlaylistToCurrent,
         scrollPlaylistToTop,
@@ -301,6 +363,7 @@ export function createPlaylistView({
             if (initialized) return;
             initialized = true;
             playlistCovers.initialize();
+            playlistFade.initialize();
             domService.el.plClearTemporary?.addEventListener('click', () => queueService.clearTemporaryQueue());
             domService.el.plSearch?.addEventListener('input', event => { if (!event.isComposing) scheduleSearch(); });
             domService.el.plSearch?.addEventListener('compositionstart', () => { composing = true; window.cancelAnimationFrame(searchFrame); searchFrame = 0; });

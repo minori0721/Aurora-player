@@ -1,6 +1,6 @@
 {
   "name": "aurora-player",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:cloudflare": "node scripts/build.mjs --cloudflare",
     "test": "node --test \"tests/*.test.mjs\"",
     "check": "node scripts/check.mjs",
     "dev": "node scripts/dev.mjs"

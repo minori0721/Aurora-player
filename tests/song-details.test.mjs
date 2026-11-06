@@ -224,6 +224,37 @@ test('metadata load cancellation leaves the queue paused and cannot launch onlin
     assert.equal(playback.currentAbortController, null);
 });
 
+test('playing a restored placeholder fetches details and updates its row before online playback', async t => {
+    let queue, token = 0;
+    const requests = [], rows = [], played = [], saved = [];
+    const playback = { playbackState: { status: 'idle' }, playbackWantsPlay: true, transportVersion: 0,
+        beginPlaybackAction: () => ++token, getPlaybackLoad: () => ({}), releasePlaybackLoad() {},
+        isPlaybackActionCurrent: (candidate, track) => candidate === token && queue.playlist[queue.curIdx] === track,
+        stopAudio(status) { this.playbackState.status = status; }, resetPlaybackTimeline() {}, unlockAudioContext: async () => true };
+    const content = { clearMusicQueueFeedback() {}, updateMusicMiniPlayer() {} };
+    const playlistView = { ensurePlaylistRenderedAndActive() {}, refreshPlaylistItem: index => rows.push(index) };
+    const details = createSongDetails({
+        queue: { get playlist() { return queue.playlist; }, get curIdx() { return queue.curIdx; }, findSongIndexes: id => queue.findSongIndexes(id) },
+        auth: { authGeneration: 0, neteaseCookie: '', accountAbortControllers: new Set() },
+        api: { buildApiUrl: path => `https://api.test${path}` }, transfer: createTransfer(), playback, content, playlistView,
+        debug: { log() {} }, cache: { cachedFetchJson: async url => { requests.push(url); return { code: 200, songs: [song(4)] }; } }
+    });
+    t.after(() => details.reset());
+    queue = createQueue({ playback, content, playlistView, songDetails: details,
+        prefetch: { prefetchUpcomingNeteaseDetails() {}, retargetNextPreload() {} },
+        onlinePlaylist: { resolveSyncedSelection: index => index },
+        dom: { el: { title: {}, lyricBox: {}, img: { style: {} } } }, covers: { setMainCover() {} }, debug: { log() {} },
+        persistence: { schedulePlaylistTrackSave: index => saved.push(index) },
+        onlinePlayback: { playNeteaseSong: async value => played.push(value) }
+    });
+    queue.playlist = [{ netease: true, songId: 4, name: 'Song 4 (pending)' }];
+    await queue.playTrackFromPlaylist(0);
+    assert.equal(requests.length, 1); assert.equal(new URL(requests[0]).searchParams.get('ids'), '4');
+    assert.equal(queue.playlist[0].name, 'song-4 - artist');
+    assert.equal(played[0].id, 4); assert.equal(queue.playlist[0].songData, played[0]);
+    assert.deepEqual(rows, [0]); assert.deepEqual(saved, [0]);
+});
+
 test('timeout covers pending JSON, releases its batch and uses a finite background cooldown', async t => {
     const { details, calls, state } = fixture(t);
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });

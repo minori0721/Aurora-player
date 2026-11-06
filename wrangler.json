@@ -1,11 +1,14 @@
 {
   "name": "aurora-player",
+  "main": "server/cloudflare.js",
   "compatibility_date": "2026-10-18",
   "build": {
-    "command": "npm run build"
+    "command": "npm run build:cloudflare"
   },
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/proxy-download"],
     "not_found_handling": "404-page"
   }
 }

@@ -97,6 +97,7 @@ export function createDom({} = {}) {
         get downloadListEl() { return downloadListEl; },
         get downloadTitle() { return downloadTitle; },
         get downloadTrackInfo() { return downloadTrackInfo; },
+        get downloadDestination() { return document.getElementById('download-destination'); },
         get lyricToggleBtn() { return lyricToggleBtn; },
         get fileInput() { return fileInput; },
         get dragMaskTitle() { return dragMaskTitle; },

@@ -6,8 +6,10 @@ import { FakeElement } from './helpers/host.mjs';
 function fixture(t, matched, audioInfo = null) {
     const dom = Object.fromEntries(['downloadClose', 'downloadCancel', 'downloadModal', 'downloadBtnMobile',
         'downloadBtn', 'downloadTitle', 'downloadTrackInfo', 'downloadListEl'].map(key => [key, new FakeElement()]));
-    const document = { createElement() {
+    const anchors = [];
+    const document = { body: new FakeElement(), createElement(tag) {
         const element = new FakeElement();
+        if (tag === 'a') anchors.push(element);
         Object.defineProperty(element, 'innerHTML', { get() { return this._html || ''; }, set(value) {
             this._html = value; this.children = [];
             if (value.includes('quality-meta')) this.children.push(Object.assign(new FakeElement(), { className: 'quality-meta' }));
@@ -29,7 +31,7 @@ function fixture(t, matched, audioInfo = null) {
     });
     download._currentPlaying = { playToken: 7, netease: true, songId: 1, songData: { name: 'Example', ar: [] } };
     download.initialize();
-    return { download, dom };
+    return { download, dom, anchors };
 }
 
 test('match download never borrows official bitrate, sample rate, size or lossless inference', async t => {
@@ -63,3 +65,21 @@ test('unknown download format and mismatched tiers never borrow the official FLA
         assert.doesNotMatch(text, /FLAC|MP3|kbps|kHz|MB/);
     }
 });
+
+for (const proxy of ['/proxy-download', 'https://music.moerika.com/proxy-download', 'https://custom.example/download']) {
+    test(`device download uses configured entry ${proxy} without fetching the audio in page JS`, async t => {
+        const f = fixture(t, false);
+        const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: { DOWNLOAD_PROXY_URL: proxy } });
+        t.after(() => previous ? Object.defineProperty(globalThis, 'window', previous) : delete globalThis.window);
+        await f.dom.downloadBtn.onclick();
+        await f.dom.downloadListEl.children[0].querySelector('.quality-action').children[0].onclick();
+        assert.equal(f.anchors.length, 1);
+        const anchor = f.anchors[0], url = new URL(anchor.href, 'https://player.example');
+        assert.equal(url.searchParams.get('url'), 'https://cdn.test/music.mp3');
+        assert.match(url.searchParams.get('filename'), /^Example.*\[standard\]\.mp3$/);
+        assert.equal(anchor.href.startsWith(proxy + '?'), true);
+        assert.equal(anchor.target, '_blank'); assert.equal(anchor.rel, 'noopener');
+        assert.equal(anchor.download, url.searchParams.get('filename'));
+    });
+}

@@ -222,3 +222,14 @@ test('replacement approval cannot replace a different queue created while the pr
     const pending = q.confirmReplaceQueue(); q.playlist = [track(99)]; dialog.close('replace');
     assert.equal(await pending, false); assert.equal(q.basePlaylist[0].songId, 99);
 });
+test('song lookup indexes every duplicate occurrence and follows base and manual structural changes', () => {
+    const plan = new PlaybackPlan();
+    const track = id => ({ netease: true, songId: id });
+    plan.reset([track(7), track(8), track(7), { name: 'local' }]);
+    assert.deepEqual(plan.findSongIndexes(7), [0, 2]);
+    plan.playNow(track(7)); assert.deepEqual(plan.findSongIndexes(7), [0, 2, 4]);
+    plan.appendBaseTracks([track(7)]); assert.deepEqual(plan.findSongIndexes(7), [0, 2, 4, 5]);
+    plan.removeBaseTrack(0); assert.deepEqual(plan.findSongIndexes(7), [1, 3, 4]);
+    plan.reset([track(9)]); assert.deepEqual(plan.findSongIndexes(7), []);
+    assert.deepEqual(plan.findSongIndexes(9), [0]);
+});

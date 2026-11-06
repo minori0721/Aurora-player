@@ -53,15 +53,19 @@ export function createPersistence({
     let playlistSelectionIdbRevision = 0;
 
     let playlistSelectionCompactRevision = 0;
+    const playlistDirtyTracks = new Map();
+    const compactTrackCache = new WeakMap();
 
     function schedulePlaylistTrackSave(index) {
-        const previous = playlistPersistenceQueue === queueService.playlist ? playlistCachedState?.tracks[index] : null;
+        const previous = playlistPersistenceQueue === queueService.playlist
+            ? playlistDirtyTracks.get(index) || playlistCachedState?.tracks[index] : null;
         const track = queueService.playlist[index];
         if (!track) return;
         const next = serializePlaylistTrack(track);
         const unchanged = previous && previous.handle === next.handle
             && JSON.stringify({ ...previous, handle: undefined }) === JSON.stringify({ ...next, handle: undefined });
-        schedulePlaylistStateSave(!unchanged);
+        if (!unchanged && index < queueService.basePlaylist.length && previous && !playlistStructureDirty) playlistDirtyTracks.set(index, next);
+        schedulePlaylistStateSave(!unchanged && index < queueService.basePlaylist.length && (!previous || playlistStructureDirty));
     }
 
     function serializeNeteaseTrack(track) {
@@ -70,6 +74,7 @@ export function createPersistence({
             id: positiveMusicInteger(track.songId || song.id, 0),
             title: String(song.name || track.name || ''),
             displayName: String(track.name || song.name || ''),
+            ...(!track.songData ? { detailPending: true } : {}),
             ...(song.durationMs > 0 ? { durationMs: song.durationMs } : {}),
             ...(track.detailCheckedAt > 0 ? { detailCheckedAt: track.detailCheckedAt } : {}),
             artists: song.artists.map(normalizePersistedArtist),
@@ -119,7 +124,11 @@ export function createPersistence({
             playlistPersistenceId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
             playlistStructureDirty = true;
         }
-        if (!playlistStructureDirty && playlistCachedState?.tracks.length === base.length && sourceKey === playlistCachedSource) return playlistCachedState;
+        const reuseTracks = !playlistStructureDirty && playlistCachedState?.tracks.length === base.length;
+        if (reuseTracks && !playlistDirtyTracks.size && sourceKey === playlistCachedSource) return playlistCachedState;
+        const tracks = reuseTracks
+            ? playlistDirtyTracks.size ? playlistCachedState.tracks.map((track, index) => playlistDirtyTracks.get(index) || track) : playlistCachedState.tracks
+            : base.map(serializePlaylistTrack);
         playlistStateRevision = Math.max(playlistStateRevision + 1, Date.now());
         playlistCachedState = {
             schema: PLAYER_STATE_SCHEMA,
@@ -129,16 +138,17 @@ export function createPersistence({
             selectedIndex: Math.max(0, Math.min(base.length - 1, Number(queueService.baseCurIdx) || 0)),
             source,
             ...(manual ? { manual } : {}),
-            tracks: base.map(serializePlaylistTrack)
+            tracks
         };
         playlistCachedSource = sourceKey;
         playlistStructureDirty = false;
+        playlistDirtyTracks.clear();
         return playlistCachedState;
     }
 
     function writeCompactPlaylistState(state) {
         try {
-            localStorage.setItem(PLAYER_SNAPSHOT_KEY, JSON.stringify(createCompactPlaylistState(state)));
+            localStorage.setItem(PLAYER_SNAPSHOT_KEY, JSON.stringify(createCompactPlaylistState(state, compactTrackCache)));
             return true;
         } catch (error) {
             console.warn('Compact playlist snapshot failed:', error);
@@ -334,8 +344,10 @@ export function createPersistence({
                 return {
                     name: String(item.displayName || item.title || ''), netease: true, songId: item.id,
                     ...(item.detailCheckedAt > 0 ? { detailCheckedAt: item.detailCheckedAt } : {}),
-                    songData: { id: item.id, name: String(item.title || ''), ar, al, artists: ar, album: al,
-                        ...(item.durationMs > 0 ? { dt: item.durationMs, duration: item.durationMs } : {}) }
+                    ...(item.detailPending ? {} : {
+                        songData: { id: item.id, name: String(item.title || ''), ar, al, artists: ar, album: al,
+                            ...(item.durationMs > 0 ? { dt: item.durationMs, duration: item.durationMs } : {}) }
+                    })
                 };
             };
             queueService.playlist = state.tracks.map(restoreTrack);
@@ -352,10 +364,10 @@ export function createPersistence({
             const currentTrack = queueService.playlist[queueService.curIdx] || queueService.playlist[0];
             if (!currentTrack) return;
             if (currentTrack.netease) {
-                domService.el.title.textContent = currentTrack.songData.name || currentTrack.name;
-                contentService.setMainMusicEntityLinks(currentTrack.songData);
+                domService.el.title.textContent = currentTrack.songData?.name || currentTrack.name;
+                contentService.setMainMusicEntityLinks(currentTrack.songData || null);
                 lyricsService.setArtistTag('网易云');
-                const cover = toHttps(currentTrack.songData.al.picUrl);
+                const cover = toHttps(currentTrack.songData?.al?.picUrl);
                 if (cover) {
                     coversService.setMainCover(cover);
                     domService.el.img.style.opacity = 1;

@@ -88,10 +88,44 @@ function fixture(t) {
 }
 
 test('cover URLs replace size parameters without losing unrelated parameters', () => {
-    assert.equal(playlistCoverSrc('http://cover.invalid/a?param=500y500&v=2'), 'https://cover.invalid/a?param=80y80&v=2');
+    assert.equal(playlistCoverSrc('http://p4.music.126.net/a?param=500y500&v=2'), 'https://p4.music.126.net/a?param=80y80&v=2');
+    assert.equal(playlistCoverSrc('https://cover.invalid/a?param=500y500&v=2'), 'https://cover.invalid/a?param=500y500&v=2');
     assert.equal(playlistCoverSrc('data:image/png;base64,abc'), 'data:image/png;base64,abc');
     assert.equal(playlistCoverSrc('blob:https://player.invalid/id'), 'blob:https://player.invalid/id');
     for (const value of ['', 'bad-url', 'javascript:alert(1)']) assert.equal(playlistCoverSrc(value), '');
+});
+
+test('same catalog image on p3 and p4 uses one thumbnail task', t => {
+    const f = fixture(t), a = f.add(1), b = f.add(2);
+    const path = '/shared-hash/109951169976598406.jpg';
+    f.covers.bind(a, `https://p4.music.126.net${path}`);
+    f.covers.bind(b, `https://p3.music.126.net${path}`);
+    f.enter(a); f.enter(b, 70); f.flush();
+    assert.equal(f.requests.length, 1);
+    f.requests[0].succeed(); f.flush();
+    assert.equal(a.src, b.src);
+    assert.equal(a.dataset.coverLoaded, '1'); assert.equal(b.dataset.coverLoaded, '1');
+});
+
+test('hidden row groups neither request nor paint covers and reuse a completion after revealing', t => {
+    const f = fixture(t), img = f.add(1), group = { hidden: true };
+    const row = { hidden: false, closest: selector => selector === '.pl-row-group' ? group : null };
+    img.closest = selector => selector === '.pl-item' ? row : null;
+    f.enter(img); f.flush(); assert.equal(f.requests.length, 0);
+    group.hidden = false; f.enter(img); f.flush(); assert.equal(f.requests.length, 1);
+    group.hidden = true; f.requests[0].succeed(); f.flush(); assert.equal(img.dataset.coverLoaded, undefined);
+    group.hidden = false; f.enter(img); f.flush();
+    assert.equal(img.dataset.coverLoaded, '1'); assert.equal(f.requests.length, 1);
+});
+
+test('a catalog thumbnail retry displays the successful alternate URL without another failed-host fetch', t => {
+    const f = fixture(t), img = f.add(1);
+    f.covers.bind(img, 'https://p3.music.126.net/retry-playlist/109951169976598406.jpg');
+    f.enter(img); f.flush(); f.requests[0].fail(); f.tick(400);
+    assert.equal(f.requests.length, 2); assert.match(f.requests[1].url, /^https:\/\/p4\./);
+    f.requests[1].succeed(); f.flush();
+    assert.equal(img.src, f.requests[1].url); assert.equal(img.dataset.coverLoaded, '1');
+    assert.equal(f.timers.size, 0);
 });
 
 test('a 1177-row playlist does not create image requests for offscreen rows', t => {

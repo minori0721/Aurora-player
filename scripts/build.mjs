@@ -2,19 +2,20 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as bundle } from 'esbuild';
-import { inlineScript, readPublicConfig } from './config.mjs';
+import { DEFAULT_CONFIG, inlineScript, isCloudflareBuild, readPublicConfig } from './config.mjs';
 
 export const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const read = async file => (await fs.readFile(path.join(ROOT, file), 'utf8')).replace(/\r\n/g, '\n');
 
-export async function buildHtml({ env = process.env, minify = true } = {}) {
+export async function buildHtml({ env = process.env, minify = true, cloudflare = isCloudflareBuild(env) } = {}) {
     const pkg = JSON.parse(await read('package.json'));
-    const config = readPublicConfig(env);
+    const config = readPublicConfig(env, { cloudflare });
     const notices = await read('THIRD_PARTY_NOTICES.txt');
     if (notices.includes('--')) throw new Error('Third-party notices must be safe inside an HTML comment');
     const common = { absWorkingDir: ROOT, bundle: true, write: false, minify, target: ['es2020'], legalComments: 'inline', charset: 'utf8', logLevel: 'silent' };
     const worker = await bundle({ ...common, entryPoints: ['src/analysis/worker.js'], format: 'iife', platform: 'browser' });
     const backgroundWorker = await bundle({ ...common, entryPoints: ['src/ui/background-worker.js'], format: 'iife', platform: 'browser' });
+    const cloudWorker = await bundle({ ...common, entryPoints: ['src/audio/cloud-worker.js'], format: 'iife', platform: 'browser' });
     const app = await bundle({
         ...common,
         entryPoints: ['src/app.js'],
@@ -32,6 +33,10 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
                 build.onLoad({ filter: /.*/, namespace: 'aurora-background' }, () => ({
                     contents: `export const BACKGROUND_WORKER_SOURCE = ${JSON.stringify(backgroundWorker.outputFiles[0].text)};`, loader: 'js'
                 }));
+                build.onResolve({ filter: /^aurora:cloud-worker$/ }, () => ({ path: 'cloud-worker', namespace: 'aurora-cloud' }));
+                build.onLoad({ filter: /.*/, namespace: 'aurora-cloud' }, () => ({
+                    contents: `export const CLOUD_WORKER_SOURCE = ${JSON.stringify(cloudWorker.outputFiles[0].text)};`, loader: 'js'
+                }));
             }
         }]
     });
@@ -48,7 +53,12 @@ export async function buildHtml({ env = process.env, minify = true } = {}) {
         license: `<!-- Aurora Player v${pkg.version}\n${await read('LICENSE')}\n-->\n<!-- Aurora Player third-party notices\n${notices}\n-->`,
         icons: iconTags.join('\n    '),
         vendors: vendorTags.join('\n'),
-        config: `<script data-aurora="config">${inlineScript(Object.entries(config).map(([key, value]) => `window.${key}=${JSON.stringify(value)};`).join(''))}</script>`,
+        config: `<script data-aurora="config">${inlineScript(Object.entries(config).map(([key, value]) => {
+            const expression = key === 'DOWNLOAD_PROXY_URL' && value === '/proxy-download'
+                ? `(window.location.protocol==="file:"?${JSON.stringify(DEFAULT_CONFIG.DOWNLOAD_PROXY_URL)}:${JSON.stringify(value)})`
+                : JSON.stringify(value);
+            return `window.${key}=${expression};`;
+        }).join(''))}</script>`,
         preferences: `<script data-aurora="preferences">\n${inlineScript(await read('src/ui/preferences.js'))}\n</script>`,
         styles: `<style>\n${css.outputFiles[0].text}\n</style>`,
         app: `<script data-aurora="app">\n${inlineScript(app.outputFiles[0].text)}\n</script>`
@@ -75,10 +85,18 @@ export async function build({ outdir = 'dist', ...options } = {}) {
     } finally {
         await fs.rm(temporary, { force: true });
     }
+    if ((options.env || process.env).CF_PAGES === '1') {
+        const worker = await bundle({ absWorkingDir: ROOT, entryPoints: ['server/cloudflare.js'], bundle: true,
+            write: false, minify: true, target: ['es2020'], format: 'esm', platform: 'browser', logLevel: 'silent' });
+        await fs.writeFile(path.join(output, '_worker.js'), worker.outputFiles[0].text);
+        await fs.writeFile(path.join(output, '_routes.json'), JSON.stringify({ version: 1, include: ['/proxy-download'], exclude: [] }) + '\n');
+    } else {
+        for (const name of ['_worker.js', '_routes.json']) await fs.rm(path.join(output, name), { force: true });
+    }
     return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const result = await build();
+    const result = await build({ cloudflare: process.argv.includes('--cloudflare') || isCloudflareBuild(process.env) });
     console.log(`Built dist/index.html (${Buffer.byteLength(result.html)} bytes), v${result.version}`);
 }

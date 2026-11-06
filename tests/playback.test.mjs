@@ -32,6 +32,25 @@ test('invalid internal playback status rejects without rewriting the current sta
     assert.equal(player.playbackState.status, 'paused');
 });
 
+test('cloud can borrow only the current identical encoded file and never retains it after release', async () => {
+    const { player, queue } = fixture();
+    const token = player.beginPlaybackAction();
+    const load = player.getPlaybackLoad(token, queue.playlist[0]);
+    const blob = new Blob([new Uint8Array(8)]);
+    const md5 = '1234567890abcdef1234567890abcdef';
+    let encoded = { blob, songId: 11, md5, size: 8 };
+    await player.prepareStream(load, { media: { ready: Promise.resolve(), duration: 20, time: 0,
+        observe() {}, connect() {}, dispose() {}, bufferedEnd: () => 0 },
+        peekEncoded: () => encoded, releaseEncoded() { encoded = null; } });
+    assert.equal(player.getEncodedAudioForCloud({ songId: 11, md5, size: 8 }), blob);
+    for (const identity of [{ songId: 12, md5, size: 8 }, { songId: 11, md5: '', size: 8 },
+        { songId: 11, md5: '0'.repeat(32), size: 8 }, { songId: 11, md5, size: 9 }]) {
+        assert.equal(player.getEncodedAudioForCloud(identity), null);
+    }
+    player.invalidatePlaybackAction();
+    assert.equal(player.getEncodedAudioForCloud({ songId: 11, md5, size: 8 }), null);
+});
+
 test('temporary audition uses the same PCM but its own loop clock, and normal playback restores the configured loop', () => {
     const { player, audio, loop } = fixture();
     player.audioBuffer = audio.decoded; player.playbackState.duration = audio.decoded.duration;

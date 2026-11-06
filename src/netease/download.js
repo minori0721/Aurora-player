@@ -10,9 +10,21 @@ export function createDownload({
     dom: domService,
     panels: panelsService,
     playback: playbackService,
-    resolver: resolverService
+    resolver: resolverService,
+    cloud: cloudService,
+    songActions: songActionsService
 } = {}) {
     let _currentPlaying = null;
+    let destination = 'device';
+
+    function openCloudTasks() {
+        cancelDownloadProbes();
+        domService.downloadTitle.textContent = '云盘任务';
+        domService.downloadTrackInfo.textContent = '';
+        domService.downloadListEl.hidden = true;
+        if (domService.downloadDestination) domService.downloadDestination.hidden = true;
+        panelsService.modalController.open(domService.downloadModal, closeDownloadModal);
+    }
 
     const QUALITY_LEVELS = [
         { key: 'standard', label: '标准 (128kbps)' },
@@ -72,11 +84,19 @@ export function createDownload({
     let initialized = false;
     return {
         get _currentPlaying() { return _currentPlaying; },
-        set _currentPlaying(value) { _currentPlaying = value; },
+        set _currentPlaying(value) { _currentPlaying = value; songActionsService?.setCurrentTrack(value); },
         cancelDownloadProbes,
+        openCloudTasks,
         initialize() {
             if (initialized) return;
             initialized = true;
+            domService.downloadDestination?.addEventListener('change', event => {
+                if (!['device', 'cloud'].includes(event.target.value)) return;
+                destination = event.target.value;
+                domService.downloadListEl.querySelectorAll('[data-quality-download]').forEach(button => {
+                    button.textContent = destination === 'cloud' ? '存入云盘' : '下载';
+                });
+            });
             domService.downloadClose.onclick = closeDownloadModal;
 
             domService.downloadCancel.onclick = closeDownloadModal;
@@ -109,6 +129,8 @@ export function createDownload({
                 domService.downloadTrackInfo.textContent = `${songName}${artists ? ' — ' + artists : ''}`;
                 panelsService.modalController.open(domService.downloadModal, closeDownloadModal);
 
+                domService.downloadListEl.hidden = false;
+                if (domService.downloadDestination) domService.downloadDestination.hidden = false;
                 domService.downloadListEl.innerHTML = '';
                 const cookieParam = authService.neteaseCookie ? `&cookie=${encodeURIComponent(cleanCookie(authService.neteaseCookie))}` : '';
                 cancelDownloadProbes();
@@ -256,20 +278,31 @@ export function createDownload({
                                 rightArea.innerHTML = '';
                                 const dlBtn = document.createElement('button');
                                 dlBtn.className = 'glass-btn';
-                                dlBtn.textContent = '下载';
+                                dlBtn.dataset.qualityDownload = level;
+                                dlBtn.textContent = destination === 'cloud' ? '存入云盘' : '下载';
 
-                                // 绑定下载事件 (保持你之前的 Worker 代理逻辑)
-                                dlBtn.onclick = () => {
+                                    // 设备下载经代理设置附件文件名，云盘任务使用独立传输路径。
+                                dlBtn.onclick = async () => {
+                                    if (!probeIsCurrent()) return;
+                                    if (destination === 'cloud') {
+                                        try {
+                                            await cloudService.start({ songId, songData: playing.songData || playing,
+                                                level, source: useMatchForVip ? matchSource || 'auto' : '', audioInfo: { ...data } });
+                                        } catch (error) {
+                                            metaEl.textContent = error.message || '云盘任务启动失败';
+                                        }
+                                        return;
+                                    }
                                     const safeName = (songName + ' - ' + artists).replace(/[\\/:*?"<>|]+/g, '_').slice(0,120);
                                     const fileName = `${safeName} [${level}]${realExt ? `.${realExt}` : ''}`;
 
-                                    // 使用配置好的 Worker 地址，如果没有则回退到相对路径
                                     const baseUrl = window.DOWNLOAD_PROXY_URL || '/proxy-download';
                                     const proxyUrl = `${baseUrl}?url=${encodeURIComponent(data.url)}&filename=${encodeURIComponent(fileName)}`;
 
                                     const a = document.createElement('a');
                                     a.href = proxyUrl;
                                     a.target = '_blank';
+                                    a.rel = 'noopener';
                                     a.download = fileName;
                                     document.body.appendChild(a);
                                     a.click();

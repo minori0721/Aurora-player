@@ -17,7 +17,8 @@ export class PlaybackPlan {
         this.forward = [];
         this.revision = (this.revision || 0) + 1;
         this.indexes = new Map();
-        this.items.forEach((track, index) => { if (!this.indexes.has(track)) this.indexes.set(track, index); });
+        this.songIndexes = new Map();
+        this.items.forEach((track, index) => this.indexTrack(track, index));
     }
 
     get current() { return this.items[this.index] || null; }
@@ -25,6 +26,21 @@ export class PlaybackPlan {
     get temporary() { return this.isTemporary ? [this.current, ...this.pending] : this.pending.slice(); }
 
     indexOf(track) { return this.indexes.get(track) ?? -1; }
+
+    indexTrack(track, index) {
+        if (!this.indexes.has(track)) this.indexes.set(track, index);
+        const id = Number(track?.songId || track?.songData?.id);
+        if (!track?.netease || !Number.isSafeInteger(id) || id <= 0) return;
+        const previous = this.songIndexes.get(id);
+        if (previous === undefined) this.songIndexes.set(id, index);
+        else if (Array.isArray(previous)) previous.push(index);
+        else this.songIndexes.set(id, [previous, index]);
+    }
+
+    findSongIndexes(id) {
+        const indexes = this.songIndexes.get(Number(id));
+        return indexes === undefined ? [] : Array.isArray(indexes) ? indexes : [indexes];
+    }
 
     rebuild(selected = this.current, force = false) {
         const keep = new Set([...this.pending, ...this.history, ...this.forward, selected]);
@@ -40,7 +56,8 @@ export class PlaybackPlan {
         for (const track of this.base) this.items.push(track);
         for (const track of this.manual) this.items.push(track);
         this.indexes = new Map();
-        this.items.forEach((track, index) => { if (!this.indexes.has(track)) this.indexes.set(track, index); });
+        this.songIndexes = new Map();
+        this.items.forEach((track, index) => this.indexTrack(track, index));
         this.index = selected ? this.indexOf(selected) : -1;
         this.revision++;
     }
@@ -78,7 +95,7 @@ export class PlaybackPlan {
         this.manual.push(track);
         this.manualSet.add(track);
         this.items.push(track);
-        this.indexes.set(track, this.items.length - 1);
+        this.indexTrack(track, this.items.length - 1);
         return this.select(this.items.length - 1);
     }
 

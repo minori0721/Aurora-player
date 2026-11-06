@@ -29,7 +29,7 @@ function fixture(t) {
     });
     const dom = createDom(), calls = [], logs = [];
     let content;
-    const browser = createBrowser({ dom, auth: { cancelLoginSession() {} },
+    const browser = createBrowser({ dom, auth: { cancelLoginSession() {}, refreshVipInfo() {} },
         content: new Proxy({}, { get: (_, key) => (...args) => content[key](...args) }),
         panels: { modalController: {
             open() { dom.neteasePanel.classList.add('show'); }, close() { dom.neteasePanel.classList.remove('show'); }
@@ -101,4 +101,29 @@ test('restoring a retained preview keeps the context bound and reports a missing
     f.browser.musicBrowserState.contexts.delete(id);
     await f.click();
     assert.equal(f.calls.length, 0); assert.equal(f.logs.at(-1)[1], 'warn');
+});
+
+test('background batches retain an unchanged preview page and paginate using the newest songs', async t => {
+    const f = fixture(t), firstBatch = songs.slice(0, 50);
+    f.content.renderSongList(firstBatch, f.dom.playlistResults);
+    const first = f.row(), cover = first.querySelector('.music-song-cover');
+    f.content.renderSongList(songs, f.dom.playlistResults);
+    assert.equal(f.row(), first); assert.equal(first.querySelector('.music-song-cover'), cover);
+    assert.equal(f.dom.playlistResults.querySelectorAll('.music-pagination').length, 1);
+    const pagination = f.dom.playlistResults.querySelector('.music-pagination');
+    assert.match(pagination.children[1].textContent, /101/);
+    pagination.children[2].onclick();
+    await f.click(); assert.deepEqual(f.calls.at(-1), ['play', 51]);
+    assert.equal(f.requests.length, 0);
+});
+
+test('changed preview presentation and replaced containers are redrawn instead of reusing stale rows', t => {
+    const f = fixture(t), data = songs.map(song => ({ ...song }));
+    f.content.renderSongList(data, f.dom.playlistResults);
+    const first = f.row(); data[0].name = 'Updated title';
+    f.content.renderSongList(data, f.dom.playlistResults);
+    assert.notEqual(f.row(), first);
+    const updated = f.row(); f.dom.playlistResults.innerHTML = '';
+    f.content.renderSongList(data, f.dom.playlistResults);
+    assert.notEqual(f.row(), updated);
 });

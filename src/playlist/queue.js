@@ -193,7 +193,7 @@ export function createQueue({
                     }
                     if (!playbackService.isPlaybackActionCurrent(selectionToken, track)) return;
                     if (!detail) throw new Error('未找到歌曲信息');
-                    track.songData = detail;
+                    songDetailsService.applyToPlaylist([detail]);
                     persistenceService.schedulePlaylistTrackSave(i);
                 }
                 await onlinePlaybackService.playNeteaseSong(track.songData, selectionToken);
@@ -271,6 +271,7 @@ export function createQueue({
         get hasTemporaryState() { return plan.isTemporary || plan.pending.length > 0; },
         get manualState() { return { current: plan.isTemporary ? plan.current : null, pending: plan.pending.slice() }; },
         indexOfTrack(track) { return plan.indexOf(track); },
+        findSongIndexes(id) { return plan.findSongIndexes(id); },
         restoreManualState(state) { plan.restoreManual(state); },
         appendBaseTracks(tracks) { plan.appendBaseTracks(tracks); afterBaseChange(); },
         replaceBaseTracks(tracks, index) { plan.replaceBaseTracks(tracks, index); afterBaseChange(); },

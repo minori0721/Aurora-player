@@ -313,6 +313,8 @@ test('cache keys unify only recognized NetEase thumbnail sizes and keep source i
     assert.notEqual(coverThemeKey(`${root}?param=512y512&param=crop`), coverThemeKey(`${root}?param=512y512`));
     assert.notEqual(coverThemeKey('https://example.com/cover.jpg?param=512y512'), coverThemeKey('https://example.com/cover.jpg?param=1024y1024'));
     assert.notEqual(coverThemeKey('blob:https://example.com/one'), coverThemeKey('blob:https://example.com/two'));
+    const path = '/catalog-hash/109951169976598406.jpg';
+    assert.equal(coverThemeKey(`https://p3.music.126.net${path}?param=120y120`), coverThemeKey(`https://p4.music.126.net${path}?param=512y512`));
     for (const source of ['', undefined, 'data:image/png;base64,AAAA', 'https://example.com/a.gif', 'https://example.com/a.webp', `https://example.com/${'a'.repeat(3000)}`]) assert.equal(coverThemeKey(source), null);
 });
 

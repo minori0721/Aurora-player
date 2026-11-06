@@ -17,11 +17,16 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/audio/prefetch.js`、`transfer.js` | 下一首任务、大小预算、超时和音频传输 |
 | `src/audio/loop.js`、`quality.js`、`mp3.js`、`metadata.js` | 循环设定、音频格式信息、MP3 文件头解析和标签应用 |
 | `src/playlist/` | 原列表与临时点播计划、播放队列、目录导入、伴随文件配对、列表显示与视口封面调度 |
+| `src/playlist/rows.js` | 歌曲行索引、长列表分组、筛选状态与可见数量，保留现有按钮和封面节点 |
+| `src/playlist/fade.js` | 列表文字溢出判断、近屏渐隐准备、测量缓存与面板生命周期 |
 | `src/playlist/file-picker.js` | Android 标准文件选择、取消保护和兼容入口分流 |
 | `src/lyrics/` | LRC/YRC/JSON 解析、来源优先级、在线匹配和歌词显示 |
 | `src/lyrics/timeline.js` | 普通与逐字歌词对齐、片段组合及翻译/罗马音附着 |
 | `src/netease/` | API、登录、内容浏览、路由、歌单分页、下载 |
 | `src/netease/song-details.js` | 歌曲详情前瞻、按 ID 共享请求、优先级提升与账号隔离 |
+| `src/netease/song-actions.js`、`account-request.js` | 喜欢状态、收藏到歌单、账号写请求与业务响应校验 |
+| `src/netease/cloud.js`、`cloud-preparation.js` | 云盘任务、直接导入、临时文件直传、入库核验及 Worker 生命周期 |
+| `src/audio/cloud-tags.js`、`cloud-worker.js` | MP3/FLAC 元数据增补、最终文件 MD5、按需离线计算 |
 | `src/netease/images.js` | 云音乐缩略图近屏加载、可见失败重试和迷你封面复用 |
 | `src/analysis/algorithms.js` | 三档周期搜索、原采样率精修和联合接缝选点的纯计算模块 |
 | `src/analysis/signal.js` | 低通降采样、FFT 相关曲线及多声道频谱特征 |
@@ -33,6 +38,7 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/ui/background-field.js` | 封面空间采样、加权模糊、色调映射与 WebGL 网格 |
 | `src/ui/background.js`、`background-thread.js`、`background-worker.js` | 背景绘制调度、主线程桥接、独立 Worker 与静态降级 |
 | `src/vendor/` | 前端库的固定源码与原许可证 |
+| `server/` | Cloudflare 同站下载入口、音频流转发与目标地址校验 |
 | `scripts/`、`tests/` | 构建、配置注入、检查、开发服务、发布及测试 |
 
 ## 状态与依赖
@@ -80,4 +86,4 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 
 `.github/workflows/pages.yml` 由 `Check` 调用，部署 `minori0721-test-1` 分支；手动部署运行该分支的 `Check`。产物转换为 Pages 附件后，通过 `github-pages` 环境和官方 Pages Actions 发布。部署权限授予调用与部署任务，检查和附件准备保持只读；部署串行执行。两个公开地址从仓库 Actions Variables 传入受检构建，未设置时使用默认值。首次使用时，将仓库 Pages 发布来源设为 `GitHub Actions`。
 
-Cloudflare Workers、Pages 与 Vercel 均运行同一个构建入口、只发布 `dist/`，API 后端与下载代理仍是独立项目。平台首次设置和变量说明见 [部署指南](deployment.md)。
+Cloudflare Workers 使用 `server/cloudflare.js` 和 `dist/`；Pages 构建自动向 `dist/` 增加下载函数与路由配置。两者的前端默认使用同站下载入口。Vercel、GitHub Pages 和普通单文件构建默认使用 music 域名的下载代理，显式配置优先。Pages 与 Release 的工作流继续只传递 `dist/index.html`。API 后端独立部署，平台设置见 [部署指南](deployment.md)。

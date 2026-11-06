@@ -115,7 +115,9 @@ export function createBrowser({
             musicBrowserState.contexts.clear();
             if (route.kind !== 'artist') musicBrowserState.artistSession = null;
         }
+        const wasOpen = domService.neteasePanel.classList.contains('show');
         panelsService.modalController.open(domService.neteasePanel, closeMusicBrowser);
+        if (!wasOpen) void authService.refreshVipInfo();
         document.getElementById('toggle-netease-panel').setAttribute('aria-expanded', 'true');
         domService.neteasePageTitle.textContent = getMusicRouteTitle(route);
 
@@ -276,6 +278,7 @@ export function createBrowser({
         saveMusicScrollState,
         renderMusicRoute,
         navigateMusic,
+        openMusicBrowser,
         closeMusicBrowser,
         initialize() {
             if (initialized) return;

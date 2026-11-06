@@ -49,6 +49,7 @@ export function createResolver({
     const matchFailures = new Map();
     const MATCH_FAILURE_COOLDOWN_MS = 30_000;
     let cacheGeneration = 0;
+    let entitlementRevision = 0;
 
     function getNeteaseMatchStrategy(level = authService.neteaseQuality) {
         return (level === 'lossless' || level === 'hires') ? 'lossless' : 'balanced';
@@ -59,10 +60,17 @@ export function createResolver({
         return NETEASE_MATCH_SOURCE_ORDERS[strategy] || NETEASE_MATCH_SOURCE_ORDERS.balanced;
     }
 
-    function clearNeteaseResolvedAudioCache() {
+    function clearNeteaseResolvedAudioCache({ entitlementsChanged = false } = {}) {
         cacheGeneration++;
+        if (entitlementsChanged) entitlementRevision = Math.max(Date.now(), entitlementRevision + 1);
         neteaseResolvedAudioCache.clear();
         matchFailures.clear();
+    }
+
+    function getOfficialAudioApiUrl(songId, level, cookieParam) {
+        // Rights changes get a fresh key in both the client JSON and API caches.
+        const revision = entitlementRevision ? `&entitlementRevision=${entitlementRevision}` : '';
+        return apiService.buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}${revision}`);
     }
 
     function pruneNeteaseResolvedAudioCache(now = Date.now()) {
@@ -77,7 +85,7 @@ export function createResolver({
     async function invalidateNeteaseResolvedAudioCache(songId, level = authService.neteaseQuality, cookie = authService.neteaseCookie) {
         neteaseResolvedAudioCache.delete(getNeteaseResolvedAudioCacheKey(songId, level, cookie));
         const cookieParam = cookie ? `&cookie=${encodeURIComponent(cleanCookie(cookie))}` : '';
-        const urls = [apiService.buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`)];
+        const urls = [getOfficialAudioApiUrl(songId, level, cookieParam)];
         for (const source of getNeteaseMatchSources(getNeteaseMatchStrategy(level))) {
             const sourceParam = source ? `&source=${encodeURIComponent(source)}` : '';
             urls.push(apiService.buildApiUrl(`/song/url/match?id=${songId}${sourceParam}`));
@@ -211,7 +219,7 @@ export function createResolver({
         }
         if (cached) neteaseResolvedAudioCache.delete(cacheKey);
 
-        const apiUrl = apiService.buildApiUrl(`/song/url/v1?id=${songId}&level=${level}&os=pc${cookieParam}`);
+        const apiUrl = getOfficialAudioApiUrl(songId, level, cookieParam);
         const json = await cacheService.cachedFetchJson(apiUrl, options, ttl);
         if (!json || json.code !== 200) throw new Error('获取音频失败');
 

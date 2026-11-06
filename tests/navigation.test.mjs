@@ -16,9 +16,23 @@ test('music browser reserves its mini player in flex layout instead of covering 
     assert.doesNotMatch(css, /padding:[^;}]*\b(?:90|96)px/);
 });
 
+test('music browser has a brief entry animation with mobile and reduced-motion variants', () => {
+    const css = fs.readFileSync(new URL('../src/styles/music.css', import.meta.url), 'utf8');
+    assert.match(css, /\.netease-panel\.show::before\s*\{\s*animation: music-panel-backdrop-in 160ms ease-out;/);
+    assert.match(css, /\.netease-panel\.show > \.netease-content\s*\{\s*animation: music-panel-in var\(--music-enter-duration\)/);
+    assert.match(css, /--music-enter-offset: 12px; --music-enter-duration: 220ms/);
+    assert.match(css, /@media screen and \(max-width: 700px\)\s*\{\s*\.netease-panel\s*\{[^}]*--music-enter-offset: 16px; --music-enter-duration: 240ms/);
+    assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.netease-panel\.show::before, \.netease-panel\.show > \.netease-content\s*\{ animation: none;/);
+    const start = css.indexOf('@keyframes music-panel-in');
+    const keyframes = css.slice(start, css.indexOf('.netease-content {', start));
+    assert.match(keyframes, /opacity: 0; transform: translateY/);
+    assert.match(keyframes, /opacity: 1; transform: none/);
+    assert.doesNotMatch(keyframes, /(?:filter|width|height|box-shadow):/);
+});
+
 function fixture(t) {
     const { host, elements, frames } = createHost(html), scroller = { scrollTop: 540 };
-    const imageLifecycle = [], feedbackClears = [];
+    const imageLifecycle = [], feedbackClears = [], memberRefreshes = [];
     host.location.href = 'http://localhost/#music/album/12'; host.location.hash = '#music/album/12';
     const panel = elements.get('netease-panel'); panel.classList.add('show');
     host.history.length = 2; host.history.go = () => {};
@@ -40,7 +54,8 @@ function fixture(t) {
     const browser = createBrowser({
         dom: { neteasePanel: panel, neteaseBrowserScroll: scroller, neteasePageTitle: elements.get('netease-page-title'), neteaseTabs: [],
             neteaseBrowserView: elements.get('netease-browser-view'), searchBtn: elements.get('netease-search-btn'), searchInput: elements.get('netease-search-input') },
-        auth: { cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } },
+        auth: { refreshVipInfo() { memberRefreshes.push(true); },
+            cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } },
         panels: { modalController: { open() { panel.classList.add('show'); }, close() { panel.classList.remove('show'); } } },
         content: { async renderMusicAlbumPage() {}, updateMusicMiniPlayer() {},
             clearMusicQueueFeedback() { feedbackClears.push(true); },
@@ -48,7 +63,7 @@ function fixture(t) {
             resumeMusicImages() { imageLifecycle.push('resume'); } }
     });
     const paint = async () => { await flush(); for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
-    return { host, scroller, browser, panel, elements, paint, imageLifecycle, feedbackClears };
+    return { host, scroller, browser, panel, elements, paint, imageLifecycle, feedbackClears, memberRefreshes };
 }
 
 test('saving history while login is open preserves the source page instead of the login scroll', t => {
@@ -108,4 +123,15 @@ test('route changes, panel close and leaving music clear the previous queue acti
     assert.equal(f.feedbackClears.length, 2);
     f.browser.closeMusicBrowser(); assert.equal(f.feedbackClears.length, 3);
     await f.browser.renderMusicRoute(null); assert.equal(f.feedbackClears.length, 4);
+});
+
+test('only opening the music panel asks the auth service for a due member refresh', async t => {
+    const f = fixture(t); f.panel.classList.remove('show');
+    await f.browser.renderMusicRoute({ kind: 'album', id: 12 });
+    assert.equal(f.memberRefreshes.length, 1);
+    await f.browser.renderMusicRoute({ kind: 'album', id: 13 });
+    assert.equal(f.memberRefreshes.length, 1);
+    f.browser.closeMusicBrowser();
+    await f.browser.renderMusicRoute({ kind: 'album', id: 12 });
+    assert.equal(f.memberRefreshes.length, 2);
 });

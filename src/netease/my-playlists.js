@@ -1,4 +1,5 @@
-import { cleanCookie, escapeHtml, toHttps } from '../shared/text.js';
+import { cleanCookie, escapeHtml } from '../shared/text.js';
+import { coverImageUrl } from '../shared/cover-url.js';
 import { positiveMusicInteger } from './routes.js';
 
 export function createMyPlaylists({
@@ -18,6 +19,18 @@ export function createMyPlaylists({
     let myPlaylistsLoadToken = 0;
 
     let myPlaylistsAbortController = null;
+    let songWriteRevision = '', songWriteSequence = 0;
+
+    function invalidateAfterSongWrite() {
+        songWriteRevision = `${Date.now()}-${++songWriteSequence}`;
+        myPlaylistsAbortController?.abort();
+        myPlaylistsAbortController = null;
+        myPlaylistsLoadToken++;
+        myPlaylistsLoadPromise = null;
+        myPlaylistsLoading = false;
+        myPlaylistsCache = null;
+        myPlaylistsData = [];
+    }
 
     function buildMyPlaylistsHtml(playlists, userId, status = {}) {
         const list = Array.isArray(playlists) ? playlists : [];
@@ -35,13 +48,13 @@ export function createMyPlaylists({
         const renderPlaylist = (p, isCollected) => {
             const id = positiveMusicInteger(p?.id, 0);
             if (!id) return '';
-            const cover = toHttps(p.coverImgUrl || '');
+            const cover = coverImageUrl(p.coverImgUrl, 100);
             const subtitle = isCollected
                 ? `${escapeHtml(p.trackCount || 0)} 首 · ${escapeHtml(p.creator?.nickname || '')}`
                 : `${escapeHtml(p.trackCount || 0)} 首`;
             return `
                 <div class="netease-item" data-action="load-playlist" data-id="${id}">
-                    <img class="netease-item-cover" data-src="${escapeHtml(cover)}?param=100y100" alt="歌单封面">
+                    <span class="netease-item-cover-link music-image-frame"><img class="netease-item-cover" data-src="${escapeHtml(cover)}" referrerpolicy="no-referrer" alt=""></span>
                     <div class="netease-item-info">
                         <div class="netease-item-name">${escapeHtml(p.name || '未命名歌单')}</div>
                         <div class="netease-item-artist">${subtitle}</div>
@@ -115,7 +128,8 @@ export function createMyPlaylists({
         const fetchPage = async offset => {
             const limit = 30;
             const cookieParam = snapshot.cookie ? `&cookie=${encodeURIComponent(cleanCookie(snapshot.cookie))}` : '';
-            const url = apiService.buildApiUrl(`/user/playlist?uid=${userId}&limit=${limit}&offset=${offset}${cookieParam}`);
+            const revision = songWriteRevision ? `&songWriteRevision=${songWriteRevision}` : '';
+            const url = apiService.buildApiUrl(`/user/playlist?uid=${userId}&limit=${limit}&offset=${offset}${cookieParam}${revision}`);
             const resp = await authService.accountFetch(url, { signal: controller.signal });
             if (!resp.ok) throw new Error(`获取歌单失败: HTTP ${resp.status}`);
             const json = await resp.json();
@@ -199,6 +213,8 @@ export function createMyPlaylists({
         set myPlaylistsLoadToken(value) { myPlaylistsLoadToken = value; },
         get myPlaylistsAbortController() { return myPlaylistsAbortController; },
         set myPlaylistsAbortController(value) { myPlaylistsAbortController = value; },
+        get myPlaylistsComplete() { return !!myPlaylistsCache && !myPlaylistsLoading; },
+        invalidateAfterSongWrite,
         loadMyPlaylists
     };
 }

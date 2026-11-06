@@ -7,7 +7,7 @@ import { analyze } from 'eslint-scope';
 import { ROOT, buildHtml } from './build.mjs';
 
 const globals = new Set(`window document navigator localStorage sessionStorage indexedDB history location console performance
-    AudioContext ColorThief jsmediatags Image File FileReader Blob Worker URL URLSearchParams ResizeObserver
+    AudioContext ColorThief jsmediatags Image File FileReader Blob Worker XMLHttpRequest URL URLSearchParams ResizeObserver
     IntersectionObserver HTMLElement Element Event MediaMetadata AbortController AbortSignal DOMException TextDecoder TextEncoder
     ReadableStream Response Request Headers
     Uint8Array Uint16Array Uint32Array Int16Array Float32Array Float64Array ArrayBuffer DataView WeakMap WeakSet Map Set
@@ -41,7 +41,7 @@ export async function checkSource() {
         const unresolved = scope.globalScope.through.filter(ref => !globals.has(ref.identifier.name));
         if (unresolved.length) throw new Error(`${path.relative(ROOT, file)}: unresolved ${unresolved.map(ref => `${ref.identifier.name}:${ref.identifier.loc.start.line}`).join(', ')}`);
         const imports = ast.body.filter(node => node.type === 'ImportDeclaration').map(node => node.source.value);
-        if (imports.some(name => !name.startsWith('.') && !['aurora:loop-worker', 'aurora:background-worker'].includes(name))) throw new Error(`Unexpected runtime dependency in ${file}`);
+        if (imports.some(name => !name.startsWith('.') && !['aurora:loop-worker', 'aurora:background-worker', 'aurora:cloud-worker'].includes(name))) throw new Error(`Unexpected runtime dependency in ${file}`);
         graph.set(file, imports.filter(name => name.startsWith('.')).map(name => path.resolve(path.dirname(file), name)));
         for (const statement of ast.body) {
             const factory = statement.type === 'ExportNamedDeclaration' ? statement.declaration : null;
@@ -52,10 +52,13 @@ export async function checkSource() {
             const name = factory.id.name.replace(/^create/, '');
             const key = name[0].toLowerCase() + name.slice(1);
             contracts.set(key, new Set(returned.properties.map(property => property.key.name)));
-            const aliases = new Map(parameters.properties.map(property => [property.value.name, property.key.name]));
+            const aliases = new Map(parameters.properties.flatMap(property => {
+                const value = property.value?.type === 'AssignmentPattern' ? property.value.left : property.value;
+                return value?.type === 'Identifier' ? [[value.name, property.key.name]] : [];
+            }));
             const walk = node => {
                 if (!node || typeof node !== 'object') return;
-                if (node.type === 'MemberExpression' && !node.computed && aliases.has(node.object.name)) consumers.push([file, aliases.get(node.object.name), node.property.name]);
+                if (node.type === 'MemberExpression' && !node.computed && node.object.type === 'Identifier' && aliases.has(node.object.name)) consumers.push([file, aliases.get(node.object.name), node.property.name]);
                 for (const value of Object.values(node)) {
                     if (Array.isArray(value)) value.forEach(walk);
                     else if (value && typeof value === 'object') walk(value);

@@ -27,16 +27,19 @@ import { createContent } from './netease/content.js';
 import { createOnlinePlayback } from './audio/online.js';
 import { createPersistence } from './storage/playlist.js';
 import { createSongDetails } from './netease/song-details.js';
+import { createSongActions } from './netease/song-actions.js';
+import { createCloud } from './netease/cloud.js';
 import { createPorts, installPort, sealPorts } from './shared/ports.js';
 import { bindActions } from './ui/actions.js';
 import { BACKGROUND_WORKER_SOURCE } from 'aurora:background-worker';
+import { CLOUD_WORKER_SOURCE } from 'aurora:cloud-worker';
 
 // Install live interfaces before starting events or asynchronous initialization.
 const ports = createPorts([
     'playback', 'download', 'onlinePlaylist', 'lyrics', 'auth', 'controls', 'debug',
     'resolver', 'prefetch', 'transfer', 'analysis', 'loop', 'queue', 'render', 'imports',
     'cache', 'dom', 'panels', 'localPlayback', 'covers', 'metadata', 'api',
-    'playlistView', 'browser', 'myPlaylists', 'content', 'onlinePlayback', 'persistence', 'songDetails'
+    'playlistView', 'browser', 'myPlaylists', 'content', 'onlinePlayback', 'persistence', 'songDetails', 'songActions', 'cloud'
 ]);
 installPort(ports.playback, createPlayback(ports));
 installPort(ports.download, createDownload(ports));
@@ -67,6 +70,8 @@ installPort(ports.content, createContent(ports));
 installPort(ports.onlinePlayback, createOnlinePlayback(ports));
 installPort(ports.persistence, createPersistence(ports));
 installPort(ports.songDetails, createSongDetails(ports));
+installPort(ports.songActions, createSongActions(ports));
+installPort(ports.cloud, createCloud({ ...ports, cloudWorkerSource: CLOUD_WORKER_SOURCE }));
 sealPorts(ports);
 ports.analysis.initialize();
 ports.playlistView.initialize();
@@ -84,6 +89,8 @@ ports.loop.initialize();
 ports.browser.initialize();
 ports.auth.initialize();
 ports.content.initialize();
+ports.songActions.initialize();
+ports.cloud.initialize();
 ports.onlinePlaylist.initialize();
 ports.persistence.initialize();
 bindActions(ports);

@@ -4,6 +4,9 @@ export function withBaseQueue(queue) {
         baseCurIdx: { configurable: true, get() { return this.curIdx; } }
     });
     queue.baseStructureRevision = 0;
+    queue.findSongIndexes = function(id) {
+        return this.playlist.flatMap((track, index) => track.netease && Number(track.songId || track.songData?.id) === Number(id) ? [index] : []);
+    };
     queue.replaceBaseTracks = function(tracks, index = this.curIdx) {
         this.basePlaylist.splice(0, this.basePlaylist.length, ...tracks);
         this.curIdx = index; this.baseStructureRevision++;
@@ -25,6 +28,7 @@ export class FakeElement {
         this.listeners = new Map();
         this.children = [];
         this.value = '';
+        this.hidden = false;
         this.textContent = '';
         this.innerHTML = '';
         this.isConnected = true;

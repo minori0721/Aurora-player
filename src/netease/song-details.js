@@ -183,9 +183,9 @@ export function createSongDetails({ api, auth, cache, content, debug, onlinePlay
         if (queueRef !== queue.playlist) return [];
         const byId = new Map(songs.map(song => [Number(song?.id), song]));
         const updated = [];
-        queueRef.forEach((track, index) => {
-            const incoming = track?.netease && byId.get(songId(track));
-            if (!incoming) return;
+        const indexes = [...byId.keys()].flatMap(id => queue.findSongIndexes(id)).sort((a, b) => a - b);
+        for (const index of indexes) {
+            const track = queueRef[index], incoming = byId.get(songId(track));
             const previous = track.songData || {};
             const album = { ...(previous.al || previous.album || {}), ...(incoming.al || incoming.album || {}) };
             const normalized = normalizeMusicSong({ ...previous, ...incoming,
@@ -197,7 +197,7 @@ export function createSongDetails({ api, auth, cache, content, debug, onlinePlay
             track.name = `${normalized.name}${normalized.artists.length ? ` - ${normalized.artists.map(artist => artist.name).join(', ')}` : ''}`;
             if (confirmed.has(incoming)) confirmed.add(track.songData);
             updated.push(index);
-        });
+        }
         updated.forEach(index => playlistView.refreshPlaylistItem(index));
         if (updated.length) content.updateMusicMiniPlayer();
         return updated;

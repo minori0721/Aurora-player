@@ -1,11 +1,26 @@
 /* 网易云搜索面板 */
 .netease-panel {
+    --music-enter-offset: 12px; --music-enter-duration: 220ms;
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.5); z-index: 200;
+    z-index: 200; overflow: hidden;
     display: none; justify-content: center; align-items: center;
 }
+.netease-panel::before {
+    content: ''; position: absolute; inset: 0;
+    background: rgba(0,0,0,0.5); pointer-events: none;
+}
 .netease-panel.show { display: flex; }
+.netease-panel.show::before { animation: music-panel-backdrop-in 160ms ease-out; }
+.netease-panel.show > .netease-content {
+    animation: music-panel-in var(--music-enter-duration) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes music-panel-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes music-panel-in {
+    from { opacity: 0; transform: translateY(var(--music-enter-offset)); }
+    to { opacity: 1; transform: none; }
+}
 .netease-content {
+    position: relative;
     background: var(--glass-strong); backdrop-filter: blur(30px);
     display: flex; flex-direction: column;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -336,6 +351,26 @@
 .music-card-image { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; border-radius: 6px; background: #e8edf3; }
 .music-card.artist .music-card-image { border-radius: 50%; }
 .music-card.mv .music-card-image { aspect-ratio: 16 / 9; }
+.music-image-frame { position: relative; overflow: hidden; background: #e8edf3; }
+.music-card-artwork { display: block; width: 100%; aspect-ratio: 1 / 1; border-radius: 6px; }
+.music-card.artist .music-card-artwork { border-radius: 50%; }
+.music-card.mv .music-card-artwork { aspect-ratio: 16 / 9; }
+.music-card-artwork > img { height: 100%; }
+.music-image-frame[data-image-state="loading"] > img { opacity: 0; }
+.music-image-frame[data-image-state="loading"][data-image-visible="true"]::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(-45deg, transparent 25%, rgba(255,255,255,0.5) 50%, transparent 75%);
+    animation: music-image-shimmer 1.2s ease-in-out 150ms infinite both;
+}
+.music-image-frame[data-image-reveal="true"] > img { animation: music-image-reveal 160ms ease-out; }
+@keyframes music-image-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes music-image-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .netease-panel.show::before, .netease-panel.show > .netease-content { animation: none; }
+    .music-image-frame[data-image-visible]::after { display: none; }
+    .music-image-frame[data-image-reveal] > img { animation: none; }
+    .pl-item-cover { transition: none; }
+}
 .music-card-title { margin-top: 7px; font-size: 0.86rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .music-card-subtitle { margin-top: 3px; color: var(--text-sub); font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .music-entity-hero {
@@ -397,7 +432,7 @@
 .music-mini-btn:focus-visible, .music-mini-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media screen and (max-width: 700px) {
-    .netease-panel { align-items: stretch; }
+    .netease-panel { align-items: stretch; --music-enter-offset: 16px; --music-enter-duration: 240ms; }
     .netease-content { width: 100dvw; height: 100dvh; border: 0; border-radius: 0; }
     .netease-header { padding: env(safe-area-inset-top) 8px 0; min-height: calc(56px + env(safe-area-inset-top)); }
     .netease-page-title { font-size: 0.92rem; }

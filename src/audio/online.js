@@ -204,6 +204,9 @@ export function createOnlinePlayback({
             };
             await playbackService.prepareStream(load, {
                 url: objectUrl || resolved.candidates[0], media, loadComplete, releaseEncoded,
+                peekEncoded() {
+                    return blob && !resolved.usedMatch ? { blob, songId, md5: resolved.audioInfo?.md5, size: blob.size } : null;
+                },
                 dispose() { controller.abort(); releaseEncoded(); },
                 onComplete(result) {
                     guard();

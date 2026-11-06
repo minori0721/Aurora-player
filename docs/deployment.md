@@ -38,13 +38,15 @@ npm run dev
 | Vercel | 框架 `Other`，安装、构建及输出目录使用仓库 `vercel.json` |
 | GitHub Pages | 发布来源选 `GitHub Actions`，使用仓库已有 `pages.yml` |
 
-这些平台发布静态产物，Node.js 用于构建。页面使用 `#music/...` Hash 路由，支持 GitHub Pages 仓库子路径。
+Node.js 用于构建。Cloudflare 同时部署下载入口，Vercel 和 GitHub Pages 发布静态产物。页面使用 `#music/...` Hash 路由，支持 GitHub Pages 仓库子路径。
 
 ### Cloudflare Workers 与 Pages
 
 Workers 按 [wrangler.json](../wrangler.json) 的 `assets.directory` 发布 `dist/`。当前名称为 `aurora-player`；使用其他平台项目名时同步修改配置。
 
-Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds 不执行这项自定义构建配置，因此面板的构建命令不能留空。公开 API 地址应放在构建变量中，仅修改运行时 Variables / Secrets 不会改变静态页面。参见 [Workers Builds 配置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)。
+网站与 `/proxy-download` 下载入口部署在同一个项目、同一个域名。Workers 使用仓库的服务入口和 `ASSETS` 绑定；Pages 构建自动生成 `_worker.js` 与 `_routes.json`，只有下载路径调用函数，首页继续由静态资源服务返回。连接仓库部署时沿用上表配置即可。
+
+Wrangler 本地部署会先运行配置中的 `npm run build:cloudflare`，Workers Builds 面板仍填写 `npm run build`，构建器通过平台环境识别。公开 API 地址应放在构建变量中，仅修改运行时 Variables / Secrets 不会改变静态页面。参见 [Workers Builds 配置](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)。
 
 已有 Pages 项目沿用上表配置。仓库 `.node-version` 指定 Node.js 22，平台手动设置的版本应与仓库要求一致。
 
@@ -53,6 +55,8 @@ Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds �
 [vercel.json](../vercel.json) 已设置安装命令 `npm ci`、构建命令 `npm run build`、输出目录 `dist`。项目选 `Other`，Node.js 使用仓库允许的版本。其他设置见 [Vercel 配置说明](https://vercel.com/docs/project-configuration/vercel-json)。
 
 构建变量可按 Production、Preview 等环境分别配置，修改后重新部署生效。
+
+Vercel 默认使用 `https://music.moerika.com/proxy-download` 中转设备下载，音频文件不经过当前 Vercel 项目的函数。
 
 ### GitHub Pages
 
@@ -66,18 +70,20 @@ Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds �
 
 ## API 与下载代理地址
 
-构建只读取两个公开环境变量：
+公开地址使用两个构建变量：
 
 | 名称 | 用途 |
 | --- | --- |
 | `API_BASE_URL` | 兼容网易云 API 的 HTTPS 服务地址 |
-| `DOWNLOAD_PROXY_URL` | 下载代理 Worker 或反代地址 |
+| `DOWNLOAD_PROXY_URL` | 自定义下载代理的完整入口地址，包含所需路径；留空使用平台默认值 |
 
 在 Cloudflare 填构建变量，在 Vercel 填对应环境的变量；GitHub Pages 和自动 Release 使用仓库 `Settings → Secrets and variables → Actions → Variables` 中的同名变量。
 
 这些是构建期配置，修改后必须重新构建或部署。浏览器不能直接读取平台运行时环境变量，两个地址都会写入公开 HTML，不要填入 Cookie、Token 或密钥。构建脚本不会将其他环境变量注入页面。
 
-未设置时使用 [scripts/config.mjs](../scripts/config.mjs) 的默认地址。可以修改默认值后构建，也可以修改下载后的单文件中以下头部配置：
+未设置下载地址时，Cloudflare 构建使用本站 `/proxy-download`；Vercel、GitHub Pages、普通构建和本地开发使用 `https://music.moerika.com/proxy-download`。显式配置的地址优先。Cloudflare 构建的 HTML 另存为本地文件后，通过 `file://` 打开会改用 music 域名的默认代理。
+
+可以修改 [scripts/config.mjs](../scripts/config.mjs) 的默认值后构建，也可以修改下载后的单文件中以下头部配置：
 
 ```html
 <script>
@@ -100,7 +106,13 @@ Wrangler 本地部署会先运行配置中的构建命令，但 Workers Builds �
 
 面向中国大陆使用时，建议使用自定义域名，并按目标地区、运营商和具体接口验证访问情况。默认 `*.vercel.app` 域名的访问问题见 [Vercel 中国大陆访问说明](https://vercel.com/kb/guide/accessing-vercel-hosted-sites-from-mainland-china)。
 
-下载代理另外部署为可处理跨域与 Referer 的 Worker 或反代，再配置 `DOWNLOAD_PROXY_URL`。部署后分别检查 API 请求、音频 CDN 播放和代理下载。
+### 下载入口
+
+Cloudflare 的下载入口随网站一起部署，不需要另建 Worker 或绑定下载子域名。只转发「下载到设备」的文件正文；在线播放、预取和存入音乐云盘沿用各自的传输路径。
+
+入口支持 GET、HEAD、OPTIONS 和单段 Range，设置附件文件名与 CORS；边接收边返回，不将整首音频读入内存，也不额外写入音频缓存。当前接受网易云 `music.126.net` 及其子域的音频链接，每次重定向重新校验地址。第三方 match 音源使用其他域名时，需要配置支持对应音源的下载代理。
+
+API 后端继续独立部署。部署后检查首页、API 请求、音频播放和设备下载；首次启用 music 域名的同站入口后，其他静态部署即可使用该默认地址。已有项目若配置了旧 `DOWNLOAD_PROXY_URL`，删除该变量并重新部署可使用新默认值，也可以继续保留旧代理。
 
 ## 自动部署与 Release
 

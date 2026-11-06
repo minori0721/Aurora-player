@@ -100,6 +100,30 @@ test('same loaded URL does not reassign the image and still invokes the new trac
     assert.equal(f.assignments(), 1); assert.equal(first, 1); assert.equal(second, 1); assert.equal(f.timers.size, 0);
 });
 
+test('same album artwork on another CDN host neither reassigns nor crossfades', t => {
+    const f = fixture(t), path = '/same-cover-hash/109951169976598406.jpg';
+    f.covers.setMainCover(`https://p4.music.126.net${path}`); f.load();
+    const image = f.image;
+    let notified = 0;
+    f.queue.playlist.push({}); f.queue.curIdx = 1;
+    f.covers.setMainCover(`https://p3.music.126.net${path}`, { onLoad: () => notified++ });
+    assert.equal(f.image, image); assert.equal(f.assignments(), 1);
+    assert.equal(f.animationRecords.length, 0); assert.equal(notified, 1);
+    assert.equal(f.timers.size, 0);
+});
+
+test('a failed catalog cover retries the alternate CDN once, then returns to the default disc', t => {
+    const f = fixture(t), source = 'https://p3.music.126.net/retry-main/109951169976598406.jpg';
+    f.covers.setMainCover(source);
+    f.image.onerror();
+    assert.match(f.image.src, /^https:\/\/p4\./); assert.equal(f.assignments(), 2);
+    f.load(); assert.equal(f.classes.has('has-cover'), true);
+    f.covers.setMainCover('https://p3.music.126.net/retry-main-fail/109951169976598406.jpg');
+    f.image.onerror(); f.image.onerror();
+    assert.equal(f.image.src, ''); assert.equal(f.classes.has('has-cover'), false);
+    assert.equal(f.timers.size, 0);
+});
+
 test('old loads, errors and timeout callbacks cannot clear or repaint the next track', t => {
     const f = fixture(t);
     f.covers.setMainCover('https://fixture/old.jpg');

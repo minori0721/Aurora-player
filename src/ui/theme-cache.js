@@ -1,4 +1,5 @@
 import { SPATIAL_SIZE } from './background-field.js';
+import { coverImageKey } from '../shared/cover-url.js';
 
 export function coverThemeKey(source) {
     if (typeof source !== 'string' || !source || source.length > 2048) return null;
@@ -7,9 +8,7 @@ export function coverThemeKey(source) {
         if (url.protocol === 'blob:') return source;
         if (!/^https?:$/.test(url.protocol) || url.username || url.password) return null;
         if (/\.(gif|apng|webp)$/i.test(url.pathname)) return null;
-        if (/(^|\.)music\.126\.net$/i.test(url.hostname) && url.searchParams.getAll('param').length === 1
-            && /^([1-9]\d*)y\1$/.test(url.searchParams.get('param') || '')) url.searchParams.delete('param');
-        return url.href;
+        return coverImageKey(url.href);
     } catch (_) { return null; }
 }
 

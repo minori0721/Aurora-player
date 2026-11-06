@@ -37,6 +37,37 @@ test('selection snapshots cannot cross playlist identity or content revisions', 
     assert.equal(pickPlaylistSelectedIndex(state, { listId: 'a', contentRevision: 10, revision: 11, selectedIndex: 2 }), 2);
 });
 
+test('metadata saves reuse unchanged serialized records and never mutate an older queued snapshot', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const host = createHost().host, writes = [], reads = [0, 0, 0], versions = [0, 0, 0];
+    const queue = withBaseQueue({ playlist: reads.map((_, index) => ({ netease: true, songId: index + 1,
+        songData: { id: index + 1, get name() { reads[index]++; return `Song ${index + 1} v${versions[index]}`; }, ar: [], al: {} } })), curIdx: 0 });
+    for (const [key, value] of Object.entries({ window: host, localStorage: host.localStorage })) {
+        const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+        Object.defineProperty(globalThis, key, { configurable: true, value });
+        t.after(() => previous ? Object.defineProperty(globalThis, key, previous) : delete globalThis[key]);
+    }
+    const persistence = createPersistence({ queue, onlinePlaylist: { getPersistedQueueSource: () => null }, debug: { log() {} },
+        cache: { IDB_PLAYER_STORE: 'player-state', openIdb: async () => ({ transaction() {
+            const tx = { objectStore: () => ({ put(value) { if (value.tracks) writes.push(value); queueMicrotask(() => tx.oncomplete()); } }) };
+            return tx;
+        } }) } });
+    const flush = async () => { t.mock.timers.tick(120); for (let i = 0; i < 10; i++) await Promise.resolve(); };
+    persistence.schedulePlaylistStateSave(true); await flush();
+    const original = writes[0]; reads.fill(0); versions[0]++;
+    persistence.schedulePlaylistTrackSave(0); await flush();
+    assert.equal(reads[1], 0); assert.equal(reads[2], 0);
+    assert.equal(writes[1].tracks[1], original.tracks[1]);
+    assert.equal(original.tracks[0].title, 'Song 1 v0');
+    assert.equal(writes[1].tracks[0].title, 'Song 1 v1');
+    assert.notEqual(writes[1].revision, original.revision);
+    const restored = JSON.parse(host.localStorage.getItem('aurora_playlist_snapshot_v3'));
+    assert.equal(restored.tracks[0].title, 'Song 1 v1');
+    queue.curIdx = 2; persistence.schedulePlaylistStateSave(); await flush();
+    assert.equal(writes.length, 2);
+    assert.equal(JSON.parse(host.localStorage.getItem('aurora_playlist_selection_v1')).selectedIndex, 2);
+});
+
 test('composition preserves live state without copying, and seals service interfaces', () => {
     let value = 1;
     const ports = createPorts(['one', 'two']);

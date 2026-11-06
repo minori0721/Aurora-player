@@ -132,6 +132,16 @@ test('mobile lyric return keeps its original size and translucent glass without 
     assert.doesNotMatch(glass, /(?:^|;)\s*(?:opacity|animation|transform):/);
 });
 
+test('mobile browse time sits above the right-side return button without changing desktop placement', () => {
+    const base = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
+    const css = fs.readFileSync(new URL('../src/styles/responsive.css', import.meta.url), 'utf8');
+    const mobile = css.slice(css.indexOf('@media screen and (max-width: 900px)'));
+    const hint = mobile.match(/\n\s*\.lyric-browse-time\s*\{([^}]+)\}/)[1];
+    assert.match(hint, /left:\s*auto/); assert.match(hint, /right:\s*4px/);
+    assert.match(hint, /bottom:\s*52px/); assert.match(hint, /height:\s*20px/);
+    assert.match(base, /\.lyric-browse-time\s*\{[^}]*left:\s*20px/);
+});
+
 test('owned progress selection clears even before audio loads and time clicks do not seek', t => {
     const f = fixture(t, { duration: 0 });
     f.select({ startContainer: f.start, endContainer: f.end });

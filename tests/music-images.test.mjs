@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMusicImages, MUSIC_IMAGE_RETRY_DELAY_MS } from '../src/netease/images.js';
+import { createMusicImages, MUSIC_IMAGE_RETRY_DELAY_MS, MUSIC_IMAGE_REVEAL_DELAY_MS } from '../src/netease/images.js';
 import { createContent } from '../src/netease/content.js';
 import { FakeElement } from './helpers/host.mjs';
 
@@ -8,12 +8,13 @@ function fixture(t) {
     const root = new FakeElement(), document = new FakeElement();
     const images = [], observers = [], requests = [], timers = new Map();
     const flags = { open: true };
-    let sequence = 0;
+    let sequence = 0, time = 0;
     root.contains = image => images.includes(image);
     root.querySelectorAll = () => images.filter(image => image.dataset.src);
     root.getBoundingClientRect = () => ({ top: 0, bottom: 400, left: 0, right: 400 });
     document.hidden = false;
     const env = { document, innerHeight: 600, innerWidth: 800,
+        performance: { now: () => time },
         location: { href: 'http://127.0.0.1/' },
         setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { callback, delay }); return id; },
         clearTimeout(id) { timers.delete(id); },
@@ -49,8 +50,108 @@ function fixture(t) {
     const visibility = (img, isIntersecting) => observers[1].callback([{ target: img, isIntersecting }]);
     const tick = () => { const tasks = [...timers.values()]; timers.clear(); for (const task of tasks) task.callback(); };
     const httpRequests = () => requests.filter(request => request.source.startsWith('https:'));
-    return { loader, env, root, flags, images, observers, requests, timers, image, enter, visibility, tick, httpRequests, fallbackCover, fallbackArtist };
+    const framedImage = (...args) => {
+        const img = image(...args), frame = new FakeElement();
+        img.closest = selector => selector === '.music-image-frame' ? frame : null;
+        return { img, frame };
+    };
+    return { loader, env, root, flags, images, observers, requests, timers, image, framedImage, enter, visibility, tick,
+        advance(ms) { time += ms; }, httpRequests, fallbackCover, fallbackArtist };
 }
+
+test('slow visible covers reveal after loading, with no JavaScript animation timer', t => {
+    const f = fixture(t), { img, frame } = f.framedImage();
+    f.loader.observe(); f.enter(img); f.visibility(img, true);
+    assert.equal(frame.dataset.imageState, 'loading'); assert.equal(frame.dataset.imageVisible, 'true');
+    assert.equal(f.timers.size, 0);
+    f.advance(MUSIC_IMAGE_REVEAL_DELAY_MS); img.succeed();
+    assert.equal(frame.dataset.imageState, 'ready'); assert.equal(frame.dataset.imageReveal, 'true');
+    assert.equal(frame.dataset.imageVisible, undefined);
+    assert.equal(f.observers[1].targets.size, 0); assert.equal(f.timers.size, 0);
+});
+
+test('fast and already cached covers have no reveal animation or minimum loading delay', t => {
+    const f = fixture(t), { img, frame } = f.framedImage();
+    f.loader.observe(); f.enter(img); f.visibility(img, true); img.succeed();
+    assert.equal(frame.dataset.imageState, 'ready'); assert.equal(frame.dataset.imageReveal, undefined);
+    img.dataset.src = img.src;
+    f.loader.observe(); f.loader.observe();
+    assert.equal(f.httpRequests().length, 1); assert.equal(f.observers[0].targets.size, 0);
+    assert.equal(img.dataset.src, undefined); assert.equal(f.timers.size, 0);
+});
+
+test('offscreen images preload without running shimmer or reveal animations', t => {
+    const f = fixture(t), { img, frame } = f.framedImage('https://cover.test/off.jpg', 450);
+    f.loader.observe(); f.enter(img); f.visibility(img, false); f.advance(500);
+    assert.equal(frame.dataset.imageVisible, undefined);
+    img.succeed();
+    assert.equal(frame.dataset.imageState, 'ready'); assert.equal(frame.dataset.imageReveal, undefined);
+});
+
+test('stale intersection batches do not start images already scrolled beyond the preload margin', t => {
+    const f = fixture(t), departed = f.image('https://cover.test/departed.jpg', -1000), final = f.image();
+    f.loader.observe();
+    f.observers[0].callback([{ target: departed, isIntersecting: true }, { target: final, isIntersecting: true }]);
+    assert.equal(f.httpRequests().length, 1); assert.equal(f.httpRequests()[0].image, final);
+});
+
+test('only the final intersection state in a batch can start an image', t => {
+    const f = fixture(t), img = f.image();
+    f.loader.observe();
+    f.observers[0].callback([{ target: img, isIntersecting: true }, { target: img, isIntersecting: false }]);
+    assert.equal(f.httpRequests().length, 0);
+    f.enter(img); assert.equal(f.httpRequests().length, 1);
+});
+
+test('hidden pages and closed panels stop shimmer and resume only after actual visibility', t => {
+    const f = fixture(t), { img, frame } = f.framedImage();
+    f.loader.observe(); f.enter(img); f.visibility(img, true);
+    f.flags.open = false; f.loader.pause();
+    assert.equal(frame.dataset.imageVisible, undefined);
+    f.flags.open = true; f.loader.resume();
+    assert.equal(frame.dataset.imageVisible, undefined);
+    f.visibility(img, true); assert.equal(frame.dataset.imageVisible, 'true');
+    f.env.document.hidden = true; f.env.document.dispatchEvent({ type: 'visibilitychange' });
+    assert.equal(frame.dataset.imageVisible, undefined);
+    f.env.document.hidden = false; f.env.document.dispatchEvent({ type: 'visibilitychange' });
+    f.visibility(img, true); img.succeed();
+    assert.equal(f.httpRequests().length, 1); assert.equal(frame.dataset.imageState, 'ready');
+});
+
+test('failures stop the loading effect while retaining the existing retry budget', t => {
+    const f = fixture(t), { img, frame } = f.framedImage();
+    f.loader.observe(); f.enter(img); f.visibility(img, true); img.fail();
+    assert.equal(frame.dataset.imageState, 'error'); assert.equal(frame.dataset.imageVisible, undefined);
+    assert.equal(img.src, f.fallbackCover);
+    f.tick(); f.visibility(img, true); img.fail();
+    assert.equal(frame.dataset.imageState, 'error'); assert.equal(f.timers.size, 0);
+    assert.equal(f.httpRequests().length, 2);
+});
+
+test('catalog cover retries use the alternate host once and repeated mini updates keep that budget', t => {
+    const f = fixture(t), source = 'https://p3.music.126.net/retry-cloud/109951169976598406.jpg?param=512y512';
+    const img = f.image('', 40, true);
+    f.loader.setMiniCover(img, source); img.fail(); f.tick();
+    assert.match(img.src, /^https:\/\/p4\./);
+    for (let i = 0; i < 10; i++) assert.equal(f.loader.setMiniCover(img, source), false);
+    img.fail(); f.tick();
+    assert.equal(f.httpRequests().length, 2); assert.equal(f.timers.size, 0);
+    assert.equal(img.src, f.fallbackCover);
+});
+
+test('a stale decode cannot reveal a new source or keep detached loading effects alive', async t => {
+    const f = fixture(t), { img, frame } = f.framedImage();
+    let finish;
+    img.decode = () => new Promise(resolve => { finish = resolve; });
+    f.loader.observe(); f.enter(img); f.visibility(img, true); f.advance(500); img.succeed();
+    assert.equal(frame.dataset.imageState, 'loading');
+    img.dataset.src = 'https://cover.test/replaced.jpg'; f.loader.observe(); f.enter(img);
+    finish(); await Promise.resolve();
+    assert.equal(frame.dataset.imageState, 'loading');
+    assert.equal(img.src, 'https://cover.test/replaced.jpg');
+    f.loader.clear(); assert.equal(frame.dataset.imageVisible, undefined);
+    assert.equal(f.observers[1].targets.size, 0);
+});
 
 test('preloading uses the cloud scroll container and has no idle tasks or duplicate native lazy gate', t => {
     const f = fixture(t), img = f.image();

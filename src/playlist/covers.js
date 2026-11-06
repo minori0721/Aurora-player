@@ -1,4 +1,5 @@
 import { toHttps } from '../shared/text.js';
+import { coverImageUrl, retryCoverImageUrl } from '../shared/cover-url.js';
 
 const CONCURRENCY = 4;
 const NEAR_CONCURRENCY = 2;
@@ -14,8 +15,7 @@ export function playlistCoverSrc(value) {
         const url = new URL(toHttps(value));
         if (['data:', 'blob:'].includes(url.protocol)) return url.href;
         if (url.protocol !== 'https:') return '';
-        url.searchParams.set('param', '80y80');
-        return url.href;
+        return coverImageUrl(url.href, 80);
     } catch (_) { return ''; }
 }
 
@@ -29,7 +29,10 @@ export function createPlaylistCovers({ root, container }, env = window) {
     const isOpen = () => !disposed && root.classList.contains('show') && !env.document.hidden;
     const current = (img, src = img.dataset.coverSrc) => img.isConnected
         && img.dataset.coverGeneration === String(generation) && !!src && img.dataset.coverSrc === src;
-    const filtered = img => !!img.closest?.('.pl-item')?.hidden;
+    const filtered = img => {
+        const row = img.closest?.('.pl-item');
+        return !!row?.hidden || !!row?.closest?.('.pl-row-group')?.hidden;
+    };
 
     function clearWake() {
         if (wakeTimer !== null) env.clearTimeout(wakeTimer);
@@ -103,7 +106,7 @@ export function createPlaylistCovers({ root, container }, env = window) {
             requestUpdate();
         };
         img.loading = 'eager';
-        img.src = src;
+        img.src = resource.loadedSrc || src;
         if (img.complete && img.naturalWidth > 0) reveal();
         delete img.dataset.src;
         resource.waiters.delete(img);
@@ -123,6 +126,7 @@ export function createPlaylistCovers({ root, container }, env = window) {
             resource.job = null;
             if (result !== 'loaded') { try { probe.src = ''; } catch (_) {} }
             if (result === 'loaded') {
+                resource.loadedSrc = job.src;
                 resource.status = 'loaded';
                 resource.failures = 0;
                 resource.retryAt = 0;
@@ -150,7 +154,9 @@ export function createPlaylistCovers({ root, container }, env = window) {
         probe.fetchPriority = resource.visible ? 'auto' : 'low';
         probe.onload = () => finish('loaded');
         probe.onerror = () => finish('failed');
-        try { probe.src = resource.src; } catch (_) { finish('failed'); }
+        job.src = resource.failures ? retryCoverImageUrl(resource.lastSrc || resource.src) || resource.src : resource.src;
+        resource.lastSrc = job.src;
+        try { probe.src = job.src; } catch (_) { finish('failed'); }
     }
 
     function distance(rect, bounds) {
@@ -178,11 +184,11 @@ export function createPlaylistCovers({ root, container }, env = window) {
             resource.visible ||= rect.bottom > bounds.top && rect.top < bounds.bottom;
             resource.distance = Math.min(resource.distance, gap);
         }
-        const pending = [];
+        const pending = [], loaded = [];
         for (const resource of resources.values()) {
             if (!resource.waiters.size) continue;
             if (resource.status === 'loaded') {
-                for (const img of [...resource.waiters]) apply(resource, img);
+                loaded.push(resource);
             } else if (!resource.job) pending.push(resource);
             else resource.job.probe.fetchPriority = resource.visible ? 'auto' : 'low';
         }
@@ -190,17 +196,17 @@ export function createPlaylistCovers({ root, container }, env = window) {
         ready.sort((a, b) => (a.visible ? (a.failures ? 1 : 0) : 2) - (b.visible ? (b.failures ? 1 : 0) : 2)
             || a.distance - b.distance);
 
-        if (active.size >= CONCURRENCY && reclaimed < 2 && ready.some(resource => resource.visible)) {
-            const remote = [...active].filter(job => !job.resource.waiters.size)
+        const remote = active.size >= CONCURRENCY && reclaimed < 2 && ready.some(resource => resource.visible)
+            ? [...active].filter(job => !job.resource.waiters.size)
                 .map(job => ({ job, gap: Math.min(...job.anchors.filter(img => current(img, job.resource.src))
                     .map(img => distance(img.getBoundingClientRect(), bounds))) }))
-                .filter(item => item.gap > MARGIN).sort((a, b) => b.gap - a.gap);
-            for (const { job } of remote) {
+                .filter(item => item.gap > MARGIN).sort((a, b) => b.gap - a.gap) : [];
+        for (const resource of loaded) for (const img of [...resource.waiters]) apply(resource, img);
+        for (const { job } of remote) {
                 const due = Math.max(idleAt, job.startedAt + RECLAIM_AFTER_MS);
                 if (due > time) { wakeAtTime(due); continue; }
                 job.finish('cancel');
                 if (++reclaimed >= 2) break;
-            }
         }
 
         for (const resource of ready) {

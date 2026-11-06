@@ -8,7 +8,7 @@ function normalizePersistedArtist(artist = {}) {
     return { id: positiveMusicInteger(artist.id, 0), name: String(artist.name || '') };
 }
 
-function createCompactPlaylistState(state) {
+function createCompactPlaylistState(state, trackCache) {
     return {
         schema: state.schema,
         listId: state.listId,
@@ -18,8 +18,10 @@ function createCompactPlaylistState(state) {
         source: state.source,
         ...(state.manual ? { manual: state.manual } : {}),
         tracks: state.tracks.map(track => {
+            if (trackCache?.has(track)) return trackCache.get(track);
             const compact = { ...track };
             delete compact.handle;
+            trackCache?.set(track, compact);
             return compact;
         })
     };
@@ -49,6 +51,7 @@ function normalizePersistedPlaylistState(state) {
             id: positiveMusicInteger(item?.id, 0),
             title,
             displayName: String(item?.displayName || item?.name || title),
+            ...(item?.detailPending === true ? { detailPending: true } : {}),
             ...(Number.isFinite(item?.durationMs) && item.durationMs > 0 ? { durationMs: item.durationMs } : {}),
             ...(Number.isFinite(item?.detailCheckedAt) && item.detailCheckedAt > 0 ? { detailCheckedAt: item.detailCheckedAt } : {}),
             artists,

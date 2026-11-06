@@ -1,0 +1,29 @@
+.song-action-message { display: block; font-size: 0.8rem; color: var(--text-sub); }
+.song-action-message:empty { display: none; }
+.download-destination { display: flex; gap: 4px; margin: 8px 0 14px; padding: 0; border: 0; align-items: center; }
+.download-destination legend { float: left; margin-right: 14px; padding: 12px 0; font-size: 0.85rem; color: var(--text-sub); }
+.download-destination label { min-height: 44px; padding: 0 12px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.download-destination input { accent-color: var(--accent); }
+.download-panel { box-sizing: border-box; max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; }
+.download-panel [hidden] { display: none !important; }
+.download-panel .download-header { position: sticky; top: -16px; z-index: 2; padding-block: 8px; background: var(--glass-strong); }
+.download-panel button { min-height: 44px; }
+.download-panel .panel-close { min-width: 44px; }
+.cloud-task-status { display: grid; gap: 12px; margin-block: 12px; }
+.cloud-task-status:empty { display: none; }
+.cloud-task { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid rgba(80,100,115,0.15); min-width: 0; }
+.cloud-task strong, .cloud-task > span { overflow-wrap: anywhere; }
+.cloud-task > span { color: var(--text-sub); font-size: 0.85rem; }
+.cloud-task progress { width: 100%; height: 5px; accent-color: var(--accent); }
+.cloud-task progress[hidden] { display: none; }
+.cloud-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cloud-task-actions button { min-height: 44px; font-size: 0.85rem; padding: 8px 14px; }
+.cloud-task-actions button[hidden] { display: none; }
+.cloud-task-open { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: max(16px, env(safe-area-inset-left)); z-index: 80; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.cloud-task-open[hidden] { display: none; }
+.cloud-task-open svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 900px) {
+    .download-panel { max-height: calc(100dvh - 20px); }
+    .download-destination label { padding-inline: 7px; }
+    .cloud-task-open { font-size: 0.8rem; padding: 8px 12px; }
+}
