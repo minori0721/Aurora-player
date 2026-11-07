@@ -889,7 +889,7 @@ export function createContent({
             domService.el.coverWrap.removeAttribute('role');
             domService.el.coverWrap.removeAttribute('aria-label');
         }
-        if (normalized) domService.el.artist.innerHTML = musicArtistLinksHtml(normalized.artists);
+        if (normalized) domService.el.artist.innerHTML = `<span class="track-artist-names" title="${escapeHtml(normalized.artists.map(artist => artist.name).join(', '))}">${musicArtistLinksHtml(normalized.artists)}</span>`;
     }
 
     function openMainPlayerAlbum() {

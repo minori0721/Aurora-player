@@ -143,7 +143,7 @@ export function createBrowser({
                 setMusicBrowserTab('playlist');
             } else if (route.kind === 'playlist-mine') {
                 setMusicBrowserTab('mylist');
-                if (authService.neteaseUser && !myPlaylistsService.myPlaylistsCache) await myPlaylistsService.loadMyPlaylists();
+                if (authService.neteaseUser) await myPlaylistsService.loadMyPlaylists({ signal: controller.signal });
                 else if (!authService.neteaseUser) {
                     const target = document.getElementById('mylist-content');
                     contentService.clearMusicImages(target);

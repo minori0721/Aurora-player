@@ -675,6 +675,8 @@ export function createLyrics({
                 returnButton: document.getElementById('lyric-return-current'),
                 timeHint: document.getElementById('lyric-browse-time'),
                 alignmentTarget: document.getElementById('cover-wrap'),
+                layoutTarget: document.getElementById('playback-panel'),
+                controlsTarget: document.querySelector('.controls-row'),
                 isPlaying: () => playbackService.playbackState.isPlaying,
                 seek: time => {
                     if (!(playbackService.hasAudio ?? playbackService.audioBuffer) || time > playbackService.playbackState.duration) return false;

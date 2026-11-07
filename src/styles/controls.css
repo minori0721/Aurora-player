@@ -1,14 +1,15 @@
 /* 下载模态样式 */
 .download-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 10000; }
 .download-modal.show { display: flex; }
-.download-panel { width: 420px; max-width: 92%; background: var(--glass-strong); border: 1px solid var(--border); padding: 16px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.download-panel { width: 480px; max-width: 92%; background: var(--glass-strong); border: 1px solid var(--border); padding: 16px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
 .download-header { display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:1rem; margin-bottom:6px }
 .download-panel .panel-close { display:inline-block; background:none; border:none; font-size:1.4rem; cursor:pointer; color:var(--text-sub) }
 .quality-item { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:8px; background: rgba(255,255,255,0.6); }
 .quality-item > div:first-child { flex: 1 1 auto; min-width: 0; }
 .quality-action button { padding:6px 10px; }
 .quality-item.disabled { opacity:0.45; pointer-events:none; filter:grayscale(0.4); }
-.quality-meta { color:var(--text-sub); font-size:0.9rem }
+.quality-meta { display: flex; flex-wrap: wrap; column-gap: .3em; color:var(--text-sub); font-size:0.9rem; }
+.quality-meta > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .playback-preference { min-width: 0; }
 .playback-preference select { min-height: 44px; min-width: 0; }
 .playback-engine { font-size: 0.7rem; color: var(--text-sub); text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
@@ -104,8 +105,13 @@ label.advanced-setting { cursor: pointer; }
     .effect-select-control #effect-select {
         min-width: 144px; margin: 0;
     }
-    .main-container { grid-template-columns: clamp(320px, 38vw, 450px) minmax(0, 1fr); }
-    .right-panel { --controls-width: 520px; }
+    .main-container {
+        --desktop-gutter: clamp(32px, calc(40vw - 388px), 7.5vw);
+        width: min(1400px, calc(100% - 2 * var(--desktop-gutter)));
+        grid-template-columns: clamp(320px, calc(40vw + 30px), 450px) minmax(0, 1fr);
+    }
+    .right-panel { --controls-width: 520px; height: min(100%, 570px); align-self: center; }
+    .track-header { transform: translateY(calc(-1 * var(--track-header-lift, 0px))); }
     .controls-row { max-width: var(--controls-width); gap: clamp(4px, calc((100% - 370px) / 6), 25px); }
     /* Match the playback row's right edge without narrowing the lyrics. */
     .lyric-return { right: max(0px, calc(100% - var(--controls-width))); }

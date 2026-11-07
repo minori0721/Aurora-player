@@ -11,13 +11,17 @@ function fixture(t, matched, audioInfo = null) {
     const state = { header: async () => null };
     const document = { body: new FakeElement(), createElement(tag) {
         const element = new FakeElement();
+        let text = '';
+        Object.defineProperty(element, 'textContent', { get() { return text + this.children.map(child => child.textContent).join(''); },
+            set(value) { text = String(value); this.children = []; } });
+        element.replaceChildren = (...children) => { element.textContent = ''; element.append(...children); };
         if (tag === 'a') anchors.push(element);
         Object.defineProperty(element, 'innerHTML', { get() { return this._html || ''; }, set(value) {
-            this._html = value; this.children = [];
-            if (value.includes('quality-meta')) this.children.push(Object.assign(new FakeElement(), { className: 'quality-meta' }));
+            this._html = value; this.textContent = '';
+            if (value.includes('quality-meta')) this.children.push(Object.assign(document.createElement('div'), { className: 'quality-meta' }));
         } });
         return element;
-    } };
+    }, createTextNode(value) { const node = this.createElement('#text'); node.textContent = value; return node; } };
     const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
     Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: document });
     t.after(() => previous ? Object.defineProperty(globalThis, 'document', previous) : delete globalThis.document);
@@ -72,10 +76,22 @@ test('five matched download rows share source resolution and a single actual MP3
     assert.equal(f.matchCalls.length, 1); assert.equal(f.headerCalls.length, 1);
     assert.equal(f.requests.filter(raw => new URL(raw).pathname === '/song/music/detail').length, 0);
     for (const row of f.dom.downloadListEl.children) {
-        const text = row.querySelector('.quality-meta').textContent;
+        const meta = row.querySelector('.quality-meta'), text = meta.textContent;
         assert.match(text, /MP3 320kbps 44\.1kHz 10\.0MB/);
         assert.doesNotMatch(text, /952kbps|48kHz|36\.0MB/);
+        assert.equal(meta.querySelector('.quality-meta-details').textContent, 'MP3 320kbps 44.1kHz 10.0MB');
+        assert.equal(meta.querySelectorAll('.quality-meta-note').filter(part => part.textContent.startsWith('(match')).length, 1);
+        assert.equal(meta.querySelector('.quality-meta-note').textContent, '(match兜底/test)');
     }
+});
+
+test('automatic upgrades stay in an independent parenthesized metadata group', async t => {
+    const f = fixture(t, false, { url: 'https://cdn.test/actual.flac', type: 'flac', sr: 48000, size: 25 * 1024 * 1024 });
+    await f.dom.downloadBtn.onclick();
+    const meta = f.dom.downloadListEl.children[0].querySelector('.quality-meta');
+    assert.equal(meta.querySelector('.quality-meta-details').textContent, 'FLAC 48kHz 25.0MB');
+    assert.equal(meta.querySelector('.quality-meta-note').textContent, '(自动升级)');
+    assert.equal(meta.textContent, 'FLAC 48kHz 25.0MB (自动升级)');
 });
 
 test('a valid FLAC header overrides a misleading suffix and updates the actual download extension', async t => {

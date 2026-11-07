@@ -13,7 +13,6 @@ export function createDownload({
     playback: playbackService,
     resolver: resolverService,
     cloud: cloudService,
-    songActions: songActionsService,
     transfer: transferService
 } = {}) {
     let _currentPlaying = null;
@@ -74,7 +73,7 @@ export function createDownload({
     let initialized = false;
     return {
         get _currentPlaying() { return _currentPlaying; },
-        set _currentPlaying(value) { _currentPlaying = value; songActionsService?.setCurrentTrack(value); },
+        set _currentPlaying(value) { _currentPlaying = value; },
         cancelDownloadProbes,
         initialize() {
             if (initialized) return;
@@ -251,17 +250,25 @@ export function createDownload({
                                     const size = data.size || fallbackDetail?.size || 0;
                                     const sampleRate = data.sr || fallbackDetail?.sr || 0;
                                     const parts = [realExt ? realExt.toUpperCase() : '格式未知'];
+                                    const notes = [];
                                     if (br > 0) parts.push(`${Math.round(br / 1000)}kbps`);
                                     else if (data.mode === 'VBR') parts.push('VBR');
                                     if (sampleRate > 0) parts.push(`${formatSampleRate(sampleRate)}${realExt === 'flac' && data.bitsPerSample ? `/${data.bitsPerSample}bit` : ''}`);
                                     if (size > 0) parts.push(`${(size / 1024 / 1024).toFixed(1)}MB`);
-                                    if (useMatchForVip) parts.push(matchSource ? `(match兜底/${matchSource})` : '(match兜底)');
-                                    if (['lossless', 'hires'].includes(level) && realExt === 'mp3') parts.push('· 未取得无损');
+                                    if (useMatchForVip) notes.push(matchSource ? `(match兜底/${matchSource})` : '(match兜底)');
+                                    if (['lossless', 'hires'].includes(level) && realExt === 'mp3') notes.push('· 未取得无损');
                                     else if (level === 'hires' && realExt === 'flac' && data.bitsPerSample
-                                        && data.bitsPerSample <= 16 && sampleRate <= 48000) parts.push('· 实际为无损');
+                                        && data.bitsPerSample <= 16 && sampleRate <= 48000) notes.push('· 实际为无损');
                                     const isUpgrade = ['standard', 'higher'].includes(level) && realExt === 'flac';
-                                    if (isUpgrade) parts.push('(自动升级)');
-                                    metaEl.textContent = parts.join(' ');
+                                    if (isUpgrade) notes.push('(自动升级)');
+                                    metaEl.replaceChildren();
+                                    [parts.join(' '), ...notes].forEach((text, index) => {
+                                        if (index) metaEl.appendChild(document.createTextNode(' '));
+                                        const part = document.createElement('span');
+                                        part.className = index ? 'quality-meta-note' : 'quality-meta-details';
+                                        part.textContent = text;
+                                        metaEl.appendChild(part);
+                                    });
                                     metaEl.style.color = useMatchForVip ? '#27ae60' : isUpgrade ? '#e74c3c' : 'var(--text-sub)';
                                 };
                                 updateMeta();

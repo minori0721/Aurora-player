@@ -19,7 +19,13 @@ export function createMetadata({
     function applyMetadata(common, source, isCurrent = () => true, lyricSession = null) {
         if (!isCurrent()) return;
         if(common.title) domService.el.title.textContent = common.title;
-        if(common.artist) domService.el.artist.textContent = common.artist;
+        if(common.artist) {
+            const names = document.createElement('span');
+            names.className = 'track-artist-names';
+            names.textContent = common.artist;
+            names.title = common.artist;
+            domService.el.artist.replaceChildren(names);
+        }
 
         // 设置本地文件音质标签
         if (common.sampleRate && common.bitsPerSample) {

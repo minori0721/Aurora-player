@@ -114,11 +114,27 @@ test('mobile player budgets one viewport for playback and leaves the project foo
     const css = fs.readFileSync(new URL('../src/styles/responsive.css', import.meta.url), 'utf8');
     assert.match(base, /\.player-stage\s*\{\s*display:\s*contents/);
     assert.match(css, /\.player-stage\s*\{[^}]*height:\s*100dvh;[^}]*min-height:\s*min-content/);
-    assert.match(css, /\.right-panel\s*\{[^}]*flex:\s*1 0 auto/);
+    assert.match(css, /\.right-panel\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*0/);
+    assert.match(css, /\.lyrics-area\s*\{[^}]*flex:\s*1 1 80px;[^}]*min-height:\s*80px/);
     assert.match(css, /\.project-footer\s*\{[^}]*position:\s*static/);
     assert.match(html, /class="player-stage"/);
     assert.match(html, /<\/div>\s*<\/div>\s*<footer class="project-footer"/);
     assert.match(css, /max-height:\s*500px\) and \(orientation:\s*landscape\)/);
+});
+
+test('desktop reclaims outer gutters before reducing the cover below 1050px', () => {
+    const css = fs.readFileSync(new URL('../src/styles/controls.css', import.meta.url), 'utf8');
+    assert.match(css, /--desktop-gutter:\s*clamp\(32px,\s*calc\(40vw - 388px\),\s*7\.5vw\)/);
+    assert.match(css, /width:\s*min\(1400px,\s*calc\(100% - 2 \* var\(--desktop-gutter\)\)\)/);
+    assert.match(css, /grid-template-columns:\s*clamp\(320px,\s*calc\(40vw \+ 30px\),\s*450px\)/);
+    for (const [width, expected] of [[1440,450],[1200,450],[1100,450],[1050,450],[1024,439.6],[960,414],[901,390.4]]) {
+        const cover = Math.min(450, Math.max(320, width * .4 + 30));
+        const gutter = Math.max(32, Math.min(width * .075, width * .4 - 388));
+        const total = Math.min(1400, width - 2 * gutter), gap = Math.min(80, Math.max(30, width * .05));
+        assert.ok(Math.abs(cover - expected) < .001);
+        assert.ok(total - cover - gap >= 400, 'desktop must retain room for online playback controls');
+        assert.ok(gutter >= 32);
+    }
 });
 
 test('mobile lyric return keeps its original size and translucent glass without reserving a lyric row', () => {

@@ -1,12 +1,10 @@
 import { createAccountRequest } from './account-request.js';
 import { coverImageUrl } from '../shared/cover-url.js';
+import { classifySongActionError, isDuplicateSongError } from './song-action-errors.js';
 
 const LIKE_LIMIT = 1000;
 const BATCH_SIZE = 200;
-const PLAYLIST_LIMIT = 3000;
-const PAGE_SIZE = 30;
 const LIKE_TTL = 60000;
-const PLAYLIST_TTL = 60000;
 const UNCERTAIN_ADD_LIMIT = 200;
 const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>';
 const COLLECT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v8m-4-4h8M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
@@ -36,8 +34,8 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
     const request = createAccountRequest({ api, auth });
     const likes = new Map(), checks = new Map(), revisions = new Map(), pending = new Map(), controllers = new Set();
     let generation = 0, identity = null, current = null, initialized = false;
-    let picker = null, pickerToken = 0, pickerController = null, playlistJob = null, playlistState = null;
-    let playlistVersion = 0, messageVersion = 0;
+    let picker = null, pickerToken = 0, pickerController = null;
+    let messageVersion = 0;
 
     function context() {
         const snapshot = auth.captureAuthSnapshot();
@@ -169,8 +167,6 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
     }
 
     function invalidate(song, playlistId, liked) {
-        playlistVersion++;
-        playlistState = null;
         const detail = { songId: song.id, playlistId: playlistId || null, liked };
         const warn = () => debug?.log?.('歌曲收藏缓存更新失败', 'warn');
         try {
@@ -180,11 +176,10 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         try {
             const { invalidateAfterSongWrite } = myPlaylists || {};
             if (typeof invalidateAfterSongWrite === 'function') Promise.resolve(invalidateAfterSongWrite.call(myPlaylists, detail)).catch(warn);
-            else if (myPlaylists) myPlaylists.myPlaylistsCache = null;
         } catch (_) { warn(); }
     }
 
-    function mutate(song, action, work) {
+    function mutate(song, action, work, onBlocked) {
         const ctx = context();
         if (!song) return Promise.resolve(false);
         if (!signedIn(ctx)) {
@@ -194,9 +189,13 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         }
         if (pending.has(song.id)) {
             const existing = pending.get(song.id);
+            if (existing.action !== action) onBlocked?.();
             return existing.action === action ? existing.promise : Promise.resolve(false);
         }
-        if (pending.size >= 20) { status('请等待当前收藏操作完成。', true); return Promise.resolve(false); }
+        if (pending.size >= 20) {
+            if (onBlocked) onBlocked(); else status('请等待当前收藏操作完成。', true);
+            return Promise.resolve(false);
+        }
         const version = ++messageVersion;
         // Defer work until the per-song lock has been installed.
         const job = Promise.resolve().then(() => isCurrent(ctx) ? work(ctx, version) : false).finally(() => {
@@ -209,7 +208,7 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         return job;
     }
 
-    async function writeLike(song, liked, ctx, version, playlistId) {
+    async function writeLike(song, liked, ctx, version, playlistId, onResult) {
         if (!isCurrent(ctx)) return false;
         const previous = likes.get(song.id);
         revisions.set(song.id, (revisions.get(song.id) || 0) + 1);
@@ -219,14 +218,16 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
             await ownedRequest('/song/like', { id: song.id, uid: ctx.userId, like: String(liked) }, ctx);
             if (!isCurrent(ctx)) return false;
             invalidate(song, playlistId, liked);
-            if (version === messageVersion) status(liked ? '已喜欢。' : '已取消喜欢。');
+            if (onResult) onResult({ kind: 'added', message: '已收藏到歌单。', error: false, retry: null });
+            else if (version === messageVersion) status(liked ? '已喜欢。' : '已取消喜欢。');
             return true;
         } catch (error) {
             if (isCurrent(ctx)) {
                 if (previous) likes.set(song.id, previous); else likes.delete(song.id);
                 // An uncertain write must be checked again, never blindly inverted on retry.
                 if (error.uncertain) likes.delete(song.id);
-                if (version === messageVersion && error.name !== 'AbortError') status(errorText(error), true);
+                if (onResult) onResult(classifySongActionError(error), error);
+                else if (version === messageVersion && error.name !== 'AbortError') status(errorText(error), true);
             }
             return false;
         }
@@ -275,49 +276,12 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         return [...result.values()];
     }
 
-    async function loadPlaylists(ctx, signal) {
-        if (playlistState && Date.now() - playlistState.at < PLAYLIST_TTL) return playlistState.list;
-        if (playlistJob && !playlistJob.signal?.aborted) return playlistJob.promise;
-        const job = { signal, version: playlistVersion };
-        job.promise = (async () => {
-            // A rendered cache may contain a partial/error page, so it is not a completeness signal.
-            const shared = Array.isArray(myPlaylists?.myPlaylistsData) ? myPlaylists.myPlaylistsData : [];
-            const list = new Map(shared.slice(0, PLAYLIST_LIMIT).map(item => [numericId(item?.id), item]).filter(([id]) => id));
-            const { myPlaylistsComplete = false } = myPlaylists || {};
-            const complete = myPlaylistsComplete === true && !myPlaylists?.myPlaylistsLoading;
-            if (!complete) {
-                // Recheck a partial last page; never skip unseen rows after a partial load.
-                let offset = Math.floor(Math.min(shared.length, PLAYLIST_LIMIT - PAGE_SIZE) / PAGE_SIZE) * PAGE_SIZE;
-                while (offset < PLAYLIST_LIMIT) {
-                    const body = await ownedRequest('/user/playlist', { uid: ctx.userId, limit: PAGE_SIZE, offset }, ctx, signal);
-                    if (!isCurrent(ctx) || signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
-                    if (!Array.isArray(body.playlist)) throw new Error('Invalid playlists');
-                    const page = body.playlist;
-                    if (page.length > PAGE_SIZE) throw new Error('Invalid playlist page');
-                    let added = 0;
-                    for (const item of page) {
-                        const id = numericId(item?.id);
-                        if (id) {
-                            if (!list.has(id)) {
-                                if (list.size >= PLAYLIST_LIMIT) throw new Error('Too many playlists');
-                                added++;
-                            }
-                            list.set(id, item);
-                        }
-                    }
-                    const more = body.more === true || (body.more === undefined && page.length >= PAGE_SIZE);
-                    if (!more) break;
-                    if (!page.length || (offset > 0 && !added) || offset + page.length >= PLAYLIST_LIMIT) throw new Error('Incomplete playlists');
-                    offset += page.length;
-                }
-            }
-            if (!isCurrent(ctx) || signal?.aborted || job.version !== playlistVersion) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
-            const own = writable([...list.values()], ctx.userId).slice(0, PLAYLIST_LIMIT);
-            playlistState = { list: own, at: Date.now() };
-            return own;
-        })().finally(() => { if (playlistJob === job) playlistJob = null; });
-        playlistJob = job;
-        return job.promise;
+    async function loadPlaylists(ctx, signal, onUpdate) {
+        const state = await myPlaylists.ensurePlaylists({ signal, onUpdate: state => {
+            if (isCurrent(ctx) && !signal?.aborted) onUpdate?.(writable(state.items, ctx.userId), state);
+        } });
+        if (!isCurrent(ctx) || signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+        return writable(state.items, ctx.userId);
     }
 
     async function playlistContains(song, playlistId, ctx) {
@@ -327,43 +291,79 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         const count = typeof countValue === 'number' || typeof countValue === 'string' && /^\d+$/.test(countValue)
             ? Number(countValue) : NaN;
         const ids = detail?.trackIds;
-        const incomplete = () => Object.assign(new Error('无法确认完整歌单，未再次提交收藏，请稍后重试。'), { name: 'AccountRequestError' });
+        const incomplete = reason => Object.assign(new Error('暂时无法确认收藏状态。'), {
+            name: 'AccountRequestError', kind: 'membership-unconfirmed', reason,
+            trackCount: Number.isSafeInteger(count) ? count : null, idCount: Array.isArray(ids) ? ids.length : null
+        });
+        if (numericId(detail?.id) !== playlistId) throw incomplete('playlist-identity');
+        // A positive match needs only this song; absence needs a complete, valid ID list.
+        for (const list of [ids, detail.tracks]) {
+            if (Array.isArray(list) && list.some(item => numericId(typeof item === 'object' ? item?.id : item) === song.id)) return true;
+        }
         if (!Number.isSafeInteger(count) || count < 0 || !Array.isArray(ids) || ids.length !== count
-            || body.more === true || detail.more === true
-            || detail.id !== undefined && numericId(detail.id) !== playlistId) throw incomplete();
+            || body.more === true || detail.more === true) throw incomplete('incomplete-ids');
         const seen = new Set();
-        let contains = false;
         for (const item of ids) {
             const id = numericId(typeof item === 'object' ? item?.id : item);
-            if (!id || seen.has(id)) throw incomplete();
+            if (!id || seen.has(id)) throw incomplete('invalid-ids');
             seen.add(id);
-            if (id === song.id) contains = true;
         }
-        return contains;
+        return false;
     }
 
-    function addToPlaylist(value, pid) {
+    function addToPlaylist(value, pid, { onResult, verifyOnly = false } = {}) {
         const song = songInfo(value), playlistId = numericId(pid);
         if (!playlistId) return Promise.resolve(false);
+        const blocked = () => onResult?.({ kind: 'busy', message: '请等待其他收藏操作完成。', error: true, retry: 'retry' });
         return mutate(song, `playlist:${playlistId}`, async (ctx, version) => {
             const key = `${song.id}:${playlistId}`;
+            let phase = 'load';
+            const report = (result, error) => {
+                if (!isCurrent(ctx)) return;
+                if (error && result.kind !== 'cancelled') debug?.log?.(
+                    `收藏操作：${result.kind}；阶段 ${phase}；HTTP ${Number.isFinite(error.status) ? error.status : '-'}；API ${Number.isFinite(error.apiCode) ? error.apiCode : '-'}${error.kind === 'membership-unconfirmed' ? `；核验 ${error.reason}，数量 ${error.trackCount ?? '-'}，ID 数量 ${error.idCount ?? '-'}` : ''}`, 'warn');
+                onResult?.(result);
+            };
             const finish = already => {
                 if (!isCurrent(ctx)) return false;
                 ctx.uncertainAdds.delete(key);
                 invalidate(song, playlistId);
-                if (version === messageVersion) status(already ? '已在歌单中。' : '已收藏到歌单。');
+                report({ kind: already ? 'already' : 'added', message: already ? '已在歌单中。' : '已收藏到歌单。', error: false, retry: null });
                 return true;
             };
             try {
-                const list = await loadPlaylists(ctx);
+                // A displayed, owned target can be used while remaining catalog pages are loading.
+                const known = writable(myPlaylists.myPlaylistsData, ctx.userId).find(item => item.id === playlistId);
+                const list = known ? [known] : await loadPlaylists(ctx);
                 if (!isCurrent(ctx)) return false;
                 const target = list.find(item => item.id === playlistId);
                 if (!target) throw new Error('Playlist is not writable');
-                if (target.specialType === 200) return await writeLike(song, true, ctx, version, playlistId);
-                if (ctx.uncertainAdds.has(key) && await playlistContains(song, playlistId, ctx)) return finish(true);
+                phase = 'write';
+                if (target.specialType === 5) {
+                    if (!verifyOnly) return await writeLike(song, true, ctx, version, playlistId, report);
+                    phase = 'check';
+                    revisions.set(song.id, (revisions.get(song.id) || 0) + 1);
+                    const body = await ownedRequest('/song/like/check', { ids: JSON.stringify([song.id]) }, ctx);
+                    const ids = Array.isArray(body.data) ? body.data : body.data?.ids ?? body.ids;
+                    if (!Array.isArray(ids) || ids.some(id => !numericId(id))) throw new Error('Invalid like state');
+                    if (!isCurrent(ctx)) return false;
+                    const liked = ids.map(numericId).includes(song.id);
+                    storeLike(song.id, liked);
+                    if (liked) return finish(true);
+                } else if (verifyOnly || ctx.uncertainAdds.has(key)) {
+                    phase = 'check';
+                    if (await playlistContains(song, playlistId, ctx)) return finish(true);
+                    if (!isCurrent(ctx)) return false;
+                    ctx.uncertainAdds.delete(key);
+                }
                 if (!isCurrent(ctx)) return false;
+                if (verifyOnly) {
+                    report({ kind: 'absent', message: '歌单中尚无这首歌，可以重新收藏。', error: false, retry: 'retry' });
+                    return false;
+                }
+                phase = 'write';
                 if (!ctx.uncertainAdds.has(key) && ctx.uncertainAdds.size >= UNCERTAIN_ADD_LIMIT) {
-                    if (version === messageVersion) status('待确认的收藏过多，请先重试已有操作。', true);
+                    report({ kind: 'busy', message: '待确认的收藏过多，请先检查已有操作。', error: true, retry: null });
                     return false;
                 }
                 // Reserve before dispatch so concurrent uncertain writes cannot exceed the limit.
@@ -373,20 +373,24 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
                     return finish(false);
                 } catch (error) {
                     if (!isCurrent(ctx)) return false;
-                    const duplicate = [502, 512].includes(error.apiCode)
-                        || /重复|已存在|已在歌单|already\s+(?:exists?|in|added|collected)|duplicate|\brepeat(?:ed)?\b/i.test(error.message || '');
-                    if (duplicate) {
+                    const outcome = classifySongActionError(error);
+                    if (isDuplicateSongError(error) || [502, 512].includes(error.apiCode) && outcome.kind === 'unconfirmed') {
+                        report(outcome, error);
+                        phase = 'check';
                         if (await playlistContains(song, playlistId, ctx)) return finish(true);
                         if (!isCurrent(ctx)) return false;
+                        ctx.uncertainAdds.delete(key);
+                        report({ kind: 'absent', message: '歌单中尚无这首歌，可以重新收藏。', error: false, retry: 'retry' });
+                        return false;
                     }
-                    if (!error.uncertain) ctx.uncertainAdds.delete(key);
+                    if (outcome.kind !== 'unconfirmed') ctx.uncertainAdds.delete(key);
                     throw error;
                 }
             } catch (error) {
-                if (isCurrent(ctx) && version === messageVersion && error.name !== 'AbortError') status(errorText(error), true);
+                report(classifySongActionError(error, { checking: phase === 'check', loading: phase === 'load' }), error);
                 return false;
             }
-        });
+        }, blocked);
     }
 
     function closePicker() {
@@ -437,10 +441,11 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         return picker;
     }
 
-    function pickerStatus(message, error = false, retry = null) {
+    function pickerStatus(message, error = false, retry = null, label = '重试') {
         picker.status.textContent = message;
         picker.status.dataset.error = String(error);
         picker.retry.hidden = !retry;
+        picker.retry.textContent = label;
         picker.retryAction = retry;
     }
 
@@ -453,6 +458,7 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
             return false;
         }
         closePicker();
+        status();
         const view = ensurePicker();
         view.song = song;
         view.returnFocus = document.activeElement;
@@ -462,24 +468,33 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         const controller = new AbortController();
         pickerController = controller;
         const valid = () => token === pickerToken && isCurrent(ctx) && !controller.signal.aborted && view.dialog.open;
-        const select = async pid => {
+        let selecting = false;
+        const select = async (pid, verifyOnly = false) => {
             if (!valid() || pending.has(song.id)) return;
-            pickerStatus('正在收藏...');
-            const ok = await addToPlaylist(song, pid);
+            selecting = true;
+            pickerStatus(verifyOnly ? '正在检查收藏状态...' : '正在收藏...');
+            let result;
+            const ok = await addToPlaylist(song, pid, { verifyOnly, onResult: value => { result = value; } });
             if (!valid()) return;
             if (ok) closePicker();
-            else { pickerStatus('收藏未完成，请先检查歌单再重试。', true, () => select(pid)); view.retry.focus(); }
+            else if (result?.kind !== 'cancelled') {
+                const retry = result?.retry || null;
+                const action = retry === 'login' ? () => { closePicker(); auth.showLogin?.(); }
+                    : retry ? () => select(pid, retry === 'check') : null;
+                const label = retry === 'login' ? '重新登录' : retry === 'check' ? '检查收藏状态' : '重新收藏';
+                pickerStatus(result?.message || '收藏未完成，请稍后再试。', result?.error !== false, action, label);
+                if (action) view.retry.focus();
+            }
         };
-        const load = async () => {
+        const paintPlaylists = (list, state) => {
             if (!valid()) return;
-            pickerStatus('正在加载歌单...');
-            view.list.setAttribute('aria-busy', 'true');
-            try {
-                const list = await loadPlaylists(ctx, controller.signal);
-                if (!valid()) return;
-                view.list.replaceChildren();
-                list.forEach(item => {
-                    const button = document.createElement('button');
+            const existing = new Map([...view.list.children].map(button => [button.dataset.playlistId, button]));
+            const wanted = new Set(list.map(item => String(item.id)));
+            for (const [id, button] of existing) if (!wanted.has(id)) view.list.removeChild(button);
+            list.forEach((item, index) => {
+                let button = existing.get(String(item.id));
+                if (!button) {
+                    button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'song-actions-playlist';
                     button.dataset.playlistId = String(item.id);
@@ -503,12 +518,33 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
                     count.textContent = item.trackCount === null ? '' : `${item.trackCount} 首`;
                     info.append(name, count); button.append(cover, info);
                     button.addEventListener('click', () => { void select(item.id); });
-                    view.list.appendChild(button);
-                });
-                pickerStatus(list.length ? '' : '暂无可收藏的自建歌单。');
-                refresh([song.id]);
+                } else {
+                    button.title = item.name;
+                    button.querySelector('.song-actions-playlist-name').textContent = item.name;
+                    const count = button.querySelector('.song-actions-playlist-count');
+                    count.hidden = item.trackCount === null;
+                    count.textContent = item.trackCount === null ? '' : `${item.trackCount} 首`;
+                }
+                if (view.list.children[index] !== button) view.list.insertBefore(button, view.list.children[index] || null);
+            });
+            if (!selecting && !state.error) pickerStatus(state.complete ? list.length ? '' : '暂无可收藏的自建歌单。'
+                : list.length ? `已显示 ${list.length} 个歌单，正在继续加载...` : '正在加载歌单...');
+            refresh([song.id]);
+        };
+        const load = async () => {
+            if (!valid()) return;
+            selecting = false;
+            pickerStatus('正在加载歌单...');
+            view.list.setAttribute('aria-busy', 'true');
+            try {
+                await loadPlaylists(ctx, controller.signal, paintPlaylists);
             } catch (error) {
-                if (valid() && error.name !== 'AbortError') pickerStatus(errorText(error), true, load);
+                if (valid() && !selecting && error.name !== 'AbortError') {
+                    const result = classifySongActionError(error, { loading: true });
+                    const login = result.retry === 'login';
+                    pickerStatus(result.message, true, login ? () => { closePicker(); auth.showLogin?.(); }
+                        : result.retry ? load : null, login ? '重新登录' : '重试');
+                }
             } finally { if (valid()) view.list.setAttribute('aria-busy', 'false'); }
         };
         view.dialog.showModal();
@@ -523,19 +559,19 @@ export function createSongActions({ api, auth, cache, myPlaylists, debug } = {})
         messageVersion++;
         status();
         refresh();
-        if (current) void checkLikes([current.id]);
+        const selected = current;
+        Promise.resolve().then(() => { if (selected && current === selected) void checkLikes([selected.id]); });
     }
 
     function reset() {
         const resetGeneration = ++generation;
         messageVersion++;
-        playlistVersion++;
         controllers.forEach(controller => controller.abort());
         controllers.clear();
         closePicker();
         clearPickerContent();
         likes.clear(); checks.clear(); revisions.clear(); pending.clear();
-        playlistState = null; playlistJob = null; identity = null; current = null;
+        identity = null; current = null;
         status();
         refresh();
         // Auth calls reset before committing the new user/cookie; do not capture that old identity.

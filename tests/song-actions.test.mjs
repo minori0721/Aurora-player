@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { createSongActions } from '../src/netease/song-actions.js';
-import { FakeElement } from './helpers/host.mjs';
+import { createMyPlaylists } from '../src/netease/my-playlists.js';
+import { createQueue } from '../src/playlist/queue.js';
+import { createDownload } from '../src/netease/download.js';
+import { createPersistence } from '../src/storage/playlist.js';
+import { FakeElement, storage } from './helpers/host.mjs';
 
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
@@ -29,6 +33,12 @@ class Element extends FakeElement {
     constructor(tag = 'div', doc) { super(); this.tagName = tag.toUpperCase(); this.doc = doc; this.disabled = false; this.open = false; }
     appendChild(child) { child.parentNode = this; return super.appendChild(child); }
     replaceChildren(...children) { this.children.forEach(child => { child.isConnected = false; }); this.children = []; children.forEach(child => this.appendChild(child)); }
+    insertBefore(child, before) {
+        this.children = this.children.filter(node => node !== child);
+        const index = before ? this.children.indexOf(before) : this.children.length;
+        this.children.splice(index, 0, child); child.parentNode = this; child.isConnected = true;
+        return child;
+    }
     closest(selector) { return matches(this, selector) ? this : this.parentNode?.closest?.(selector) || null; }
     querySelectorAll(selector) {
         return this.children.flatMap(child => [...(matches(child, selector) ? [child] : []), ...child.querySelectorAll(selector)]);
@@ -58,14 +68,22 @@ function fixture(t, { shared = [], complete = true } = {}) {
     doc.createElement = tag => new Element(tag, doc);
     doc.getElementById = id => doc.querySelector(`#${id}`);
     const nodes = {};
-    for (const id of ['track-song-actions', 'track-like', 'track-collect', 'song-action-message']) {
+    for (const id of ['track-song-actions', 'track-like', 'track-collect', 'song-action-message', 'mylist-content']) {
         nodes[id] = doc.createElement(id === 'song-action-message' ? 'p' : 'button'); nodes[id].id = id; doc.body.appendChild(nodes[id]);
     }
     const calls = [], invalidations = [], logs = [], liked = new Set();
     const auth = { generation: 1, neteaseCookie: 'MUSIC_U=synthetic', neteaseUser: { userId: 7 }, accountAbortControllers: new Set(),
         captureAuthSnapshot() { return { cookie: this.neteaseCookie, generation: this.generation }; },
         isAuthSnapshotCurrent(value) { return value.cookie === this.neteaseCookie && value.generation === this.generation; } };
-    const myPlaylists = { myPlaylistsData: shared, myPlaylistsComplete: complete, myPlaylistsLoading: false, myPlaylistsCache: 'rendered' };
+    const api = { buildApiUrl: path => `https://fixture.invalid${path}` };
+    const myPlaylists = complete ? { myPlaylistsData: shared, myPlaylistsComplete: true, myPlaylistsCache: 'rendered',
+        async ensurePlaylists({ signal, onUpdate } = {}) {
+            if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            const value = { items: this.myPlaylistsData, complete: true, loading: false };
+            onUpdate?.(value); return value;
+        },
+        invalidateAfterSongWrite() { this.myPlaylistsCache = null; }
+    } : createMyPlaylists({ api, auth, content: { clearMusicImages() {}, observeMusicImages() {} } });
     const state = { handler(call) {
         if (call.path === '/song/like/check') return { code: 200, data: JSON.parse(call.body.ids).filter(id => liked.has(id)) };
         if (call.path === '/song/like') { if (call.body.like === 'true') liked.add(call.body.id); else liked.delete(call.body.id); return { code: 200 }; }
@@ -79,9 +97,13 @@ function fixture(t, { shared = [], complete = true } = {}) {
     });
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
     Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
-    const actions = createSongActions({ api: { buildApiUrl: path => `https://fixture.invalid${path}` }, auth, myPlaylists,
+    const service = createSongActions({ api, auth, myPlaylists,
         cache: { clearAccountJsonCache: () => invalidations.push(true) }, debug: { log: (...args) => logs.push(args) } });
-    t.after(async () => { actions.reset(); await settle(); if (descriptor) Object.defineProperty(globalThis, 'document', descriptor); else delete globalThis.document; });
+    const results = [];
+    const actions = { ...service, addToPlaylist(value, pid, options = {}) {
+        return service.addToPlaylist(value, pid, { ...options, onResult(result) { results.push(result); options.onResult?.(result); } });
+    } };
+    t.after(async () => { actions.reset(); myPlaylists.reset?.(); await settle(); if (descriptor) Object.defineProperty(globalThis, 'document', descriptor); else delete globalThis.document; });
     const menu = (ids = [1]) => {
         const details = doc.createElement('details'); doc.body.appendChild(details);
         for (const id of ids) {
@@ -97,6 +119,7 @@ function fixture(t, { shared = [], complete = true } = {}) {
         doc.dispatchEvent(event); return event;
     };
     return { actions, auth, myPlaylists, doc, nodes, calls, invalidations, logs, liked, state, menu, click,
+        result: () => results.at(-1), results,
         dialog: () => doc.querySelector('dialog'), message: () => nodes['song-action-message'].textContent };
 }
 
@@ -109,7 +132,7 @@ test('exports only the agreed service surface; initialize is idempotent and init
     assert.equal(f.calls.length, 0);
 });
 
-test('download current track and metadata fallback show actions; local/no song hide and disable them', async t => {
+test('selected current track and metadata fallback show actions; local/no song hide and disable them', async t => {
     const f = fixture(t); f.actions.initialize();
     f.actions.setCurrentTrack({ netease: true, songData: { id: 21, name: 'Example' } }); await settle();
     assert.equal(f.nodes['track-like'].hidden, false); assert.equal(f.nodes['track-collect'].disabled, false);
@@ -118,6 +141,123 @@ test('download current track and metadata fallback show actions; local/no song h
     for (const value of [null, { songId: 21 }, { netease: false, songId: 21 }, { netease: true, songId: 0 }]) {
         f.actions.setCurrentTrack(value); assert.equal(f.nodes['track-like'].hidden, true); assert.equal(f.nodes['track-like'].disabled, true);
     }
+});
+
+for (const first of ['picker', 'mine']) {
+    test(`both real entry points join one pending 31-row response, first=${first}`, async t => {
+        const f = fixture(t, { complete: false }), response = deferred();
+        f.state.handler = () => response.promise;
+        const opening = first === 'picker' ? f.actions.openPlaylistPicker(song(1)) : f.myPlaylists.loadMyPlaylists();
+        await settle();
+        const joining = first === 'picker' ? f.myPlaylists.loadMyPlaylists() : f.actions.openPlaylistPicker(song(1));
+        await settle(); assert.equal(f.calls.length, 1);
+        response.resolve({ code: 200, playlist: Array.from({ length: 31 }, (_, index) => playlist(index + 1)), more: false });
+        await Promise.all([opening, joining]); await settle();
+        assert.equal(f.dialog().querySelectorAll('.song-actions-playlist').length, 31);
+        assert.match(f.nodes['mylist-content'].innerHTML, /Playlist 31/);
+        f.dialog().close(); await f.actions.openPlaylistPicker(song(2)); await f.myPlaylists.loadMyPlaylists();
+        assert.equal(f.calls.length, 1, 'reopening either entry within TTL makes no additional catalog request');
+    });
+}
+
+test('closing the picker while My Playlists is waiting keeps its shared request alive', async t => {
+    const f = fixture(t, { complete: false }), response = deferred();
+    f.state.handler = () => response.promise;
+    const opening = f.actions.openPlaylistPicker(song(1));
+    const mine = f.myPlaylists.loadMyPlaylists(); await settle();
+    f.dialog().querySelector('.song-actions-close').dispatchEvent({ type: 'click' });
+    assert.equal(await opening, false); assert.equal(f.calls[0].options.signal.aborted, false);
+    response.resolve({ code: 200, more: false, playlist: [playlist(9)] });
+    await mine; await settle();
+    assert.match(f.nodes['mylist-content'].innerHTML, /Playlist 9/);
+    assert.equal(f.dialog().querySelectorAll('.song-actions-playlist').length, 0); assert.equal(f.calls.length, 1);
+});
+
+test('twenty quick picker reopens share the pending read and only the last song receives its rows', async t => {
+    const f = fixture(t, { complete: false }), response = deferred(), openings = [];
+    f.state.handler = () => response.promise;
+    for (let id = 1; id <= 20; id++) {
+        openings.push(f.actions.openPlaylistPicker(song(id)));
+        await Promise.resolve();
+    }
+    await settle(); assert.equal(f.calls.length, 1);
+    response.resolve({ code: 200, more: false, playlist: [playlist(9)] });
+    const finished = await Promise.all(openings);
+    assert.equal(finished.filter(Boolean).length, 1); assert.equal(finished.at(-1), true);
+    assert.equal(f.dialog().querySelector('.song-actions-song').textContent, 'Song 20');
+    assert.equal(f.dialog().querySelectorAll('.song-actions-playlist').length, 1);
+    assert.equal(f.calls.length, 1);
+});
+
+test('first-page picker rows remain focused and actionable while later pages are pending', async t => {
+    const f = fixture(t, { complete: false }), second = deferred();
+    f.state.handler = call => call.path !== '/user/playlist' ? { code: 200 }
+        : call.body.offset === 0 ? { code: 200, more: true, playlist: [playlist(9)] } : second.promise;
+    const opening = f.actions.openPlaylistPicker(song(1)); await settle();
+    const row = f.dialog().querySelector('.song-actions-playlist');
+    assert.ok(row); assert.equal(row.disabled, false); row.focus();
+    second.resolve({ code: 200, more: false, playlist: [playlist(10)] }); await opening;
+    assert.equal(f.dialog().querySelector('.song-actions-playlist'), row); assert.equal(f.doc.activeElement, row);
+    assert.deepEqual(f.calls.map(call => call.body.offset), [0, 30]);
+});
+
+test('a known owned first-page target can be collected without waiting for or duplicating later reads', async t => {
+    const f = fixture(t, { complete: false }), second = deferred();
+    f.state.handler = call => call.path !== '/user/playlist' ? { code: 200 }
+        : call.body.offset === 0 ? { code: 200, more: true, playlist: [playlist(9)] } : second.promise;
+    const opening = f.actions.openPlaylistPicker(song(1)); await settle();
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, false); assert.equal(await opening, false);
+    assert.deepEqual(f.calls.map(call => call.path), ['/user/playlist', '/user/playlist', '/playlist/tracks']);
+    second.resolve({ code: 200, more: false, playlist: [playlist(10)] }); await settle();
+});
+
+for (const temporary of [false, true]) {
+    test(`persistence restores an idle NetEase collection target without audio playback, temporary=${temporary}`, async t => {
+        const f = fixture(t, { shared: [playlist(9)] });
+        const localStorage = storage(), playback = { playbackState: { status: 'idle' }, setPlaybackStatus(status) { this.playbackState.status = status; } };
+        const queue = createQueue({ songActions: f.actions, content: { clearMusicQueueFeedback() {} } });
+        const storedTrack = id => ({ type: 'netease', id, title: `Restored ${id}`, artists: [], album: {} });
+        localStorage.setItem('aurora_playlist_snapshot_v3', JSON.stringify({ schema: 3, listId: 'restored', revision: 1,
+            selectedIndex: 1, tracks: [storedTrack(1), storedTrack(2)],
+            ...(temporary ? { manual: { current: storedTrack(3), pending: [] } } : {}) }));
+        const globals = { localStorage, window: { crypto: globalThis.crypto, addEventListener() {} } };
+        for (const [key, value] of Object.entries(globals)) {
+            const before = Object.getOwnPropertyDescriptor(globalThis, key);
+            Object.defineProperty(globalThis, key, { configurable: true, value });
+            t.after(() => before ? Object.defineProperty(globalThis, key, before) : delete globalThis[key]);
+        }
+        const persistence = createPersistence({ queue, playback, cache: { openIdb: async () => null },
+            content: { setMainMusicEntityLinks() {}, updateMusicMiniPlayer() {} }, dom: { el: { title: {}, img: { style: {} } } },
+            covers: { setMainCover() {} }, lyrics: { setArtistTag() {} }, imports: {},
+            playlistView: { renderPlaylist() {} }, onlinePlaylist: { restoreQueueSource() {} }, debug: { log() {} } });
+        f.actions.initialize(); persistence.initialize(); await settle();
+        const id = temporary ? 3 : 2;
+        assert.equal(playback.playbackState.status, 'idle'); assert.equal(queue.currentTrack.songId, id);
+        assert.equal(f.nodes['track-collect'].hidden, false); assert.equal(f.nodes['track-collect'].disabled, false);
+        const download = createDownload({}); download._currentPlaying = null;
+        assert.equal(f.nodes['track-collect'].hidden, false, 'clearing audio/download state does not hide the selected target');
+        f.click(f.nodes['track-collect']); await settle();
+        assert.equal(f.dialog().querySelector('.song-actions-song').textContent, `Restored ${id}`);
+        f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+        const writes = f.calls.filter(call => call.path === '/playlist/tracks');
+        assert.equal(writes.length, 1); assert.equal(writes[0].body.tracks, String(id));
+        assert.ok(f.calls.every(call => ['/song/like/check', '/playlist/tracks'].includes(call.path)), 'no audio URL, audio file or catalog read is needed');
+    });
+}
+
+test('queue selection, source replacement and clearing update collection targets without playback', async t => {
+    const f = fixture(t);
+    const queue = createQueue({ songActions: f.actions, content: { clearMusicQueueFeedback() {} }, prefetch: { retargetNextPreload() {} } });
+    queue.playlist = [track(1), track(2)]; queue.curIdx = 1; await settle();
+    assert.equal(queue.currentTrack.songId, 2); assert.equal(f.nodes['track-collect'].hidden, false);
+    queue.replaceBaseTracks([track(4)], 0); await settle();
+    await f.actions.openPlaylistPicker(queue.currentTrack);
+    assert.equal(f.dialog().querySelector('.song-actions-song').textContent, 'Song 4');
+    f.dialog().close(); queue.playlist = []; await settle();
+    assert.equal(queue.currentTrack, null); assert.equal(f.nodes['track-collect'].hidden, true);
+    queue.playlist = [{ name: 'Local.wav' }]; queue.curIdx = 0;
+    assert.equal(f.nodes['track-collect'].hidden, true);
 });
 
 test('batch checks dedupe numeric IDs, cache in bounded memory and reject invalid ID coercions', async t => {
@@ -314,13 +454,19 @@ test('picker markup shares the cloud-music close style and list-only scrolling k
 test('partial shared playlists resume pagination and dedupe records without invoking the main loader', async t => {
     const shared = Array.from({ length: 30 }, (_, i) => playlist(i + 1));
     const f = fixture(t, { shared, complete: false });
-    f.myPlaylists.loadMyPlaylists = () => assert.fail('Must not use the main UI loader');
+    let fail = true;
     f.state.handler = call => {
         assert.equal(call.path, '/user/playlist');
+        if (call.body.offset === 0) return { code: 200, playlist: shared, more: true };
+        if (fail) return { code: 500 };
         return { code: 200, playlist: [playlist(31), playlist(32, 8)], more: false };
     };
+    await f.myPlaylists.loadMyPlaylists(); await settle();
+    assert.equal(f.myPlaylists.myPlaylistsComplete, false);
+    f.myPlaylists.loadMyPlaylists = () => assert.fail('Must not use the main UI loader');
+    fail = false;
     await f.actions.openPlaylistPicker(song(1));
-    assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body.offset, 30);
+    assert.deepEqual(f.calls.map(call => call.body.offset), [0, 30, 30]);
     assert.equal(f.dialog().querySelectorAll('.song-actions-playlist').length, 31);
 });
 
@@ -355,7 +501,7 @@ test('an uncertain add retry confirms membership without repeating the write', a
     };
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
     assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail']);
-    assert.match(f.message(), /已在歌单中/);
+    assert.equal(f.result().kind, 'already'); assert.equal(f.message(), '');
     assert.equal(f.myPlaylists.myPlaylistsCache, null);
 });
 
@@ -368,7 +514,7 @@ test('a complete absent result permits one explicit retry write, with no automat
         ? playlistDetail([], { trackCount: '0' }) : { code: 200 };
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
     assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail', '/playlist/tracks']);
-    assert.match(f.message(), /已收藏到歌单/);
+    assert.equal(f.result().kind, 'added'); assert.equal(f.message(), '');
 });
 
 test('failed confirmation preserves the uncertain marker for the next attempt', async t => {
@@ -383,17 +529,18 @@ test('failed confirmation preserves the uncertain marker for the next attempt', 
 });
 
 for (const [name, response] of [
-    ['missing trackIds despite a visible tracks entry', { code: 200, playlist: { id: 9, trackCount: 1, tracks: [song(1)] } }],
-    ['missing trackCount', { code: 200, playlist: { id: 9, trackIds: [{ id: 1 }] } }],
+    ['missing trackIds', { code: 200, playlist: { id: 9, trackCount: 1, tracks: [song(2)] } }],
+    ['missing trackCount', { code: 200, playlist: { id: 9, trackIds: [{ id: 2 }] } }],
     ['null trackCount', playlistDetail([], { trackCount: null })],
-    ['truncated IDs even when the requested song is visible', playlistDetail([1], { trackCount: 2 })],
+    ['truncated IDs without the requested song', playlistDetail([2], { trackCount: 2 })],
     ['more IDs than the reported count', playlistDetail([2, 3], { trackCount: 1 })],
     ['wrong playlist identity', playlistDetail([1], { id: 10 })],
-    ['duplicate track IDs', playlistDetail([1, 1])],
-    ['invalid track ID', playlistDetail([1, false])],
-    ['explicit additional results', playlistDetail([1], { more: true })],
+    ['missing playlist identity', playlistDetail([1], { id: undefined })],
+    ['duplicate track IDs', playlistDetail([2, 2])],
+    ['invalid track ID', playlistDetail([2, false])],
+    ['explicit additional results', playlistDetail([2], { more: true })],
     ['empty partial result', playlistDetail([], { trackCount: 1 })],
-    ['malformed count', playlistDetail([1], { trackCount: '1 item' })]
+    ['malformed count', playlistDetail([2], { trackCount: '1 item' })]
 ]) test(`uncertain add cannot write or claim membership with ${name}`, async t => {
     const f = fixture(t, { shared: [playlist(9)] });
     f.state.handler = () => { throw new TypeError('Network failed'); };
@@ -402,7 +549,26 @@ for (const [name, response] of [
     assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
     assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
     assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail', '/playlist/detail']);
-    assert.doesNotMatch(f.message(), /已在歌单中/);
+    assert.equal(f.result().kind, 'unconfirmed'); assert.equal(f.result().retry, 'check'); assert.equal(f.message(), '');
+});
+
+for (const [name, response] of [
+    ['visible tracks without trackIds', { code: 200, playlist: { id: 9, trackCount: 2, tracks: [song(1)] } }],
+    ['missing count', playlistDetail([1], { trackCount: undefined })],
+    ['mismatched count', playlistDetail([1], { trackCount: 1000 })],
+    ['duplicate IDs', playlistDetail([1, 1])],
+    ['another invalid ID', playlistDetail([false, 1])],
+    ['more pages', playlistDetail([1], { more: true })],
+    ['malformed count', playlistDetail([1], { trackCount: 'unknown' })]
+]) test(`positive membership is confirmed from ${name} without another write`, async t => {
+    const f = fixture(t, { shared: [playlist(9)] });
+    f.state.handler = () => { throw new TypeError('Network failed'); };
+    assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
+    f.state.handler = () => response;
+    assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
+    assert.equal(f.result().kind, 'already');
+    assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail']);
+    assert.equal(f.message(), '');
 });
 
 for (const failure of [{ code: 502 }, { code: 512 }, { code: 500, msg: '歌曲已存在，请勿重复收藏' }, { code: 500, msg: 'Song already exists' }]) {
@@ -411,7 +577,7 @@ for (const failure of [{ code: 502 }, { code: 512 }, { code: 500, msg: '歌曲�
         f.state.handler = call => call.path === '/playlist/tracks' ? { body: failure } : playlistDetail([1]);
         assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
         assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail']);
-        assert.match(f.message(), /已在歌单中/);
+        assert.equal(f.result().kind, 'already'); assert.equal(f.message(), '');
     });
 }
 
@@ -419,14 +585,15 @@ test('duplicate codes alone cannot confirm success when complete membership is a
     const f = fixture(t, { shared: [playlist(9)] });
     f.state.handler = call => call.path === '/playlist/tracks' ? { code: 512 } : playlistDetail([2]);
     assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
-    assert.match(f.message(), /512/); assert.doesNotMatch(f.message(), /已在歌单中/);
+    assert.equal(f.result().kind, 'absent'); assert.equal(f.message(), '');
+    assert.ok(f.logs.some(([message]) => message.includes('512')));
     assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail']);
     assert.equal(f.myPlaylists.myPlaylistsCache, 'rendered');
 });
 
 test('an unverifiable duplicate stays guarded and the next retry reads before any write', async t => {
     const f = fixture(t, { shared: [playlist(9)] });
-    f.state.handler = call => call.path === '/playlist/tracks' ? { code: 502 } : playlistDetail([1], { trackCount: 2 });
+    f.state.handler = call => call.path === '/playlist/tracks' ? { code: 502 } : playlistDetail([2], { trackCount: 2 });
     assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
     f.state.handler = () => playlistDetail([1]);
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
@@ -449,7 +616,7 @@ test('uncertain add memory is bounded without evicting unresolved writes', async
     f.state.handler = () => { throw new TypeError('Network failed'); };
     for (let id = 1; id <= 200; id++) assert.equal(await f.actions.addToPlaylist(song(id), 9), false);
     assert.equal(await f.actions.addToPlaylist(song(201), 9), false);
-    assert.equal(f.calls.length, 200); assert.match(f.message(), /待确认的收藏过多/);
+    assert.equal(f.calls.length, 200); assert.match(f.result().message, /待确认的收藏过多/); assert.equal(f.message(), '');
     f.state.handler = call => call.path === '/playlist/detail' ? playlistDetail([1]) : { code: 200 };
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
     assert.equal(await f.actions.addToPlaylist(song(201), 9), true);
@@ -469,11 +636,11 @@ test('reset clears uncertain adds and stale confirmation cannot write for the ne
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
     response.resolve(playlistDetail([])); await settle();
     assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail', '/playlist/tracks']);
-    assert.match(f.message(), /已收藏到歌单/);
+    assert.equal(f.result().kind, 'added'); assert.equal(f.message(), '');
 });
 
-test('specialType 200 collection uses redheart like endpoint, not playlist/tracks', async t => {
-    const f = fixture(t, { shared: [playlist(9, 7, { specialType: 200 })] });
+test('specialType 5 collection uses redheart like endpoint, not playlist/tracks', async t => {
+    const f = fixture(t, { shared: [playlist(9, 7, { specialType: 5 })] });
     const menu = f.menu();
     assert.equal(await f.actions.addToPlaylist(song(1), 9), true);
     assert.equal(f.calls.length, 1); assert.equal(f.calls[0].path, '/song/like'); assert.equal(f.calls[0].body.like, 'true');
@@ -498,7 +665,8 @@ test('a targeted cache invalidation failure never purges public caches or misrep
 test('playlist failure cannot masquerade as success or invalidate caches', async t => {
     const f = fixture(t, { shared: [playlist(9)] });
     f.state.handler = () => ({ code: 200, data: { code: 500 } });
-    assert.equal(await f.actions.addToPlaylist(song(1), 9), false); assert.equal(f.invalidations.length, 0); assert.match(f.message(), /500/);
+    assert.equal(await f.actions.addToPlaylist(song(1), 9), false); assert.equal(f.invalidations.length, 0);
+    assert.equal(f.result().kind, 'unconfirmed'); assert.equal(f.message(), '');
 });
 
 test('picker supports inline load error, retry, safe text labels and empty state', async t => {
@@ -506,12 +674,13 @@ test('picker supports inline load error, retry, safe text labels and empty state
     f.state.handler = () => fail ? { code: 500 } : { code: 200, playlist: [playlist(9, 7, { name: '<img onerror=secret>' })], more: false };
     await f.actions.openPlaylistPicker({ id: 1, name: '<script>secret</script>' });
     assert.equal(f.dialog().querySelector('.song-actions-retry').hidden, false);
-    assert.match(f.dialog().querySelector('.song-actions-status').textContent, /500/);
+    assert.match(f.dialog().querySelector('.song-actions-status').textContent, /加载失败/);
     fail = false; f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
     assert.equal(f.dialog().querySelector('.song-actions-retry').hidden, true);
     assert.equal(f.dialog().querySelector('.song-actions-playlist-name').textContent, '<img onerror=secret>');
     assert.equal(f.dialog().querySelector('.song-actions-song').textContent, '<script>secret</script>');
-    f.actions.reset(); f.myPlaylists.myPlaylistsComplete = true; f.myPlaylists.myPlaylistsData = [];
+    f.actions.reset(); f.myPlaylists.invalidateAfterSongWrite();
+    f.state.handler = () => ({ code: 200, playlist: [], more: false });
     await f.actions.openPlaylistPicker(song(2)); assert.match(f.dialog().querySelector('.song-actions-status').textContent, /暂无/);
 });
 
@@ -524,8 +693,16 @@ test('picker mutation failure stays open with retry and pending rows disabled, s
     response.resolve({ code: 500 }); await settle();
     assert.equal(f.dialog().open, true); assert.equal(f.dialog().querySelector('.song-actions-retry').hidden, false);
     assert.equal(f.dialog().querySelector('.song-actions-playlist').disabled, false);
-    f.state.handler = () => ({ code: 200 }); f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
-    assert.equal(f.dialog().open, false); assert.match(f.message(), /已收藏/);
+    assert.equal(f.dialog().querySelector('.song-actions-retry').textContent, '检查收藏状态');
+    assert.equal(f.message(), '');
+    f.state.handler = call => call.path === '/playlist/detail' ? playlistDetail([]) : { code: 200 };
+    f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, true);
+    assert.equal(f.dialog().querySelector('.song-actions-retry').textContent, '重新收藏');
+    assert.equal(f.calls.filter(call => call.path === '/playlist/tracks').length, 1);
+    f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, false); assert.equal(f.message(), '');
+    assert.equal(f.calls.filter(call => call.path === '/playlist/tracks').length, 2);
 });
 
 test('picker retry confirms an uncertain addition, closes and restores focus without another write', async t => {
@@ -538,19 +715,119 @@ test('picker retry confirms an uncertain addition, closes and restores focus wit
     assert.equal(f.dialog().open, true); assert.equal(f.dialog().querySelector('.song-actions-retry').hidden, false);
     f.state.handler = () => playlistDetail([1]);
     f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
-    assert.equal(f.dialog().open, false); assert.match(f.message(), /已在歌单中/);
+    assert.equal(f.dialog().open, false); assert.equal(f.message(), '');
     assert.equal(f.doc.activeElement, f.nodes['track-collect']);
     assert.equal(f.calls.filter(call => call.path === '/playlist/tracks').length, 1);
 });
 
-test('Escape/close returns focus, aborts picker pagination and ignores late responses', async t => {
-    const f = fixture(t, { complete: false }), response = deferred(); f.state.handler = () => response.promise;
+for (const [body, kind] of [
+    [{ code: 502, msg: '参数错误' }, 'invalid'],
+    [{ code: 512, msg: '歌单已满' }, 'full'],
+    [{ code: 500, msg: '没有权限' }, 'forbidden'],
+    [{ code: 502, msg: '歌曲不存在' }, 'unavailable'],
+    [{ code: 429, msg: '请求过于频繁' }, 'rate-limited']
+]) test(`definite ${kind} errors stay local and do not trigger duplicate verification`, async t => {
+    const f = fixture(t, { shared: [playlist(9)] });
+    f.state.handler = () => body;
+    assert.equal(await f.actions.addToPlaylist(song(1), 9), false);
+    assert.equal(f.result().kind, kind); assert.equal(f.result().retry, null);
+    assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks']);
+    assert.equal(f.message(), '');
+});
+
+test('picker confirms a partial positive response without showing the old main-page warning', async t => {
+    const f = fixture(t, { shared: [playlist(9)] });
+    f.state.handler = call => call.path === '/playlist/tracks' ? { code: 512 }
+        : playlistDetail([1], { trackCount: 4000, more: true });
+    await f.actions.openPlaylistPicker(song(1));
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, false); assert.equal(f.message(), '');
+    assert.deepEqual(f.calls.map(call => call.path), ['/playlist/tracks', '/playlist/detail']);
+});
+
+test('unconfirmed membership stays inside the picker and records only safe diagnostics', async t => {
+    const f = fixture(t, { shared: [playlist(9)] });
+    f.state.handler = call => call.path === '/playlist/tracks' ? { code: 502, msg: 'cookie=synthetic-secret' }
+        : playlistDetail([2], { trackCount: 100 });
+    await f.actions.openPlaylistPicker(song(1));
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, true); assert.equal(f.message(), '');
+    assert.match(f.dialog().querySelector('.song-actions-status').textContent, /暂时无法确认收藏状态/);
+    assert.equal(f.dialog().querySelector('.song-actions-retry').textContent, '检查收藏状态');
+    assert.ok(f.logs.some(([message]) => message.includes('100') && message.includes('ID 数量 1')));
+    assert.doesNotMatch(JSON.stringify(f.logs), /synthetic|cookie|secret/);
+    f.state.handler = () => playlistDetail([1]);
+    f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, false);
+    assert.equal(f.calls.filter(call => call.path === '/playlist/tracks').length, 1);
+});
+
+test('picker login recovery is explicit and never resumes a collection automatically', async t => {
+    const f = fixture(t, { shared: [playlist(9)] }); let logins = 0;
+    f.auth.showLogin = () => { logins++; };
+    f.state.handler = () => ({ code: 301 });
+    await f.actions.openPlaylistPicker(song(1));
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().querySelector('.song-actions-retry').textContent, '重新登录');
+    assert.equal(f.message(), ''); assert.equal(logins, 0);
+    f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(logins, 1); assert.equal(f.dialog().open, false); assert.equal(f.calls.length, 1);
+});
+
+test('special liked playlist checks an uncertain like without writing it again', async t => {
+    const f = fixture(t, { shared: [playlist(9, 7, { specialType: 5 })] });
+    const handler = f.state.handler;
+    f.state.handler = call => {
+        if (call.path === '/song/like') { f.liked.add(1); throw new TypeError('Network failed'); }
+        return handler(call);
+    };
+    await f.actions.openPlaylistPicker(song(1));
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().querySelector('.song-actions-retry').textContent, '检查收藏状态');
+    f.dialog().querySelector('.song-actions-retry').dispatchEvent({ type: 'click' }); await settle();
+    assert.equal(f.dialog().open, false); assert.equal(f.message(), '');
+    assert.deepEqual(f.calls.map(call => call.path), ['/song/like', '/song/like/check']);
+});
+
+test('a fresh liked-playlist verification cannot be overwritten by an older check', async t => {
+    const f = fixture(t, { shared: [playlist(9, 7, { specialType: 5 })] }), response = deferred();
+    let checks = 0;
+    f.state.handler = call => {
+        assert.equal(call.path, '/song/like/check');
+        return ++checks === 1 ? response.promise : { code: 200, data: [1] };
+    };
+    f.actions.setCurrentTrack(track(1)); await settle();
+    assert.equal(await f.actions.addToPlaylist(song(1), 9, { verifyOnly: true }), true);
+    assert.equal(f.nodes['track-like'].getAttribute('aria-pressed'), 'true');
+    response.resolve({ code: 200, data: [] }); await settle();
+    assert.equal(f.nodes['track-like'].getAttribute('aria-pressed'), 'true');
+    assert.equal(f.calls.length, 2); assert.equal(f.message(), '');
+});
+
+test('late collection errors never overwrite a newly opened picker', async t => {
+    const f = fixture(t, { shared: [playlist(9)] }), response = deferred();
+    f.state.handler = () => response.promise;
+    await f.actions.openPlaylistPicker(song(1));
+    f.dialog().querySelector('.song-actions-playlist').dispatchEvent({ type: 'click' }); await settle();
+    f.dialog().querySelector('.song-actions-close').dispatchEvent({ type: 'click' });
+    await f.actions.openPlaylistPicker(song(2));
+    response.resolve({ code: 500 }); await settle();
+    assert.equal(f.dialog().open, true);
+    assert.equal(f.dialog().querySelector('.song-actions-song').textContent, 'Song 2');
+    assert.equal(f.dialog().querySelector('.song-actions-status').textContent, '');
+    assert.equal(f.message(), '');
+});
+
+test('Escape/close returns focus, detaches the picker and ignores late shared responses', async t => {
+    const f = fixture(t, { complete: false }), response = deferred();
+    f.actions.setCurrentTrack(track(1)); await settle();
+    f.state.handler = () => response.promise;
     const opener = f.nodes['track-collect']; opener.focus();
     const opening = f.actions.openPlaylistPicker(song(1)); await settle();
     assert.equal(f.doc.activeElement, f.dialog().querySelector('.song-actions-close'));
     let prevented = false; f.dialog().dispatchEvent({ type: 'cancel', preventDefault() { prevented = true; } });
     assert.equal(prevented, true); assert.equal(f.dialog().open, false); assert.equal(f.doc.activeElement, opener);
-    assert.equal(f.calls[0].options.signal.aborted, true); assert.equal(await opening, false);
+    assert.equal(f.calls.at(-1).options.signal.aborted, false); assert.equal(await opening, false);
     response.resolve({ code: 200, playlist: [playlist(9)], more: false }); await settle();
     assert.equal(f.dialog().querySelectorAll('.song-actions-playlist').length, 0);
 });
@@ -567,7 +844,7 @@ test('reset cancels every read/write, clears account memory and closes picker wi
     const f = fixture(t, { complete: false }), response = deferred();
     f.actions.setCurrentTrack(track(1)); await settle(); f.state.handler = () => response.promise;
     const mutation = f.actions.toggleLike(song(1)), opening = f.actions.openPlaylistPicker(song(1)); await settle();
-    f.auth.generation++; f.auth.neteaseUser = null; f.auth.neteaseCookie = ''; f.actions.reset();
+    f.auth.generation++; f.auth.neteaseUser = null; f.auth.neteaseCookie = ''; f.actions.reset(); f.myPlaylists.reset();
     assert.equal(await mutation, false); assert.equal(await opening, false);
     assert.equal(f.dialog().open, false); assert.equal(f.nodes['track-like'].hidden, true);
     assert.equal(f.dialog().querySelector('.song-actions-song').textContent, '');
@@ -613,7 +890,7 @@ test('CSS is scoped and provides 44px hit areas and constrained mobile dialog ov
     assert.doesNotMatch(css, /(?:^|\n)(?:body|button|dialog|svg|h2)\s*\{/);
 });
 
-test('shared favorite controls follow the lyric mode in the playback row, not the metadata header', async () => {
+test('shared favorite controls stay anchored to the playback row without duplicating desktop/mobile actions', async () => {
     const html = await fs.readFile(new URL('../src/index.html', import.meta.url), 'utf8');
     const header = html.slice(html.indexOf('<div class="track-header">'), html.indexOf('<div class="lyrics-area">'));
     const controls = html.slice(html.indexOf('<div class="controls-row">'), html.indexOf('<footer class="project-footer"'));
@@ -624,4 +901,26 @@ test('shared favorite controls follow the lyric mode in the playback row, not th
         assert.ok(controls.includes(`id="${id}"`));
     }
     assert.match(controls, /id="track-collect"[^>]*class="btn"[^>]*aria-label="加入歌单"/);
+});
+
+test('desktop favorites share the mobile glass capsule and leave the playback row while mobile stays left-aligned', async () => {
+    const css = await fs.readFile(new URL('../src/styles/song-actions.css', import.meta.url), 'utf8');
+    const desktop = css.slice(css.indexOf('@media (min-width: 901px)'), css.indexOf('@media (max-width: 900px)'));
+    const mobile = css.slice(css.indexOf('@media (max-width: 900px)'), css.indexOf('.song-actions-dialog {'));
+    assert.match(css, /\.track-song-actions\s*\{[^}]*position: absolute;[^}]*flex-direction: column/);
+    assert.match(css, /\.controls-row \.track-song-actions \.btn\s*\{[^}]*width: 44px; height: 44px/);
+    assert.match(desktop, /\.track-song-actions\s*\{\s*right: 0; bottom:/);
+    assert.match(desktop, /bottom: calc\(100% \+ clamp\(52px, calc\(10vh - 24px\), 72px\)\)/);
+    assert.doesNotMatch(desktop, /display: none|--controls-width|gap:/);
+    assert.match(mobile, /left: 0; bottom: calc\(100% \+ 6px\)/);
+});
+
+test('desktop idle capsule fades out slowly, wakes quickly and remains clickable during account operations', async () => {
+    const css = await fs.readFile(new URL('../src/styles/song-actions.css', import.meta.url), 'utf8');
+    const idle = css.slice(css.indexOf('@media (min-width: 901px) and (hover: hover)'), css.indexOf('@media (max-width: 900px)'));
+    assert.match(idle, /opacity: 1; transition: opacity 150ms ease-out/);
+    assert.match(idle, /opacity: \.3; transition: opacity 800ms/);
+    assert.match(idle, /:has\(\[aria-busy="true"\]\)/);
+    assert.match(idle, /:has\(:focus-visible\)/);
+    assert.doesNotMatch(idle, /pointer-events|display: none|will-change|transform|backdrop-filter/);
 });

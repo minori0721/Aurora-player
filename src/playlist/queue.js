@@ -14,13 +14,19 @@ export function createQueue({
     playback: playbackService,
     playlistView: playlistViewService,
     prefetch: prefetchService,
-    songDetails: songDetailsService
+    songDetails: songDetailsService,
+    songActions: songActionsService
 } = {}) {
     const plan = new PlaybackPlan();
     let playlist = plan.items, playMode = 0;
     let replacePrompt = null, replaceVersion = 0;
 
+    function syncCurrentTrack() {
+        songActionsService?.setCurrentTrack(plan.current);
+    }
+
     function changed() {
+        syncCurrentTrack();
         prefetchService.retargetNextPreload();
         const locked = prefetchService.hasLockedNextPreloadTarget(playlist, prefetchService.nextPreloadIndex)
             ? prefetchService.nextPreloadIndex : null;
@@ -45,6 +51,7 @@ export function createQueue({
     }
 
     function afterBaseChange() {
+        syncCurrentTrack();
         prefetchService.retargetNextPreload();
     }
 
@@ -139,6 +146,7 @@ export function createQueue({
         i = plan.select(i, remember);
         prefetchService.retargetNextPreload();
         const track = playlist[i];
+        syncCurrentTrack();
         const selectionToken = playbackService.beginPlaybackAction();
         const importedQueue = onlinePlaylistService.currentPlaylistData?.imported
             && onlinePlaylistService.currentPlaylistData.importToken === activePlaylistQueueToken
@@ -259,9 +267,10 @@ export function createQueue({
     let initialized = false;
     return {
         get playlist() { return playlist; },
-        set playlist(value) { contentService.clearMusicQueueFeedback(); plan.reset(value); playlist = plan.items; },
+        set playlist(value) { contentService.clearMusicQueueFeedback(); plan.reset(value); playlist = plan.items; syncCurrentTrack(); },
+        get currentTrack() { return plan.current; },
         get curIdx() { return plan.index; },
-        set curIdx(value) { plan.setIndex(value); },
+        set curIdx(value) { plan.setIndex(value); syncCurrentTrack(); },
         get basePlaylist() { return plan.base; },
         get baseCurIdx() { return plan.baseIndex; },
         get baseStructureRevision() { return plan.baseStructureRevision; },
@@ -272,7 +281,7 @@ export function createQueue({
         get manualState() { return { current: plan.isTemporary ? plan.current : null, pending: plan.pending.slice() }; },
         indexOfTrack(track) { return plan.indexOf(track); },
         findSongIndexes(id) { return plan.findSongIndexes(id); },
-        restoreManualState(state) { plan.restoreManual(state); },
+        restoreManualState(state) { plan.restoreManual(state); syncCurrentTrack(); },
         appendBaseTracks(tracks) { plan.appendBaseTracks(tracks); afterBaseChange(); },
         replaceBaseTracks(tracks, index) { plan.replaceBaseTracks(tracks, index); afterBaseChange(); },
         removeBaseTrack(index, selectedIndex) { plan.removeBaseTrack(index, selectedIndex); afterBaseChange(); },

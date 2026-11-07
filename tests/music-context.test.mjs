@@ -54,6 +54,15 @@ function fixture(t) {
     return { host, dom, elements, requests, browser, content, calls, logs, row, click };
 }
 
+test('long online artist groups retain individual escaped links inside their own layout block', t => {
+    const f = fixture(t);
+    f.content.setMainMusicEntityLinks({ id: 1, name: 'Song', ar: [{ id: 11, name: 'Artist "A"' }, { id: 12, name: '<Artist B>' }], al: { id: 2, name: 'Album' } });
+    const markup = f.dom.el.artist.innerHTML;
+    assert.match(markup, /^<span class="track-artist-names" title="Artist &quot;A&quot;, &lt;Artist B&gt;">/);
+    assert.match(markup, /data-music-artist="11"/); assert.match(markup, /data-music-artist="12"/);
+    assert.doesNotMatch(markup, /<Artist B>/);
+});
+
 for (const journey of ['same tab', 'search and back', 'close and reopen']) {
     test(`retained playlist songs stay playable after ${journey} without redraw or requests`, async t => {
         const f = fixture(t);

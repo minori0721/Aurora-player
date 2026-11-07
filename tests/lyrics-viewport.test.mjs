@@ -10,7 +10,7 @@ test('lyric padding stays immediate when reduced-motion sets a global transition
     assert.match(rule, /transition:\s*none\s*;/);
 });
 
-function fixture({ cover = null, desktop = true, reduced = true, withVisuals = false, nativeSmooth = false, onSeek = null } = {}) {
+function fixture({ cover = null, desktop = true, reduced = true, withVisuals = false, nativeSmooth = false, onSeek = null, playbackFrame = false } = {}) {
     let now = 0, sequence = 0, selected = false, resizeCallback = () => {}, geometryReads = 0;
     const timers = new Map(), frames = new Map(), moves = [], seeks = [];
     const doc = new FakeElement(), shell = new FakeElement(), viewport = new FakeElement(), content = new FakeElement();
@@ -35,7 +35,7 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
     content.append(...lines);
     viewport.contains = node => node === viewport || node === content || lines.includes(node);
     viewport.focus = () => { doc.activeElement = viewport; };
-    Object.defineProperty(viewport, 'scrollHeight', { get: () => (parseFloat(content.style.paddingTop) || 0) + (parseFloat(content.style.paddingBottom) || 0) + 19 * 60 + 44 });
+    Object.defineProperty(viewport, 'scrollHeight', { get: () => (parseFloat(content.style.paddingTop) || 0) + (parseFloat(content.style.paddingBottom) || 0) + 19 * 60 + lines.at(-1).offsetHeight });
     viewport.scrollTo = options => { if (!nativeSmooth || options.behavior !== 'smooth') viewport.scrollTop = options.top; moves.push(options); };
     doc.hidden = false; doc.getSelection = () => ({ isCollapsed: !selected, anchorNode: lines[0] });
     const environment = Object.assign(new FakeElement(), {
@@ -47,6 +47,13 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
         cancelAnimationFrame(id) { frames.delete(id); },
         ResizeObserver: class { constructor(callback) { resizeCallback = callback; } observe(node) { observed.push(node); } disconnect() {} }
     });
+    if (playbackFrame) {
+        layout.getBoundingClientRect = () => ({ top: 300, height: 400 });
+        controls.getBoundingClientRect = () => ({ top: 632, height: 68 });
+        viewport.getBoundingClientRect = () => ({ top: header.offsetHeight + 300, height: viewport.clientHeight });
+        header.offsetHeight = 64; viewport.clientHeight = 268;
+        environment.getComputedStyle = () => ({ scrollPaddingBottom: '110px' });
+    }
     const flush = () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(now); } };
     const tick = duration => {
         const end = now + duration;
@@ -60,13 +67,14 @@ function fixture({ cover = null, desktop = true, reduced = true, withVisuals = f
     const event = (target, type, extra = {}) => target.dispatchEvent({ type, target, preventDefault() {}, stopPropagation() {}, ...extra });
     let view;
     view = createLyricViewport(viewport, { content, returnButton: button, timeHint: hint, alignmentTarget: cover, environment, document: doc,
+        ...(playbackFrame ? { layoutTarget: layout, controlsTarget: controls } : {}),
         isPlaying: () => state.playing, seek: time => { seeks.push(time); if (onSeek) return onSeek(time, view); view.setActive(time / 5); } });
     view.setLines(lines); view.setActive(2);
     const scroll = top => { viewport.scrollTop = top; event(viewport, 'scroll'); flush(); };
     const wheel = () => event(viewport, 'wheel', { deltaY: 120 });
     const click = line => event(content, 'click', { target: line });
     return { view, shell, viewport, content, button, hint, state, lines, doc, environment, timers, frames, moves, seeks,
-        event, tick, flush, scroll, wheel, click, header, controls, observed, resize: () => resizeCallback(), geometryReads: () => geometryReads,
+        event, tick, flush, scroll, wheel, click, layout, header, controls, observed, resize: entries => resizeCallback(entries), geometryReads: () => geometryReads,
         select(value) { selected = value; event(doc, 'selectionchange'); } };
 }
 
@@ -308,23 +316,23 @@ test('mobile keeps its lifted anchor and switching breakpoints restores the corr
     let reads = 0;
     const cover = new FakeElement(); cover.getBoundingClientRect = () => { reads++; return { top: 10, height: 100 }; };
     const f = fixture({ cover, desktop: false });
-    assert.equal(f.content.style.paddingTop, '63px'); assert.equal(reads, 0);
+    assert.ok(Math.abs(parseFloat(f.content.style.paddingTop) - 63) < .001); assert.equal(reads, 0);
     assert.equal(f.viewport.scrollTop, 142);
     f.state.desktop = true; f.event(f.environment, 'resize'); f.flush();
     assert.equal(f.content.style.paddingTop, '60px');
     f.state.desktop = false; f.event(f.environment, 'resize'); f.flush();
-    assert.equal(f.content.style.paddingTop, '63px'); assert.equal(f.content.style.paddingBottom, '117px');
+    assert.ok(Math.abs(parseFloat(f.content.style.paddingTop) - 63) < .001); assert.equal(f.content.style.paddingBottom, '117px');
     assert.equal(f.lines[2].offsetTop + 22 - f.viewport.scrollTop, 63); f.view.dispose();
 });
 
 for (const height of [80, 120, 180, 200, 305, 480]) {
-    test(`mobile anchor lift is bounded by 28px and 15 percent at ${height}px`, () => {
+    test(`mobile fallback anchor uses the upper reading region at ${height}px`, () => {
         const f = fixture({ desktop: false });
         f.viewport.clientHeight = height; f.view.relayout();
-        const anchor = height / 2 - Math.min(28, height * .15);
+        const anchor = height * .35;
         assert.equal(parseFloat(f.content.style.paddingTop), anchor);
         assert.equal(parseFloat(f.content.style.paddingBottom), height - anchor);
-        assert.equal(f.lines[2].offsetTop + 22 - f.viewport.scrollTop, anchor);
+        assert.ok(Math.abs(f.lines[2].offsetTop + 22 - f.viewport.scrollTop - anchor) < .001);
         f.view.dispose();
     });
 }
@@ -350,6 +358,75 @@ test('mobile cue changes and subtitle reflow never retarget the layout anchor', 
     f.view.setActive(7); f.tick(10000);
     assert.equal(f.moves.length, moves); assert.equal(f.timers.size, 0); assert.equal(f.frames.size, 0);
     f.view.dispose();
+});
+
+test('mobile metadata consumes previous lyrics without moving the playback-frame anchor', () => {
+    const f = fixture({ desktop: false, withVisuals: true, playbackFrame: true });
+    const anchor = () => f.viewport.getBoundingClientRect().top + f.lines[2].offsetTop + 17 - f.viewport.scrollTop;
+    const fixed = anchor();
+    assert.ok(Math.abs(fixed - 457.8) < .001);
+    const oldPadding = parseFloat(f.content.style.paddingTop);
+    f.header.offsetHeight += 64; f.viewport.clientHeight -= 64;
+    f.resize([{ target: f.viewport }]);
+    assert.ok(Math.abs(anchor() - fixed) < .001, 'metadata resize must be compensated before the next paint');
+    assert.equal(parseFloat(f.content.style.paddingTop), oldPadding - 64);
+    for (const index of [3, 7, 1, 19, 0, 2]) {
+        f.view.setActive(index);
+        const line = f.lines[index], original = line.querySelector('.lyric-original');
+        for (const height of [28, 56, 84]) {
+            original.offsetHeight = height; line.offsetHeight = height + 44;
+            f.view.relayout();
+            assert.ok(Math.abs(f.viewport.getBoundingClientRect().top + line.offsetTop + 3 + height / 2 - f.viewport.scrollTop - fixed) < .001);
+        }
+    }
+    f.view.setActive(2); f.wheel(); f.scroll(600); f.view.returnToCurrent();
+    assert.ok(Math.abs(f.viewport.getBoundingClientRect().top + f.lines[2].offsetTop + 45 - f.viewport.scrollTop - fixed) < .001);
+    f.view.dispose(); assert.equal(f.frames.size, 0); assert.equal(f.timers.size, 0);
+});
+
+test('short mobile lyric regions reserve the subtitle reading tail instead of only a percentage', () => {
+    const f = fixture({ desktop: false, playbackFrame: true, withVisuals: true });
+    f.viewport.clientHeight = 150;
+    f.layout.getBoundingClientRect = () => ({ top: 300, width: 390, height: 282 });
+    f.controls.getBoundingClientRect = () => ({ top: 514, height: 68 });
+    f.viewport.getBoundingClientRect = () => ({ top: 364, width: 370, height: 150 });
+    f.view.relayout();
+    assert.equal(parseFloat(f.content.style.paddingTop), 40);
+    assert.equal(parseFloat(f.content.style.paddingBottom), 110);
+    const anchor = f.content.style.paddingTop;
+    f.view.setActive(19); f.view.setLines(f.lines); f.view.setActive(2);
+    assert.equal(f.content.style.paddingTop, anchor, 'rerendering lyrics must retain the same frame anchor');
+    f.view.dispose();
+});
+
+test('mobile frame size and font budgets invalidate the anchor but repeated cues schedule no layout', () => {
+    const f = fixture({ desktop: false, playbackFrame: true });
+    f.environment.getComputedStyle = () => ({ scrollPaddingBottom: '220px' });
+    f.view.relayout(); assert.equal(parseFloat(f.content.style.paddingBottom), 220);
+    const before = f.geometryReads();
+    for (let i = 0; i < 100; i++) f.view.setActive(2);
+    assert.equal(f.geometryReads(), before); assert.equal(f.frames.size, 0);
+    f.doc.hidden = true; f.resize([{ target: f.viewport }]);
+    assert.equal(f.geometryReads(), before);
+    f.view.dispose();
+});
+
+test('title line boxes leave descender room and mobile fading has a bounded reading edge', () => {
+    const css = fs.readFileSync(new URL('../src/styles/base.css', import.meta.url), 'utf8');
+    const mobile = fs.readFileSync(new URL('../src/styles/responsive.css', import.meta.url), 'utf8');
+    assert.match(css, /\.track-title\s*\{[^}]*line-height:\s*1\.3\s*;[^}]*-webkit-line-clamp:\s*2/);
+    assert.match(mobile, /--lyric-bottom-fade:\s*10px/);
+    assert.match(mobile, /scroll-padding-bottom:\s*calc\(/);
+    assert.match(mobile, /black calc\(100% - var\(--lyric-bottom-fade\)\)/);
+    assert.doesNotMatch(mobile, /--lyric-header-budget/);
+});
+
+test('metadata geometry notifications do not add work while the page is hidden', () => {
+    const f = fixture({ desktop: false, playbackFrame: true }), reads = f.geometryReads();
+    f.doc.hidden = true; f.resize([{ target: f.viewport }]);
+    assert.equal(f.geometryReads(), reads); assert.equal(f.frames.size, 0);
+    f.doc.hidden = false; f.event(f.doc, 'visibilitychange'); f.flush();
+    assert.ok(f.geometryReads() > reads); f.view.dispose();
 });
 
 test('mobile manual browsing and both return paths use the same stable anchor', () => {

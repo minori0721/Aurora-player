@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLyrics } from '../src/lyrics/controller.js';
+import { createMetadata } from '../src/audio/metadata.js';
 import { createHost, FakeElement } from './helpers/host.mjs';
 
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -74,6 +75,18 @@ test('quality supplementation reuses badges and does not accumulate whitespace o
     assert.equal(quality.title, 'FLAC 192kHz/24bit');
     f.lyrics.setArtistTag('', '');
     assert.deepEqual(f.artist.children, [link]);
+});
+
+test('long local artist names have an independent text block and keep quality badges separate', t => {
+    const f = fixture(t), title = new FakeElement();
+    const metadata = createMetadata({ dom: { el: { artist: f.artist, title } }, covers: { setMainCover() {} }, lyrics: {} });
+    const artist = '花澤さくら / 紫咲ほたる / Camden Cox / Karen Harding / <script>not markup</script>';
+    metadata.applyMetadata({ title: 'A long local title', artist }, 'local');
+    const names = f.artist.querySelector('.track-artist-names');
+    assert.equal(names.textContent, artist); assert.equal(names.title, artist);
+    f.lyrics.setArtistTag('本地文件', 'FLAC 192kHz/24bit');
+    assert.deepEqual(f.artist.children.map(node => node.className), ['track-artist-names', 'tag-source', 'tag-quality']);
+    assert.equal(f.artist.children[0], names);
 });
 
 test('replacing artist contents recreates only the new track badges and accepts empty values', t => {

@@ -36,7 +36,7 @@ function fixture(t, cookie = 'MUSIC_U=synthetic') {
         download: { cancelDownloadProbes: change }, onlinePlaylist: { cancelPlaylistLoad: change, refreshQueueSource() { state.playlistRefreshes++; } },
         prefetch: { cancelNextPreload: options => { prefetchResets.push(options); change(); }, resetNeteaseDetailPrefetchState: change },
         cache: { clearAccountJsonCache: change, purgeSensitiveIdbCache: async () => {} },
-        resolver: { clearNeteaseResolvedAudioCache: options => { resolverResets.push(options); change(); } }, myPlaylists: { myPlaylistsLoadToken: 0 }, debug: { log() {} } });
+        resolver: { clearNeteaseResolvedAudioCache: options => { resolverResets.push(options); change(); } }, myPlaylists: { reset: change }, debug: { log() {} } });
     t.after(async () => {
         for (const controller of auth.accountAbortControllers) controller.abort();
         await flush();

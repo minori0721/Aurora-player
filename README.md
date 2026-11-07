@@ -1,6 +1,6 @@
 # <img src="src/assets/aurora.svg" width="44" height="44" align="middle" alt=""> Aurora Player（极光播放器）
 
-**当前版本：v0.1.10**
+**当前版本：v0.1.11**
 
 在线体验：[music.moerika.com](https://music.moerika.com/) · [备用站点](https://player.minori0721.dpdns.org/)
 
@@ -20,8 +20,10 @@
 
 ## 本版变化
 
-- 修复 Vercel、GitHub Pages 和本地单文件默认下载地址不可用的问题，改用已验证的公共 Cloudflare 代理。
-- Cloudflare 自部署继续使用本站下载入口，自定义代理地址保持优先。
+- 修复收藏到歌单需要先打开「我的歌单」的问题，两个入口共享分页请求；恢复的歌曲在播放前也能收藏。
+- 收藏结果与重试留在歌单选择器内，桌面红心和加入歌单改用右侧玻璃胶囊，播放时闲置会渐淡。
+- 调整长标题、多歌手与手机歌词的空间分配，保持当前歌词位置，减少下一句及翻译被遮挡；桌面变窄时先收紧两侧留白。
+- 下载窗口加宽，音质参数与括号说明分组换行。
 
 完整版本记录见 [changelog.md](changelog.md)。
 

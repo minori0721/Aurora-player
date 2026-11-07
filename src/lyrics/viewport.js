@@ -5,14 +5,14 @@ import { createLyricWrapping } from './wrapping.js';
 export const LYRIC_RESUME_DELAY_MS = 6000;
 const SCROLL_SETTLE_MS = 180;
 
-export function createLyricViewport(viewport, { content, returnButton, timeHint, seek, isPlaying, alignmentTarget = null,
+export function createLyricViewport(viewport, { content, returnButton, timeHint, seek, isPlaying, alignmentTarget = null, layoutTarget = null, controlsTarget = null,
     environment = window, document: doc = document } = {}) {
     let lines = [], centers = [], geometry = [], active = -1, preview = null, browsing = false, disposed = false;
     let anticipated = -1;
     let followTarget = null, followEnd = null, layoutSmooth = false, pendingReflow = false;
     let scrolling = false, layoutDirty = false, refreshWrapping = false, returning = false, selecting = false, returnTimer = 0;
     let returnRevision = 0;
-    let shownTime = null;
+    let shownTime = null, shownFollowPoint = null, mobileFocus = null;
     let resumeTimer = 0, settleTimer = 0, paintFrame = 0, layoutFrame = 0, generation = 0;
     let playing = !!isPlaying(), pointer = null, touches = 0, touchMoved = false, keyboardReading = false;
     let suppressClickUntil = 0, lastScrollAt = -Infinity;
@@ -229,7 +229,8 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         const offset = index >= 0 ? centers[index] - top() - followPoint : 0;
         const visibleHeight = height();
         // Keep one mobile anchor across cues and text modes, independent of line length.
-        followPoint = visibleHeight / 2 - (desktop.matches ? 0 : Math.min(28, visibleHeight * .15));
+        followPoint = visibleHeight * (desktop.matches ? .5 : .35);
+        if (desktop.matches) mobileFocus = null;
         if (alignmentTarget && desktop.matches) {
             const box = viewport.getBoundingClientRect(), target = alignmentTarget.getBoundingClientRect();
             const point = target.top + target.height / 2 - box.top;
@@ -237,8 +238,27 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
                 // Keep the desktop anchor inside the unfaded portion of the lyric viewport.
                 followPoint = Math.max(visibleHeight * .15, Math.min(visibleHeight * .85, point));
             }
+        } else if (!desktop.matches && layoutTarget && controlsTarget) {
+            const box = viewport.getBoundingClientRect(), layout = layoutTarget.getBoundingClientRect();
+            const controls = controlsTarget.getBoundingClientRect();
+            const style = environment.getComputedStyle(viewport);
+            const readingTail = parseFloat(style.scrollPaddingBottom) || 0;
+            const headroom = Math.min(visibleHeight * .5, parseFloat(style.scrollPaddingTop) || visibleHeight * .1);
+            if (layout.height > 0 && controls.height > 0 && visibleHeight > 0) {
+                const key = [layout.width, layout.height, controls.height, box.width, readingTail].join(':');
+                // Retain the distance from the controls when metadata or subtitles change height.
+                if (mobileFocus?.key !== key) mobileFocus = { key, distance: Math.max(visibleHeight * .65, readingTail) };
+                const bottom = Math.min(box.top + visibleHeight, controls.top);
+                const point = bottom - mobileFocus.distance - box.top;
+                followPoint = Math.max(headroom, Math.min(visibleHeight * .9, point));
+            }
         }
-        const paddingTop = lines.length ? `${followPoint}px` : '0px';
+        const point = `${followPoint}px`;
+        if (shownFollowPoint !== followPoint) {
+            shownFollowPoint = followPoint;
+            viewport.style.setProperty('--lyric-follow-point', point);
+        }
+        const paddingTop = lines.length ? point : '0px';
         const paddingBottom = lines.length ? `${visibleHeight - followPoint}px` : '0px';
         if (content.style.paddingTop !== paddingTop) content.style.paddingTop = paddingTop;
         if (content.style.paddingBottom !== paddingBottom) content.style.paddingBottom = paddingBottom;
@@ -410,8 +430,14 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
     });
     listen(environment, 'resize', () => { cancelFollowing(); cancelLayoutShifts(); followTarget = null; scheduleLayout(); });
     listen(doc.fonts, 'loadingdone', () => { wrapping.invalidate(); scheduleLayout(); });
-    const observer = environment.ResizeObserver ? new environment.ResizeObserver(scheduleLayout) : null;
+    const observer = environment.ResizeObserver ? new environment.ResizeObserver(entries => {
+        if (disposed || doc.hidden) return;
+        if (entries?.some(entry => entry.target !== content)) relayout();
+        else scheduleLayout();
+    }) : null;
     observer?.observe(viewport); observer?.observe(content);
+    if (layoutTarget) observer?.observe(layoutTarget);
+    if (controlsTarget) observer?.observe(controlsTarget);
     if (alignmentTarget) {
         observer?.observe(alignmentTarget);
         if (shell.parentElement) {

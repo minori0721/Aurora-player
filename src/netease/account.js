@@ -19,6 +19,7 @@ export function createAuth({
     playback: playbackService,
     prefetch: prefetchService,
     resolver: resolverService,
+    queue: queueService,
     songActions: songActionsService,
     cloud: cloudService
 } = {}) {
@@ -66,7 +67,7 @@ export function createAuth({
         cloudService?.reset();
         const generation = authGeneration;
         Promise.resolve().then(() => {
-            if (generation === authGeneration) songActionsService?.setCurrentTrack(downloadService._currentPlaying);
+            if (generation === authGeneration) songActionsService?.setCurrentTrack(queueService?.currentTrack);
         });
         loginStatusRequest = null;
         loginStatusConfirmed = null;
@@ -91,15 +92,7 @@ export function createAuth({
         cacheService.clearAccountJsonCache();
         resolverService.clearNeteaseResolvedAudioCache();
         prefetchService.resetNeteaseDetailPrefetchState();
-        if (myPlaylistsService.myPlaylistsAbortController) {
-            try { myPlaylistsService.myPlaylistsAbortController.abort(); } catch (_) {}
-            myPlaylistsService.myPlaylistsAbortController = null;
-        }
-        myPlaylistsService.myPlaylistsLoadToken++;
-        myPlaylistsService.myPlaylistsCache = null;
-        myPlaylistsService.myPlaylistsData = [];
-        myPlaylistsService.myPlaylistsLoading = false;
-        myPlaylistsService.myPlaylistsLoadPromise = null;
+        myPlaylistsService.reset();
         return authGeneration;
     }
 
@@ -266,11 +259,12 @@ export function createAuth({
                 && Number.isSafeInteger(Number(json.data?.profile?.userId)) && Number(json.data.profile.userId) > 0) {
                 neteaseUser = json.data.profile;
                 loginStatus = 'authenticated';
+                songActionsService?.setCurrentTrack(queueService?.currentTrack);
                 void refreshVipInfo({ force: true });
                 debugService.log(`已登录：${neteaseUser.nickname}`, 'success');
                 const currentRoute = parseMusicRoute();
                 if (currentRoute?.kind === 'playlist-mine' && domService.neteasePanel.classList.contains('show')) {
-                    void myPlaylistsService.loadMyPlaylists();
+                    void browserService.renderMusicRoute(currentRoute, domService.neteaseBrowserScroll.scrollTop);
                 }
                 return true;
             }
