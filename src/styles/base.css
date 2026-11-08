@@ -192,6 +192,15 @@ body {
 .lyrics-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 .lyrics-scroll { position: relative; display: flow-root; width: 100%; text-align: left; box-sizing: border-box; transition: none; }
 .lyrics-scroll > .lyric-original, .lyrics-scroll > .lyric-translation { min-width: 0; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.lyrics-static .lyrics-box { mask-image: none; -webkit-mask-image: none; }
+.lyric-message {
+    box-sizing: border-box; padding: max(12px, calc(var(--lyric-follow-point, 100px) - .8rem)) 2px 16px;
+    color: var(--text-sub); font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere;
+}
+.lyric-message-details { margin-top: 10px; font-size: .85rem; line-height: 1.5; white-space: pre-wrap; }
+.lyric-untimed { padding: 16px 2px; color: var(--text-main); font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; }
+.lyric-untimed > .lyric-original, .lyric-untimed > .lyric-translation { white-space: pre-wrap; }
+.lyric-untimed > .lyric-translation { margin-top: 12px; line-height: 1.6; }
 .lyric-line { position: relative; font-size: 1.1rem; color: var(--text-sub); margin: 10px 0; min-height: 36px; padding: 3px 0; box-sizing: border-box; overflow-wrap: anywhere; cursor: pointer; opacity: 0.6; transition: color 0.24s ease, opacity 0.24s ease, transform 0.32s cubic-bezier(.22, 1, .36, 1); line-height: 1.55; transform: translateZ(0) scale(1); transform-origin: left var(--lyric-anchor-y, 1em); }
 .lyric-line.active { color: var(--text-main); font-weight: 800; opacity: 1; transform: translateZ(0) scale(1.16); }
 .lyric-line[data-lyric-time] { min-width: 0; padding-inline: 2px; transform: none; }

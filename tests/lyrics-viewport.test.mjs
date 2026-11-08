@@ -87,6 +87,31 @@ test('lyrics follow only when the active line changes, with no persistent idle t
     f.view.dispose();
 });
 
+test('static lyric views remove timed scrolling, return hints and tasks, then restore timed following', () => {
+    const f = fixture();
+    f.wheel(); f.scroll(600);
+    assert.equal(f.button.hidden, false);
+    f.view.returnToCurrent();
+    assert.equal(f.shell.classList.contains('lyrics-static'), false);
+    f.view.reset();
+    assert.equal(f.shell.classList.contains('lyrics-static'), true);
+    f.view.setLines([]);
+    assert.equal(f.shell.classList.contains('lyrics-static'), true);
+    assert.equal(f.shell.classList.contains('lyrics-browsing'), false);
+    assert.equal(f.button.hidden, true); assert.equal(f.hint.hidden, true);
+    assert.equal(f.viewport.scrollTop, 0);
+    assert.equal(f.content.style.paddingTop, '0px');
+    assert.equal(f.timers.size, 0); assert.equal(f.frames.size, 0);
+    f.wheel(); f.scroll(300); f.tick(7000);
+    assert.equal(f.viewport.scrollTop, 300, 'untimed text must not snap back after the resume delay');
+    assert.equal(f.button.hidden, true); assert.equal(f.hint.hidden, true);
+    f.view.setLines(f.lines); f.view.setActive(3);
+    assert.equal(f.shell.classList.contains('lyrics-static'), false);
+    assert.equal(f.viewport.scrollTop, 202);
+    assert.equal(f.timers.size, 0); assert.equal(f.frames.size, 0);
+    f.view.dispose();
+});
+
 test('continuous browsing cancels follow only once and defers geometry work until the gesture ends', () => {
     const f = fixture(), before = f.moves.length;
     f.wheel(); f.scroll(600);

@@ -1,4 +1,4 @@
-import { escapeHtml, fmtTime } from '../shared/text.js';
+import { fmtTime } from '../shared/text.js';
 import { createAudioQualityProbe, describeAudioQualityFromBuffer, parseFlacTagsFromArrayBuffer } from './quality.js';
 import { extractLyricsText } from '../lyrics/parser.js';
 
@@ -41,7 +41,7 @@ export function createLocalPlayback({
         playbackService.setCurrentDownloadTrack(track, myPlayToken, false);
         domService.el.title.textContent = track.name;
         playlistViewService.ensurePlaylistRenderedAndActive();
-        domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
+        lyricsService.showLyricStatus('正在读取音频...');
         const audioUnlockPromise = playbackService.unlockAudioContext('local-track');
         if (!track.file && track.fileHandle && typeof track.fileHandle.getFile === 'function') {
             try {
@@ -78,7 +78,7 @@ export function createLocalPlayback({
                 ? `本地文件需要授权，请点击播放并允许访问：${label}`
                 : `本地文件未恢复，请重新导入：${label}`;
             playbackService.setPlaybackStatus('error', { error: message });
-            domService.el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">${escapeHtml(message)}</div>`;
+            lyricsService.showLyricStatus(message);
             importsService.showImportSummary(message, true);
             playbackService.releasePlaybackLoad(load);
             return;
@@ -99,7 +99,7 @@ export function createLocalPlayback({
 
         contentService.setMainMusicEntityLinks(null);
         domService.el.title.textContent = track.name; domService.el.artist.textContent = "Loading...";
-        domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">Parsing...</div>';
+        lyricsService.showLyricStatus('正在读取音频...');
         debugService.log(`本地曲目：${track.name}`);
 
         try {
@@ -215,7 +215,7 @@ export function createLocalPlayback({
             metadataService.pendingQualityInfo = null;
             domService.el.bufferLine.style.width = '0%';
             domService.el.artist.textContent = '无法播放';
-            domService.el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${escapeHtml(e?.message || String(e))}</div>`;
+            lyricsService.showLyricStatus(e?.message || String(e));
             playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
             debugService.log("本地播放失败：" + e, 'error');
             alert("播放失败，请查看日志面板");

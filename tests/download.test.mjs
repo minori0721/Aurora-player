@@ -134,6 +134,25 @@ test('official MP3 download keeps actual bitrate, sample rate and size visible',
     assert.equal(f.requests.filter(raw => new URL(raw).pathname === '/song/music/detail').length, 0);
 });
 
+for (const [sr, bitsPerSample, expected] of [
+    [44100, 16, 'FLAC 44.1kHz/16bit 55.2MB'],
+    [96000, 24, 'FLAC 96kHz/24bit 55.2MB'],
+    [44100, undefined, 'FLAC 44.1kHz 55.2MB'],
+    [undefined, undefined, 'FLAC 1807kbps 55.2MB']
+]) {
+    test(`official FLAC downloads prioritize source resolution without invented fields (${expected})`, async t => {
+        const f = fixture(t, false, { url: 'https://cdn.test/music.flac', type: 'flac',
+            br: 1807000, sr, bitsPerSample, size: 55.2 * 1024 * 1024 });
+        await f.dom.downloadBtn.onclick();
+        for (const row of f.dom.downloadListEl.children) {
+            assert.equal(row.querySelector('.quality-meta-details').textContent, expected);
+        }
+        assert.equal(f.requests.length, 5);
+        assert.equal(f.headerCalls.length, 0);
+        assert.equal(f.matchCalls.length, 0);
+    });
+}
+
 test('official quality details supplement only a matching tier that is missing actual fields', async t => {
     const f = fixture(t, false, { url: 'https://cdn.test/music.mp3', type: 'mp3', level: 'standard', br: 128000 });
     await f.dom.downloadBtn.onclick();

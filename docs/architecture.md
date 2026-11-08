@@ -37,7 +37,7 @@ Aurora 采用原生 JavaScript 模块开发，由 esbuild 合并代码，再将�
 | `src/storage/` | 请求缓存、IndexedDB、播放列表持久化与数据迁移 |
 | `src/ui/`、`src/styles/` | 页面元素、弹层、控件、封面、渲染调度与样式 |
 | `src/ui/track-header.js` | 桌面多行标题位移、顶部工具栏间距与尺寸观察 |
-| `src/ui/toolbar-visibility.js` | 顶部工具栏闲置隐藏与桌面收藏胶囊淡化 |
+| `src/ui/toolbar-visibility.js` | 顶部工具栏的闲置隐藏、交互唤醒与焦点保护 |
 | `src/ui/bottom-sheet.js` | 手机智能分析、循环设定共用的自由高度抽屉、边缘吸附、触摸与可视视口适配 |
 | `src/ui/background-field.js` | 封面空间采样、加权模糊、色调映射与 WebGL 网格 |
 | `src/ui/background.js`、`background-thread.js`、`background-worker.js` | 背景绘制调度、主线程桥接、独立 Worker 与静态降级 |

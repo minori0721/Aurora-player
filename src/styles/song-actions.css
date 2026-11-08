@@ -51,10 +51,10 @@
     .track-song-actions { right: 0; bottom: calc(100% + clamp(52px, calc(10vh - 24px), 72px)); }
 }
 @media (min-width: 901px) and (hover: hover) and (pointer: fine) {
-    .track-song-actions { opacity: 1; transition: opacity 150ms ease-out; }
-    .track-song-actions.song-actions-idle { opacity: .3; transition: opacity 800ms cubic-bezier(.4, 0, .2, 1); }
-    .track-song-actions.song-actions-idle:has([aria-busy="true"]),
-    .track-song-actions.song-actions-idle:has(:focus-visible) { opacity: 1; transition-duration: 150ms; }
+    .track-song-actions { opacity: .3; transition: opacity 800ms cubic-bezier(.4, 0, .2, 1); }
+    .track-song-actions:hover,
+    .track-song-actions:has([aria-busy="true"]),
+    .track-song-actions:has(:focus-visible) { opacity: 1; transition-duration: 150ms; }
 }
 @media (max-width: 900px) {
     .controls-row { position: relative; }

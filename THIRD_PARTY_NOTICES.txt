@@ -190,10 +190,11 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 6. Lucide icons
 ===============
 
-Location: selected inline SVGs in src/index.html
+Location: selected inline SVGs in src/index.html and src/netease/content.js
 Icons: logs, folder-open, cloud, list, settings, search, repeat-2, sparkles,
 snowflake, audio-lines, waves-horizontal, chevron-down, captions, locate-fixed
-and arrow-up
+arrow-up, arrow-left, arrow-right, x, user-round, play, pause, skip-forward
+and ellipsis
 Source: https://github.com/lucide-icons/lucide
 License reference: https://github.com/lucide-icons/lucide/blob/1802f33f6c270395fcd981067f22719140e2ffbc/LICENSE
 License: ISC

@@ -33,6 +33,10 @@ test('music browser has a brief entry animation with mobile and reduced-motion v
 function fixture(t) {
     const { host, elements, frames } = createHost(html), scroller = { scrollTop: 540 };
     const imageLifecycle = [], feedbackClears = [], memberRefreshes = [];
+    const publicReads = [], ownReads = [];
+    const publicProfile = { currentUserId: null, async renderPlaylistsPage(id, options) { publicReads.push({ id, options }); } };
+    const auth = { refreshVipInfo() { memberRefreshes.push(true); },
+        cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } };
     host.location.href = 'http://localhost/#music/album/12'; host.location.hash = '#music/album/12';
     const panel = elements.get('netease-panel'); panel.classList.add('show');
     host.history.length = 2; host.history.go = () => {};
@@ -54,8 +58,7 @@ function fixture(t) {
     const browser = createBrowser({
         dom: { neteasePanel: panel, neteaseBrowserScroll: scroller, neteasePageTitle: elements.get('netease-page-title'), neteaseTabs: [],
             neteaseBrowserView: elements.get('netease-browser-view'), searchBtn: elements.get('netease-search-btn'), searchInput: elements.get('netease-search-input') },
-        auth: { refreshVipInfo() { memberRefreshes.push(true); },
-            cancelLoginSession() { browser.musicBrowserState.authReturnContext = null; browser.musicBrowserState.authReturnHash = ''; } },
+        auth, publicProfile, myPlaylists: { async loadMyPlaylists(options) { ownReads.push(options); } },
         panels: { modalController: { open() { panel.classList.add('show'); }, close() { panel.classList.remove('show'); } } },
         content: { async renderMusicAlbumPage() {}, updateMusicMiniPlayer() {},
             clearMusicQueueFeedback() { feedbackClears.push(true); },
@@ -63,8 +66,27 @@ function fixture(t) {
             resumeMusicImages() { imageLifecycle.push('resume'); } }
     });
     const paint = async () => { await flush(); for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
-    return { host, scroller, browser, panel, elements, paint, imageLifecycle, feedbackClears, memberRefreshes };
+    return { host, scroller, browser, panel, elements, paint, imageLifecycle, feedbackClears, memberRefreshes,
+        auth, publicProfile, publicReads, ownReads };
 }
+
+test('guest playlist entry uses the public viewer without claiming a signed-in account', async t => {
+    const f = fixture(t); f.publicProfile.currentUserId = 123;
+    await f.browser.renderMusicRoute({ kind: 'playlist-mine' });
+    assert.equal(f.publicReads.length, 1); assert.equal(f.publicReads[0].id, 123);
+    assert.equal(f.ownReads.length, 0); assert.equal(f.auth.neteaseUser, undefined);
+    f.browser.closeMusicBrowser();
+    assert.equal(f.publicReads[0].options.signal.aborted, true);
+});
+
+test('real account playlist entry remains separate from explicit public user routes', async t => {
+    const f = fixture(t); f.auth.neteaseUser = { userId: 456 };
+    await f.browser.renderMusicRoute({ kind: 'playlist-mine' });
+    assert.equal(f.ownReads.length, 1); assert.equal(f.publicReads.length, 0);
+    await f.browser.renderMusicRoute({ kind: 'user-playlists', id: 123 });
+    assert.equal(f.publicReads[0].id, 123); assert.equal(f.ownReads.length, 1);
+    assert.equal(f.auth.neteaseUser.userId, 456);
+});
 
 test('saving history while login is open preserves the source page instead of the login scroll', t => {
     const f = fixture(t);

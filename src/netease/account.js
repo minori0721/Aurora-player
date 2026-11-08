@@ -18,6 +18,7 @@ export function createAuth({
     onlinePlaylist: onlinePlaylistService,
     playback: playbackService,
     prefetch: prefetchService,
+    publicProfile: publicProfileService,
     resolver: resolverService,
     queue: queueService,
     songActions: songActionsService,
@@ -50,7 +51,7 @@ export function createAuth({
     const accountAbortControllers = new Set();
     let accountRequestSequence = 0;
     const loginPage = createLoginPage({
-        api: apiService, browser: browserService, dom: domService,
+        api: apiService, browser: browserService, dom: domService, publicProfile: publicProfileService,
         captureAuthSnapshot, isAuthSnapshotCurrent, commitLogin
     });
 
@@ -363,9 +364,9 @@ export function createAuth({
 
     let initialized = false;
     return {
-        showLogin() {
+        showLogin(mode) {
             if (!domService.neteasePanel.classList.contains('show')) browserService.openMusicBrowser?.();
-            return loginPage.open();
+            return loginPage.open(mode);
         },
         refreshQRCode: loginPage.refreshQRCode,
         refreshVipInfo,

@@ -149,8 +149,7 @@ export function createLoop({
             session.lrcPending = false;
             if (session.source === 'lrc') {
                 session.source = null;
-                lyricsService.resetTrackLyrics();
-                domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">暂无歌词</div>';
+                lyricsService.showLyricStatus('暂无歌词');
             }
             lyricsService.updateLocalLyrics(session);
         }

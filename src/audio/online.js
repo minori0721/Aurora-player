@@ -1,4 +1,4 @@
-import { cleanCookie, escapeHtml, fmtTime, toHttps } from '../shared/text.js';
+import { cleanCookie, fmtTime, toHttps } from '../shared/text.js';
 import { createAudioQualityProbe, describeAudioQualityFromBuffer, describeAudioQualityFromInfo, inferAudioTypeFromUrl, parseFlacStreamInfoFromBuffer } from './quality.js';
 import { readMp3StreamInfo } from './mp3.js';
 import { getNeteaseSongArtists } from '../lyrics/matching.js';
@@ -113,7 +113,7 @@ export function createOnlinePlayback({
         // 更新UI
         domService.el.title.textContent = songName;
         contentService.setMainMusicEntityLinks(song);
-        domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取音频...</div>';
+        lyricsService.showLyricStatus('获取音频...');
         const controller = new AbortController();
         playbackService.currentAbortController = controller;
         const signal = controller.signal;
@@ -242,7 +242,7 @@ export function createOnlinePlayback({
                         await useStream({ ...consumed, candidates: consumed.candidates?.length ? consumed.candidates : [consumed.audioUrl] }, consumed.ab);
                         return;
                     }
-                    domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 使用预加载音频...</div>';
+                    lyricsService.showLyricStatus('使用预加载音频...');
                     domService.el.bufferLine.style.width = '30%';
                     const ab = consumed.ab;
                     domService.el.bufferLine.style.width = '60%';
@@ -315,7 +315,7 @@ export function createOnlinePlayback({
             let audioUrl = audioCandidates[0];
             debugService.log(`音频链接：${audioCandidates[0]}`);
 
-            domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">⏳ 加载音频...</div>';
+            lyricsService.showLyricStatus('加载音频...');
             domService.el.bufferLine.style.width = '30%';
             // 获取音频数据
             // 二次检查：确保仍是当前播放请求
@@ -400,7 +400,7 @@ export function createOnlinePlayback({
                 return;
             }
             debugService.log('播放失败：' + e.message, 'error');
-            domService.el.lyricBox.innerHTML = `<div class="lyric-line active" style="margin-top:100px">❌ ${escapeHtml(e?.message || String(e))}</div>`;
+            lyricsService.showLyricStatus(e?.message || String(e));
             playbackService.setPlaybackStatus('error', { error: e?.message || String(e) });
         } finally {
             if (playbackService.currentAbortController === controller) playbackService.currentAbortController = null;

@@ -84,7 +84,6 @@ export function createControls({
             createEffectsMenu({ select: domService.el.effectSel }).initialize();
             const toolbar = document.querySelector('.top-bar');
             if (toolbar) toolbarVisibility = createToolbarVisibility({ toolbar,
-                capsule: document.getElementById('track-song-actions'),
                 readStatus: () => playbackService.playbackState.status,
                 isBlocked: () => isDraggingProgress || !!document.querySelector('.panel-float.show, .playlist-sidebar.show, .advanced-menu.show, .netease-panel.show, .download-modal.show, dialog[open], .effect-select-menu[open]')
                     || document.getElementById('debug-console')?.style.display === 'block'

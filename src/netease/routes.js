@@ -37,6 +37,10 @@ function parseMusicRoute(hash = window.location.hash) {
         return { kind: 'artist', id, view, page: positiveMusicInteger(params.get('page'), 1) };
     }
     if (path === 'playlists/import') return { kind: 'playlist-import' };
+    if (parts[0] === 'user' && parts.length === 2) {
+        const id = positiveMusicInteger(parts[1]);
+        return id ? { kind: 'user-playlists', id } : { kind: 'invalid', reason: '用户 ID 无效' };
+    }
     if (path === 'playlists/mine') return { kind: 'playlist-mine' };
     return { kind: 'invalid', reason: '这个音乐页面不存在' };
 }
@@ -60,6 +64,7 @@ function buildMusicHash(route) {
         return `${MUSIC_ROUTE_PREFIX}artist/${positiveMusicInteger(route.id, 0)}?${params.toString()}`;
     }
     if (route.kind === 'playlist-import') return `${MUSIC_ROUTE_PREFIX}playlists/import`;
+    if (route.kind === 'user-playlists') return `${MUSIC_ROUTE_PREFIX}user/${positiveMusicInteger(route.id, 0)}`;
     if (route.kind === 'playlist-mine') return `${MUSIC_ROUTE_PREFIX}playlists/mine`;
     return `${MUSIC_ROUTE_PREFIX}search?type=all&page=1`;
 }
@@ -71,6 +76,7 @@ function getMusicRouteTitle(route) {
     if (route.kind === 'artist') return '歌手';
     if (route.kind === 'playlist-import') return '导入歌单';
     if (route.kind === 'playlist-mine') return '我的歌单';
+    if (route.kind === 'user-playlists') return '公开歌单';
     return '页面不可用';
 }
 

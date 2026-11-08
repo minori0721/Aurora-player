@@ -915,12 +915,21 @@ test('desktop favorites share the mobile glass capsule and leave the playback ro
     assert.match(mobile, /left: 0; bottom: calc\(100% \+ 6px\)/);
 });
 
-test('desktop idle capsule fades out slowly, wakes quickly and remains clickable during account operations', async () => {
+test('desktop capsule is dim by default and wakes on hover, keyboard focus and account operations', async () => {
     const css = await fs.readFile(new URL('../src/styles/song-actions.css', import.meta.url), 'utf8');
     const idle = css.slice(css.indexOf('@media (min-width: 901px) and (hover: hover)'), css.indexOf('@media (max-width: 900px)'));
-    assert.match(idle, /opacity: 1; transition: opacity 150ms ease-out/);
-    assert.match(idle, /opacity: \.3; transition: opacity 800ms/);
+    assert.match(idle, /\.track-song-actions\s*\{\s*opacity: \.3; transition: opacity 800ms/);
+    assert.match(idle, /\.track-song-actions:hover,/);
+    assert.match(idle, /opacity: 1; transition-duration: 150ms/);
     assert.match(idle, /:has\(\[aria-busy="true"\]\)/);
     assert.match(idle, /:has\(:focus-visible\)/);
     assert.doesNotMatch(idle, /pointer-events|display: none|will-change|transform|backdrop-filter/);
+    assert.doesNotMatch(css, /song-actions-idle|:focus-within/);
+});
+
+test('capsule visibility does not subscribe to toolbar activity or playback status', async () => {
+    const toolbar = await fs.readFile(new URL('../src/ui/toolbar-visibility.js', import.meta.url), 'utf8');
+    const controls = await fs.readFile(new URL('../src/ui/controls.js', import.meta.url), 'utf8');
+    assert.doesNotMatch(toolbar, /capsule|song-actions-idle/);
+    assert.doesNotMatch(controls, /capsule:/);
 });

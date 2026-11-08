@@ -10,7 +10,7 @@ const response = (body, status = 200) => new Response(JSON.stringify(body), { st
 function deferred() { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; }
 
 function fixture({ mobile = true } = {}) {
-    const { host, elements } = createHost(html), requests = [], commits = [], navigations = [], timers = new Map(), handlers = new Map();
+    const { host, elements } = createHost(html), requests = [], commits = [], navigations = [], timers = new Map(), handlers = new Map(), publicEvents = [];
     let now = 1000, sequence = 0, generation = 1, cookie = '';
     const node = id => elements.get(id), scroller = { scrollTop: 42 }, savedScroll = [];
     node('login-country').value = '86'; node('netease-panel').classList.add('show');
@@ -38,6 +38,7 @@ function fixture({ mobile = true } = {}) {
         }
     };
     const page = createLoginPage({ api: { buildApiUrl: path => 'https://api.test' + path },
+        publicProfile: { openSearch: () => publicEvents.push('open'), cancelSearch: () => publicEvents.push('cancel') },
         dom: { neteasePanel: node('netease-panel'), neteaseBrowserScroll: scroller, neteasePageTitle: node('netease-page-title') },
         browser, captureAuthSnapshot: snapshot, isAuthSnapshotCurrent: value => value.generation === generation && value.cookie === cookie,
         commitLogin: (next, profile, current) => {
@@ -56,7 +57,7 @@ function fixture({ mobile = true } = {}) {
         }
         now = end; await flush();
     };
-    return { page, node, requests, commits, navigations, timers, browser, input, tick, scroller, savedScroll,
+    return { page, node, requests, commits, navigations, timers, browser, input, tick, scroller, savedScroll, publicEvents,
         send: () => node('login-send-code').onclick(), submit: () => node('sms-login-form').onsubmit({ preventDefault() {} }),
         phone: () => input('login-phone', '13800138000'), code: () => input('login-captcha', '001234'),
         on: (path, handler) => handlers.set(path, handler), invalidateAuth() { generation++; },
@@ -77,6 +78,32 @@ test('mobile opens SMS without issuing a request; desktop opens QR', async () =>
     assert.equal(f.node('login-send-code').disabled, true); f.page.cancel();
     const desktop = fixture({ mobile: false }); await desktop.page.open();
     assert.deepEqual(desktop.requests.map(r => r.path), ['/login/qr/key', '/login/qr/create']); desktop.page.cancel();
+});
+
+test('public option opens without QR, SMS, authentication or a fake login commit', async () => {
+    const f = fixture({ mobile: false });
+    f.page.open('public');
+    assert.equal(f.node('login-mode-public').getAttribute('aria-pressed'), 'true');
+    assert.equal(f.node('login-public-view').hidden, false);
+    assert.equal(f.node('login-qr-view').hidden, true);
+    assert.equal(f.node('login-sms-view').hidden, true);
+    assert.equal(f.requests.length, 0); assert.equal(f.commits.length, 0);
+    assert.equal(f.publicEvents.at(-1), 'open');
+    f.page.cancel(); assert.equal(f.publicEvents.at(-1), 'cancel');
+    await f.page.open();
+    assert.equal(f.node('login-mode-qr').getAttribute('aria-pressed'), 'true', 'account actions still default to real login');
+    f.page.cancel();
+});
+
+test('switching from QR to public browsing aborts polling and leaves no authentication timer', async () => {
+    const f = fixture({ mobile: false }); await f.page.open();
+    assert.equal(f.timers.size, 1);
+    f.node('login-mode-public').click();
+    assert.equal(f.timers.size, 0);
+    await f.tick(5000);
+    assert.equal(f.requests.filter(request => request.path === '/login/qr/check').length, 0);
+    assert.equal(f.commits.length, 0);
+    f.page.cancel();
 });
 
 test('SMS sends once, keeps a deadline through switching and reopening, and permits sending after expiry', async () => {

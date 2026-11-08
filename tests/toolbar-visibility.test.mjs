@@ -4,7 +4,7 @@ import { createToolbarVisibility } from '../src/ui/toolbar-visibility.js';
 import { FakeElement } from './helpers/host.mjs';
 
 function fixture() {
-    const doc = new FakeElement(), toolbar = new FakeElement(), capsule = new FakeElement(), env = new FakeElement();
+    const doc = new FakeElement(), toolbar = new FakeElement(), env = new FakeElement();
     const timers = new Map(), media = new FakeElement();
     let now = 0, sequence = 0;
     const state = { status: 'playing', blocked: false, focused: true };
@@ -13,7 +13,7 @@ function fixture() {
     env.matchMedia = () => media;
     env.setTimeout = (callback, ms) => { const id = ++sequence; timers.set(id, { callback, due: now + ms }); return id; };
     env.clearTimeout = id => timers.delete(id);
-    const controller = createToolbarVisibility({ toolbar, capsule, env, readStatus: () => state.status, isBlocked: () => state.blocked });
+    const controller = createToolbarVisibility({ toolbar, env, readStatus: () => state.status, isBlocked: () => state.blocked });
     function advance(ms) {
         const end = now + ms;
         while (true) {
@@ -24,9 +24,8 @@ function fixture() {
         now = end;
     }
     const event = (target, type, extra = {}) => target.dispatchEvent({ type, ...extra });
-    return { doc, toolbar, capsule, env, media, state, timers, controller, advance, event,
-        get hidden() { return toolbar.classList.contains('toolbar-hidden'); },
-        get dimmed() { return capsule.classList.contains('song-actions-idle'); } };
+    return { doc, toolbar, env, media, state, timers, controller, advance, event,
+        get hidden() { return toolbar.classList.contains('toolbar-hidden'); } };
 }
 
 test('desktop playback hides at four seconds and activity immediately restores hit testing', () => {
@@ -95,49 +94,11 @@ test('dismissed native select does not indefinitely prevent idle hiding', () => 
     assert.equal(f.hidden, true);
 });
 
-test('favorite capsule shares the four-second clock without disabling its hit area or keyboard access', () => {
-    const f = fixture(); f.advance(3999); assert.equal(f.dimmed, false);
-    f.advance(1); assert.equal(f.dimmed, true); assert.equal(f.hidden, true);
-    assert.notEqual(f.capsule.inert, true); assert.equal(f.timers.size, 0);
-    f.event(f.doc, 'pointermove'); assert.equal(f.dimmed, false); assert.equal(f.timers.size, 1);
-});
-
-test('hovering the capsule and keyboard focus keep it clear without pinning the separate toolbar', () => {
-    for (const kind of ['hover', 'keyboard']) {
-        const f = fixture(), button = new FakeElement(); f.capsule.children.push(button);
-        if (kind === 'hover') f.event(f.capsule, 'pointerenter');
-        else { f.doc.activeElement = button; f.event(f.doc, 'keydown', { key: 'Tab' }); }
-        f.advance(9000); assert.equal(f.dimmed, false); assert.equal(f.hidden, true);
-        f.doc.activeElement = null;
-        f.event(kind === 'hover' ? f.capsule : f.doc, kind === 'hover' ? 'pointerleave' : 'focusout');
-        f.advance(4000); assert.equal(f.dimmed, true);
-    }
-});
-
-test('open panels, pause, loading, errors and hidden pages keep the capsule clear', () => {
-    for (const status of ['idle', 'paused', 'loading', 'error']) {
-        const f = fixture(); f.advance(4000); assert.equal(f.dimmed, true);
-        f.state.status = status; f.controller.sync(); f.advance(9000);
-        assert.equal(f.dimmed, false); assert.equal(f.timers.size, 0);
-    }
-    const f = fixture(); f.state.blocked = true; f.advance(4000); assert.equal(f.dimmed, false);
-    f.state.blocked = false; f.controller.sync(); f.advance(4000); assert.equal(f.dimmed, true);
-    f.doc.hidden = true; f.event(f.doc, 'visibilitychange');
-    assert.equal(f.dimmed, false); assert.equal(f.timers.size, 0);
-});
-
-test('wheel input wakes the capsule and repeated scrolling still uses only the existing single timer', () => {
-    const f = fixture(); f.advance(4000); assert.equal(f.dimmed, true);
+test('wheel input still wakes the toolbar and repeated scrolling uses only its existing timer', () => {
+    const f = fixture(); f.advance(4000); assert.equal(f.hidden, true);
     for (let i = 0; i < 1000; i++) { f.event(f.doc, 'wheel'); f.advance(2); }
-    assert.equal(f.dimmed, false); assert.equal(f.timers.size, 1);
-    f.advance(4000); assert.equal(f.dimmed, true); assert.equal(f.timers.size, 0);
-    f.controller.dispose(); assert.equal(f.dimmed, false);
-    assert.ok([...f.capsule.listeners.values()].every(listeners => listeners.size === 0));
-});
-
-test('stale mouse hover cannot pin the capsule when the window loses focus', () => {
-    const f = fixture(); f.event(f.capsule, 'pointerenter');
-    f.state.focused = false; f.event(f.env, 'blur'); f.advance(4000);
-    assert.equal(f.dimmed, true);
-    f.state.focused = true; f.event(f.env, 'focus'); assert.equal(f.dimmed, false);
+    assert.equal(f.hidden, false); assert.equal(f.timers.size, 1);
+    f.advance(4000); assert.equal(f.hidden, true); assert.equal(f.timers.size, 0);
+    f.controller.dispose(); assert.equal(f.hidden, false);
+    assert.ok([...f.doc.listeners.values()].every(listeners => listeners.size === 0));
 });

@@ -26,7 +26,7 @@ function errorMessage(data, fallback) {
     return Number.isFinite(code) && code !== 200 ? `${fallback}（错误码 ${code}）` : fallback;
 }
 
-export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuthSnapshotCurrent, commitLogin } = {},
+export function createLoginPage({ api, browser, dom, publicProfile, captureAuthSnapshot, isAuthSnapshotCurrent, commitLogin } = {},
     { environment = window, document: doc = document } = {}) {
     let session = null, lastMode = null, requestId = 0, countdownTimer = 0, initialized = false;
     const cooldowns = new Map();
@@ -40,7 +40,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
     const remaining = phone => Math.max(0, Math.ceil(((cooldowns.get(phone?.key) || 0) - now()) / 1000));
 
     function status(text = '', kind = '') {
-        const target = node(session?.mode === 'sms' ? 'sms-login-status' : 'qrcode-status');
+        const target = node(session?.mode === 'public' ? 'public-profile-status' : session?.mode === 'sms' ? 'sms-login-status' : 'qrcode-status');
         target.textContent = text;
         target.dataset.state = kind;
     }
@@ -59,6 +59,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
         node('login-retry').hidden = !session.candidate || busy || session.completed;
         node('login-refresh-qr').disabled = locked;
         node('login-mode-qr').disabled = node('login-mode-sms').disabled = !!session.completed;
+        node('login-mode-public').disabled = !!session.completed;
         if (sms && seconds && !session.completed) countdownTimer = environment.setTimeout(render, 1000);
     }
 
@@ -66,6 +67,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
         const previous = session;
         session = null;
         previous?.controller.abort();
+        publicProfile?.cancelSearch();
         environment.clearTimeout(previous?.timer);
         environment.clearTimeout(previous?.returnTimer);
         environment.clearTimeout(countdownTimer); countdownTimer = 0;
@@ -89,12 +91,14 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
             returnHash: browser.musicBrowserState.authReturnContext?.hash || environment.location.hash,
             returnScroll: browser.musicBrowserState.authReturnContext?.scrollTop || 0
         };
-        lastMode = mode;
-        for (const name of ['qr', 'sms']) {
+        dom.neteasePageTitle.textContent = mode === 'public' ? '免登录浏览' : '登录网易云';
+        if (mode !== 'public') lastMode = mode;
+        for (const name of ['qr', 'sms', 'public']) {
             node(`login-mode-${name}`).setAttribute('aria-pressed', String(mode === name));
             node(`login-${name}-view`).hidden = mode !== name;
         }
         status(); render();
+        if (mode === 'public') publicProfile.openSearch();
         return session;
     }
 
@@ -214,7 +218,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
     }
 
     function selectMode(mode) {
-        if (!session || !current(session) || session.completed || !['qr', 'sms'].includes(mode)) return;
+        if (!session || !current(session) || session.completed || !['qr', 'sms', 'public'].includes(mode)) return;
         if (session.mode === mode) return;
         begin(mode);
         if (mode === 'qr') void generateQRCode();
@@ -263,7 +267,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
         }
     }
 
-    function open() {
+    function open(preferredMode) {
         if (!browser.musicBrowserState.authReturnHash && environment.location.hash.startsWith(MUSIC_ROUTE_PREFIX)) browser.musicBrowserState.authReturnHash = environment.location.hash;
         if (!browser.musicBrowserState.authReturnContext) {
             const hash = browser.musicBrowserState.authReturnHash || environment.location.hash;
@@ -277,7 +281,8 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
         node('tab-qrlogin').style.display = 'block';
         node('netease-login-btn').hidden = true;
         dom.neteasePageTitle.textContent = '登录网易云';
-        const mode = lastMode || (environment.matchMedia('(max-width: 900px)').matches ? 'sms' : 'qr');
+        const mode = ['qr', 'sms', 'public'].includes(preferredMode) ? preferredMode
+            : lastMode || (environment.matchMedia('(max-width: 900px)').matches ? 'sms' : 'qr');
         begin(mode);
         node(`login-mode-${mode}`).focus({ preventScroll: true });
         if (mode === 'qr') return generateQRCode();
@@ -290,6 +295,7 @@ export function createLoginPage({ api, browser, dom, captureAuthSnapshot, isAuth
             initialized = true;
             node('login-mode-qr').onclick = () => selectMode('qr');
             node('login-mode-sms').onclick = () => selectMode('sms');
+            node('login-mode-public').onclick = () => selectMode('public');
             node('login-send-code').onclick = sendCode;
             node('sms-login-form').onsubmit = submit;
             node('login-retry').onclick = () => session && confirmLogin(session);

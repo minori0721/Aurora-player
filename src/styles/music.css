@@ -20,8 +20,12 @@
     to { opacity: 1; transform: none; }
 }
 .netease-content {
+    --music-control-border: rgba(44,62,80,.12);
+    --music-control-bg: rgba(255,255,255,.72);
+    --music-hover: rgba(44,62,80,.055);
+    --music-radius: 8px;
     position: relative;
-    background: var(--glass-strong); backdrop-filter: blur(30px);
+    background: rgba(250,251,252,.98); backdrop-filter: blur(30px);
     display: flex; flex-direction: column;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
@@ -35,14 +39,16 @@
     cursor: pointer; color: var(--text-sub); padding: 0 5px;
 }
 .netease-close:hover { color: var(--text-main); }
-.netease-tabs { display: flex; gap: 10px; }
+.netease-tabs { display: flex; gap: 24px; }
 .netease-tab {
-    flex: 1; padding: 10px; border: none;
-    background: rgba(0,0,0,0.05); cursor: pointer; font-size: 0.9rem;
-    transition: 0.2s;
+    position: relative; min-height: 50px; padding: 0 2px; border: 0;
+    background: transparent; color: var(--text-sub); cursor: pointer; font-size: .9rem;
+    font-weight: 500; transition: color 150ms;
 }
-.netease-tab.active { background: var(--accent); color: white; }
-.netease-tab:hover:not(.active) { background: rgba(0,0,0,0.1); }
+.netease-tab::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 1px; background: transparent; }
+.netease-tab.active { color: var(--accent); font-weight: 650; }
+.netease-tab.active::after { background: var(--accent); }
+.netease-tab:hover:not(.active) { color: var(--text-main); }
 .netease-tab-content {
     flex: 1; display: flex; flex-direction: column;
     overflow: hidden; min-height: 0;
@@ -51,23 +57,24 @@
     display: flex; gap: 10px; margin-bottom: 15px;
 }
 .netease-input {
-    flex: 1; padding: 12px 15px; border: 1px solid rgba(0,0,0,0.15);
-    border-radius: 10px; font-size: 0.95rem; outline: none;
-    background: rgba(255,255,255,0.8);
+    flex: 1; min-width: 0; height: 44px; box-sizing: border-box; padding: 0 12px;
+    border: 1px solid var(--music-control-border); border-radius: var(--music-radius);
+    font: inherit; font-size: .9rem; outline: none; color: var(--text-main);
+    background: var(--music-control-bg);
 }
 .netease-input:focus { border-color: var(--accent); }
+.netease-search-field { flex: 1; min-width: 0; display: flex; align-items: center; height: 44px; box-sizing: border-box; padding-left: 13px; border: 1px solid var(--music-control-border); border-radius: var(--music-radius); background: var(--music-control-bg); transition: border-color 150ms; }
+.netease-search-field > svg { width: 18px; height: 18px; color: var(--text-sub); }
+.netease-search-field .netease-input { height: 100%; border: 0; border-radius: 0; background: transparent; }
+.netease-search-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(41,128,185,.05); }
 .netease-search-btn {
-    padding: 12px 20px; border: none; border-radius: 10px;
-    background: linear-gradient(135deg, var(--accent), #1a5276);
+    min-height: 44px; padding: 0 20px; border: 0; border-radius: var(--music-radius);
+    background: var(--accent);
     color: white; cursor: pointer;
-    font-size: 0.9rem; white-space: nowrap;
-    box-shadow: inset 1px 1px 3px rgba(255,255,255,0.3), 0 3px 6px rgba(0,0,0,0.1);
+    font: inherit; font-size: .85rem; font-weight: 600; white-space: nowrap;
+    transition: background-color 150ms;
 }
-.netease-search-btn:hover {
-    background: linear-gradient(135deg, #3498db, #2980b9);
-    transform: translateY(-2px);
-    box-shadow: inset 1px 1px 5px rgba(255,255,255,0.4), 0 5px 12px rgba(0,0,0,0.15);
-}
+.netease-search-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent), black 12%); }
 .netease-search-btn:disabled { background: #ccc; cursor: not-allowed; }
 .netease-results {
     flex: 1; min-height: 0;
@@ -117,13 +124,13 @@
     font-size: 0.75rem; color: var(--text-sub); flex-shrink: 0;
 }
 .netease-item-play {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: var(--accent); color: white; border: none;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: transparent; color: var(--accent); border: none;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; transition: 0.15s;
 }
 .netease-item:hover .netease-item-play { opacity: 1; }
-.netease-item-play:hover { transform: scale(1.1); }
+.netease-item-play:hover { background: rgba(41,128,185,.08); }
 .netease-loading, .netease-empty {
     text-align: center; padding: 40px; color: var(--text-sub);
 }
@@ -144,66 +151,60 @@
 .netease-playlist-name { font-weight: bold; font-size: 1rem; margin-bottom: 5px; }
 .netease-playlist-desc { font-size: 0.8rem; color: var(--text-sub); }
 .netease-import-btn {
-    width: 100%; padding: 12px; border: none; border-radius: 10px;
-    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    width: 100%; min-height: 44px; padding: 10px 16px; border: none; border-radius: var(--music-radius);
+    background: var(--accent);
     color: white; cursor: pointer;
     font-size: 0.95rem; margin-top: 10px;
-    box-shadow: inset 1px 1px 3px rgba(255,255,255,0.3), 0 3px 6px rgba(0,0,0,0.1);
+    transition: background-color 150ms;
 }
-.netease-import-btn:hover {
-    background: linear-gradient(135deg, #4cd137, #2ecc71);
-    transform: translateY(-2px);
-    box-shadow: inset 1px 1px 5px rgba(255,255,255,0.4), 0 5px 12px rgba(0,0,0,0.15);
-}
+.netease-import-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent), black 12%); }
 .netease-import-btn:disabled { background: #ccc; }
 
 /* 登录相关 */
 .netease-user-bar {
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 15px; background: rgba(0,0,0,0.03);
-    border-radius: 10px; margin-bottom: 15px;
+    padding: 0; background: transparent; min-height: 44px;
 }
 .netease-avatar {
-    width: 40px; height: 40px; border-radius: 50%;
+    width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%;
     object-fit: cover; background: #eee;
 }
 .netease-user-info { flex: 1; min-width: 0; }
-.netease-nickname { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.netease-user-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; }
+.netease-nickname { min-width: 0; max-width: 100%; font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.netease-user-id { display: block; margin-top: 1px; font-size: .7rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
 .netease-user-type {
-    display: inline-block; font-size: 0.7rem; padding: 2px 6px;
-    border-radius: 4px; margin-top: 2px;
+    display: inline-block; flex: 0 0 auto; max-width: 100%; font-size: .6rem; line-height: 1.5; padding: 0 4px;
+    border: 1px solid var(--music-control-border); border-radius: 4px;
 }
-.netease-user-type.vip { background: linear-gradient(135deg, #f39c12, #e74c3c); color: white; }
-.netease-user-type.svip { background: linear-gradient(135deg, #9b59b6, #8e44ad); color: white; }
-.netease-user-type.music-pack { background: linear-gradient(135deg, #1abc9c, #16a085); color: white; }
-.netease-user-type.normal { background: #95a5a6; color: white; }
+.netease-user-type.vip { background: #eef3ee; color: #607662; }
+.netease-user-type.svip { background: #f3edf5; color: #7f668b; }
+.netease-user-type.music-pack { background: #eaf3ef; color: #477969; }
+.netease-user-type.normal { background: rgba(44,62,80,.04); color: var(--text-sub); }
 .netease-quality-bar {
     display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px; background: rgba(0,0,0,0.03);
-    border-radius: 8px; margin-bottom: 15px; font-size: 0.85rem;
+    min-width: 0; padding: 0; background: transparent; font-size: .8rem;
 }
 .netease-quality-bar label { color: var(--text-sub); white-space: nowrap; }
+.netease-select-wrap { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+.netease-select-wrap > svg { position: absolute; right: 9px; width: 14px; height: 14px; color: var(--text-sub); }
 .netease-quality-select {
-    flex: 1; padding: 6px 10px; border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 6px; background: white; font-size: 0.85rem; cursor: pointer;
+    flex: 1; width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; appearance: none;
+    padding: 0 30px 0 10px; border: 1px solid var(--music-control-border);
+    border-radius: var(--music-radius); background: var(--music-control-bg); color: var(--text-main); font: inherit; font-size: .8rem; cursor: pointer;
 }
 .netease-logout-btn {
-    padding: 6px 12px; border: none; border-radius: 6px;
-    background: #e74c3c; color: white; cursor: pointer; font-size: 0.8rem;
+    flex: 0 0 auto; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--music-radius);
+    background: transparent; color: var(--text-sub); cursor: pointer; font: inherit; font-size: .75rem;
 }
-.netease-logout-btn:hover { background: #c0392b; }
+.netease-logout-btn:hover { background: var(--music-hover); color: var(--text-main); }
 .netease-login-btn {
-    width: 100%; padding: 12px; border: none; border-radius: 10px;
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
-    color: white; cursor: pointer; font-size: 0.95rem;
-    margin-bottom: 15px; transition: 0.2s;
-    box-shadow: inset 1px 1px 3px rgba(255,255,255,0.3), 0 5px 15px rgba(231, 76, 60, 0.2);
+    min-height: 44px; padding: 0 14px; border: 1px solid var(--music-control-border); border-radius: var(--music-radius);
+    background: var(--music-control-bg); color: var(--text-main); cursor: pointer; font: inherit; font-size: .85rem;
+    transition: background-color 150ms, border-color 150ms;
 }
-.netease-login-btn:hover {
-    background: linear-gradient(135deg, #ff7675, #d63031);
-    transform: translateY(-2px);
-    box-shadow: inset 1px 1px 5px rgba(255,255,255,0.4), 0 8px 20px rgba(231, 76, 60, 0.4);
-}
+.netease-login-btn:hover { background: rgba(255,255,255,.95); border-color: rgba(44,62,80,.25); }
+.netease-login-label { display: inline-flex; align-items: center; justify-content: center; gap: 8px; vertical-align: middle; }
 .netease-login-btn[hidden] { display: none !important; }
 .qrcode-container {
     text-align: center; padding: 20px;
@@ -223,7 +224,7 @@
 .qrcode-status.success { color: #27ae60; }
 .qrcode-status.expired { color: #e74c3c; }
 .login-page { width: min(100%, 360px); margin: 24px auto; }
-.login-modes { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,.04); margin-bottom: 24px; }
+.login-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; gap: 3px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,.04); margin-bottom: 24px; }
 .login-modes button { min-height: 44px; padding: 8px; border: 0; border-radius: 5px; color: var(--text-sub); background: transparent; font: inherit; font-size: .9rem; cursor: pointer; }
 .login-modes button[aria-pressed="true"] { color: var(--text-main); background: rgba(255,255,255,.9); box-shadow: 0 1px 4px rgba(0,0,0,.08); font-weight: 600; }
 .login-page [hidden] { display: none !important; }
@@ -235,8 +236,8 @@
 .login-country-input input { margin: 0; border: 0; background: transparent; height: 44px; padding: 10px 6px; }
 .login-code-row { display: grid; grid-template-columns: minmax(0,1fr) 124px; gap: 10px; align-items: end; }
 .login-primary, .login-secondary { min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-main); background: rgba(255,255,255,.75); font: inherit; font-size: .85rem; cursor: pointer; }
-.login-primary { width: 100%; color: white; border-color: transparent; background: #c53932; font-weight: 600; }
-.login-primary:hover { background: #ac302a; }
+.login-primary { width: 100%; color: white; border-color: transparent; background: var(--accent); font-weight: 600; }
+.login-primary:hover { background: color-mix(in srgb, var(--accent), black 12%); }
 .login-secondary:hover { background: rgba(255,255,255,.95); }
 .login-page button:disabled { cursor: default; opacity: .5; }
 .login-page :is(button,input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -244,6 +245,22 @@
 .login-status[data-state="error"] { color: #b52d27; }
 .login-status[data-state="success"] { color: #237341; }
 .login-retry { display: block; margin: 12px auto 0; }
+.login-page .public-profile-remember { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 8px 0; }
+.login-page .public-profile-remember input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+.public-profile-results { display: flex; flex-direction: column; gap: 4px; }
+.public-profile-result { display: flex; align-items: center; gap: 12px; min-height: 68px; width: 100%; padding: 10px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-main); text-align: left; font: inherit; cursor: pointer; }
+.public-profile-result:hover { background: var(--music-hover); }
+.public-profile-avatar { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; overflow: hidden; background: rgba(44,62,80,.08); }
+.public-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.public-profile-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.public-profile-info strong { font-size: 1rem; font-weight: 650; }
+.public-profile-info small, .public-profile-saved-label { color: var(--text-sub); font-size: .75rem; }
+.public-profile-saved-label { padding: 8px; }
+.public-profile-arrow { color: var(--text-sub); font-size: 1.5rem; }
+.public-profile-more { width: 100%; margin-top: 8px; }
+.public-profile-header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 0 24px; }
+.public-profile-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.public-profile-footer { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 0; color: var(--text-sub); font-size: .8rem; }
 .my-playlists { margin-top: 10px; }
 .my-playlists-title {
     font-size: 0.85rem; color: var(--text-sub);
@@ -282,38 +299,39 @@
     overscroll-behavior: contain;
 }
 .netease-account-row {
-    display: flex; align-items: stretch; gap: 10px; margin-bottom: 12px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-height: 52px; margin-bottom: 10px;
 }
 .netease-account-row .netease-user-bar,
 .netease-account-row .netease-quality-bar,
 .netease-account-row .netease-login-btn { margin: 0; }
-.netease-account-row .netease-user-bar { flex: 1 1 auto; min-width: 0; }
-.netease-account-row .netease-quality-bar { flex: 0 1 260px; }
-.netease-account-row .netease-login-btn { width: auto; min-width: 180px; }
+.netease-account-row .netease-user-bar { flex: 1 1 230px; min-width: 0; margin-right: auto; }
+.netease-preferences { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; gap: 16px; margin-left: auto; }
+.netease-preferences .netease-quality-bar { flex: 0 1 188px; width: 188px; }
+.netease-preferences .playback-preference { flex: 0 1 152px; width: 152px; }
+.netease-account-row .netease-login-btn { width: auto; min-width: 88px; margin-right: auto; }
 .netease-tabs {
-    position: sticky; top: -14px; z-index: 4; padding: 10px 0;
-    margin: 0 0 10px; background: color-mix(in srgb, var(--glass-strong) 92%, transparent);
-    backdrop-filter: blur(18px);
+    position: sticky; top: -14px; z-index: 4; padding: 0;
+    margin: 0 0 20px; border-bottom: 1px solid var(--music-control-border); background: rgb(250,251,252);
 }
-.netease-tab { min-height: 42px; border-radius: 7px; }
 .netease-tab-content { overflow: visible; }
 .netease-search-box { margin-bottom: 10px; }
 .netease-search-kinds {
-    display: flex; gap: 4px; width: fit-content; max-width: 100%;
-    margin-bottom: 12px; padding: 3px; border-radius: 7px;
-    background: rgba(0,0,0,0.055); overflow-x: auto;
+    display: flex; gap: 2px; width: fit-content; max-width: 100%;
+    margin-bottom: 18px; padding: 3px; border-radius: var(--music-radius);
+    background: rgba(44,62,80,.065); overflow-x: auto;
 }
 .netease-kind-btn {
     min-width: 70px; min-height: 38px; padding: 7px 14px; border: 0;
-    border-radius: 5px; background: transparent; color: var(--text-sub);
+    border-radius: 6px; background: transparent; color: var(--text-sub);
     font-weight: 600; cursor: pointer; white-space: nowrap;
 }
-.netease-kind-btn.active { background: #fff; color: var(--text-main); box-shadow: 0 1px 5px rgba(0,0,0,0.1); }
+.netease-kind-btn.active { background: #fff; color: var(--text-main); box-shadow: 0 1px 3px rgba(27,50,65,.08); }
 .netease-results {
     max-height: none; overflow: visible; border: 0; border-radius: 0;
     background: transparent;
 }
-.netease-item { min-height: 58px; padding: 9px 8px; border-radius: 6px; }
+.netease-item { min-height: 64px; padding: 9px 4px; border-radius: 6px; }
+.netease-item-name-btn { font-size: .9rem; }
 .netease-item-cover-link {
     width: 48px; height: 48px; padding: 0; border: 0; border-radius: 5px;
     overflow: hidden; flex: 0 0 48px; background: #e8edf3; cursor: pointer;
@@ -339,11 +357,12 @@
 .music-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 2px 10px; }
 .music-section-title { margin: 0; font-size: 1rem; line-height: 1.3; }
 .music-section-more, .music-retry-btn {
-    min-height: 36px; padding: 6px 10px; border: 0; border-radius: 5px;
-    background: rgba(0,0,0,0.06); color: var(--text-main); cursor: pointer;
+    min-height: 44px; padding: 6px 10px; border: 0; border-radius: var(--music-radius);
+    background: transparent; color: var(--text-sub); cursor: pointer;
 }
+.music-section-more:hover, .music-retry-btn:hover { background: var(--music-hover); color: var(--text-main); }
 .music-card-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px;
 }
 .music-card { min-width: 0; }
@@ -390,17 +409,20 @@
 }
 .music-entity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; grid-column: 2; }
 .music-action-btn {
-    min-height: 42px; padding: 8px 16px; border: 1px solid rgba(0,0,0,0.08);
-    border-radius: 7px; background: rgba(255,255,255,0.78); color: var(--text-main);
+    min-height: 44px; padding: 8px 16px; border: 1px solid var(--music-control-border);
+    border-radius: var(--music-radius); background: var(--music-control-bg); color: var(--text-main);
     font-weight: 650; cursor: pointer;
 }
 .music-action-btn.primary { border-color: transparent; background: var(--accent); color: #fff; }
+.music-action-btn:hover:not(:disabled) { background: var(--music-hover); }
+.music-action-btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent), black 12%); }
 .music-action-btn:disabled { opacity: 0.55; cursor: wait; }
-.music-subnav { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; overflow-x: auto; background: rgba(0,0,0,0.05); border-radius: 7px; }
-.music-subnav-btn { min-height: 38px; padding: 7px 13px; border: 0; border-radius: 5px; background: transparent; color: var(--text-sub); cursor: pointer; white-space: nowrap; }
+.music-subnav { display: flex; gap: 2px; padding: 3px; margin: 0 0 12px; overflow-x: auto; background: rgba(44,62,80,.065); border-radius: var(--music-radius); }
+.music-subnav-btn { min-height: 38px; padding: 7px 13px; border: 0; border-radius: 6px; background: transparent; color: var(--text-sub); cursor: pointer; white-space: nowrap; }
 .music-subnav-btn.active { background: #fff; color: var(--text-main); box-shadow: 0 1px 5px rgba(0,0,0,0.09); }
 .music-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px 0 4px; }
-.music-pagination button { min-height: 40px; padding: 7px 14px; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; background: #fff; cursor: pointer; }
+.music-pagination button { min-height: 44px; padding: 7px 14px; border: 1px solid var(--music-control-border); border-radius: var(--music-radius); background: var(--music-control-bg); color: var(--text-main); cursor: pointer; }
+.music-pagination button:hover:not(:disabled) { background: var(--music-hover); }
 .music-pagination button:disabled { opacity: 0.45; cursor: default; }
 .music-pagination span { color: var(--text-sub); font-size: 0.8rem; }
 .music-browser-state { padding: 52px 18px; text-align: center; color: var(--text-sub); }
@@ -418,18 +440,29 @@
     padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
 }
 .music-mini-cover { width: 52px; height: 52px; border-radius: 5px; object-fit: cover; flex: 0 0 52px; background: #e8edf3; }
-.music-mini-info { min-width: 0; }
+.music-mini-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .music-mini-title { font-size: 0.88rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.music-mini-artists { margin-top: 3px; font-size: 0.75rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-mini-artists { font-size: 0.75rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .music-mini-controls { display: flex; align-items: center; gap: 2px; }
-.music-mini-btn { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: var(--text-main); cursor: pointer; font-size: 1.05rem; }
+.music-mini-btn { width: 44px; height: 44px; border: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--text-main); cursor: pointer; }
 .music-mini-btn:hover { background: rgba(0,0,0,0.06); }
+.netease-content :is(.netease-nav-btn, .netease-close, .netease-search-field, .netease-login-label, .netease-select-wrap, .netease-item-play, .music-mini-btn, .music-song-menu) svg {
+    width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+}
+.netease-content .netease-search-field > svg { width: 18px; height: 18px; }
+.netease-content .netease-select-wrap > svg { width: 14px; height: 14px; }
+.netease-content .netease-item-play svg, #music-mini-play svg, #music-mini-next svg { fill: currentColor; }
+#music-mini-play { color: var(--accent); }
 .track-artist .music-link { color: inherit; font-size: inherit; font-weight: inherit; }
 .cover-wrapper.music-album-link { cursor: pointer; }
 .cover-wrapper.music-album-link:focus-visible { outline: 3px solid rgba(41,128,185,0.55); outline-offset: 4px; }
 .netease-nav-btn:focus-visible, .netease-close:focus-visible, .netease-tab:focus-visible,
 .netease-kind-btn:focus-visible, .music-link:focus-visible, .music-action-btn:focus-visible,
 .music-mini-btn:focus-visible, .music-mini-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.netease-quality-select:focus-visible, .netease-login-btn:focus-visible, .netease-logout-btn:focus-visible,
+.netease-item-play:focus-visible, .netease-search-btn:focus-visible, .netease-import-btn:focus-visible,
+.music-section-more:focus-visible, .music-retry-btn:focus-visible, .music-pagination button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media screen and (max-width: 700px) {
     .netease-panel { align-items: stretch; --music-enter-offset: 16px; --music-enter-duration: 240ms; }
@@ -437,13 +470,18 @@
     .netease-header { padding: env(safe-area-inset-top) 8px 0; min-height: calc(56px + env(safe-area-inset-top)); }
     .netease-page-title { font-size: 0.92rem; }
     .netease-browser-scroll { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
-    .netease-tabs { top: -10px; padding: 8px 0; gap: 4px; }
-    .netease-tab { padding: 8px 4px; font-size: 0.8rem; }
-    .netease-account-row { flex-direction: column; }
-    .netease-account-row .netease-quality-bar { flex-basis: auto; }
-    .netease-account-row .netease-login-btn { width: 100%; }
+    .netease-tabs { top: -10px; padding: 0; gap: 24px; margin-bottom: 16px; }
+    .netease-tab { font-size: .85rem; }
+    .netease-account-row { gap: 10px; }
+    .netease-account-row .netease-user-bar { flex-basis: 100%; }
+    .netease-preferences { flex: 1 1 100%; width: 100%; gap: 12px; margin: 0; }
+    .netease-preferences .netease-quality-bar { flex: 1 1 0; width: auto; }
+    .netease-account-row .netease-login-btn { width: auto; }
+    .public-profile-tools { flex-basis: 100%; }
+    .netease-search-kinds { width: 100%; box-sizing: border-box; }
+    .netease-kind-btn { flex: 1; min-width: 0; }
     .netease-search-box { gap: 6px; }
-    .netease-search-btn { min-width: 64px; padding: 10px 12px; }
+    .netease-search-btn { min-width: 64px; padding: 0 12px; }
     .netease-item { padding: 8px 2px; gap: 9px; }
     .netease-item-duration { display: none; }
     .netease-item-play { width: 44px; height: 44px; }
@@ -464,6 +502,7 @@
 }
 
 @media screen and (max-width: 350px) {
+    .login-modes button { font-size: .8rem; padding-inline: 4px; }
     .netease-header-main { gap: 2px; }
     .netease-nav-btn, .netease-close { width: 44px; height: 44px; }
     .netease-browser-scroll { padding-left: 9px; padding-right: 9px; }

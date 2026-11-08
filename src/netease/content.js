@@ -5,6 +5,9 @@ import { normalizeMusicAlbum, normalizeMusicArtist, normalizeMusicSong } from '.
 import { createMusicImages } from './images.js';
 import { createQueueFeedback } from './queue-feedback.js';
 
+const MUSIC_PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 5 11 7-11 7Z"/></svg>';
+const MUSIC_PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4H6v16h3zM18 4h-3v16h3z"/></svg>';
+
 export function isMusicStaticResponse(path, data) {
     const endpoint = new URL(path, 'https://music.invalid').pathname;
     if (endpoint === '/album') return !!data?.album && Array.isArray(data.songs);
@@ -130,10 +133,10 @@ export function createContent({
                     </div>
                 </div>
                 <span class="netease-item-duration">${fmtTime(song.durationMs / 1000)}</span>
-                <button class="netease-item-play" data-music-play aria-label="播放 ${escapeHtml(song.name)}">&#9654;</button>`;
+                <button class="netease-item-play" data-music-play aria-label="播放 ${escapeHtml(song.name)}">${MUSIC_PLAY_ICON}</button>`;
             const menu = document.createElement('details');
             menu.className = 'music-song-menu';
-            menu.innerHTML = `<summary role="button" tabindex="0" aria-expanded="false" aria-label="歌曲选项：${escapeHtml(song.name)}" title="歌曲选项">&#8943;</summary>
+            menu.innerHTML = `<summary role="button" tabindex="0" aria-expanded="false" aria-label="歌曲选项：${escapeHtml(song.name)}" title="歌曲选项"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary>
                 <div class="music-song-options">
                     <button type="button" data-song-like="${song.id}" data-song-title="${escapeHtml(song.name)}"><span data-song-action-label>喜欢</span></button>
                     <button type="button" data-song-collect="${song.id}" data-song-title="${escapeHtml(song.name)}"><span data-song-action-label>收藏到歌单</span></button>
@@ -916,8 +919,14 @@ export function createContent({
         document.getElementById('music-mini-artists').textContent = artists;
         musicImages.setMiniCover(document.getElementById('music-mini-cover'), cover);
         const miniPlay = document.getElementById('music-mini-play');
-        miniPlay.textContent = domService.el.playBtn.getAttribute('aria-label') === '暂停' ? '❚❚' : '▶';
-        miniPlay.setAttribute('aria-label', domService.el.playBtn.getAttribute('aria-label'));
+        const label = domService.el.playBtn.getAttribute('aria-label');
+        const icon = label === '暂停' ? 'pause' : 'play';
+        if (miniPlay.dataset.playbackIcon !== icon) {
+            miniPlay.innerHTML = icon === 'pause' ? MUSIC_PAUSE_ICON : MUSIC_PLAY_ICON;
+            miniPlay.dataset.playbackIcon = icon;
+        }
+        miniPlay.setAttribute('aria-label', label);
+        miniPlay.title = label;
         miniPlay.disabled = false;
         const artistButton = document.getElementById('music-mini-artist');
         const artistId = song?.artists?.find(artist => artist.id)?.id || 0;

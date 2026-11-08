@@ -1,13 +1,12 @@
 export function createToolbarVisibility(options) {
-    const { toolbar, capsule = null, env = window, readStatus, isBlocked = () => false } = options;
+    const { toolbar, env = window, readStatus, isBlocked = () => false } = options;
     const doc = env.document;
     const compact = env.matchMedia('(max-width: 700px), (hover: none)');
-    let timer = null, deadline = 0, keyboard = false, hovering = false, capsuleHovering = false, nativeSelect = false;
+    let timer = null, deadline = 0, keyboard = false, hovering = false, nativeSelect = false;
     let ownsInert = false, previousInert = false;
     const now = () => env.performance.now();
     const show = () => {
         toolbar.classList.remove('toolbar-hidden');
-        capsule?.classList.remove('song-actions-idle');
         if (ownsInert) { toolbar.inert = previousInert; ownsInert = false; }
     };
     const cancel = () => { if (timer !== null) env.clearTimeout(timer); timer = null; };
@@ -27,9 +26,6 @@ export function createToolbarVisibility(options) {
             toolbar.inert = true;
             toolbar.classList.add('toolbar-hidden');
         }
-        const capsuleLocked = blocked || nativeSelect || (doc.hasFocus?.() !== false
-            && (capsuleHovering || keyboard && capsule?.contains(doc.activeElement)));
-        capsule?.classList.toggle('song-actions-idle', !capsuleLocked);
     }
     function activity() {
         show();
@@ -41,8 +37,6 @@ export function createToolbarVisibility(options) {
     const pointer = event => { if (event.target?.tagName !== 'SELECT') nativeSelect = false; keyboard = false; activity(); };
     const enter = () => { hovering = true; activity(); };
     const leave = () => { hovering = false; activity(); };
-    const enterCapsule = () => { capsuleHovering = true; activity(); };
-    const leaveCapsule = () => { capsuleHovering = false; activity(); };
     const select = event => { if (event.target?.tagName === 'SELECT') nativeSelect = true; activity(); };
     const finishSelect = () => { nativeSelect = false; activity(); };
     const visibility = () => { cancel(); activity(); };
@@ -53,7 +47,6 @@ export function createToolbarVisibility(options) {
         [toolbar, 'pointerenter', enter], [toolbar, 'pointerleave', leave],
         [toolbar, 'pointerdown', select], [toolbar, 'change', finishSelect], [toolbar, 'focusout', finishSelect]
     ];
-    if (capsule) listeners.push([capsule, 'pointerenter', enterCapsule], [capsule, 'pointerleave', leaveCapsule]);
     for (const [target, event, handler] of listeners) target.addEventListener(event, handler, { capture: event === 'keydown', passive: event.startsWith('pointer') || event === 'wheel' });
     compact.addEventListener('change', activity);
     activity();

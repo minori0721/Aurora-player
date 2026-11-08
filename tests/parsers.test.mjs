@@ -63,9 +63,9 @@ test('routes round-trip all supported views and reject invalid IDs', () => {
     for (const route of [
         { kind: 'search', q: '日本語 & solfa', type: 'song', page: 3 },
         { kind: 'artist', id: 7, view: 'albums', page: 2 },
-        { kind: 'album', id: 123 }, { kind: 'playlist-import' }, { kind: 'playlist-mine' }
+        { kind: 'album', id: 123 }, { kind: 'playlist-import' }, { kind: 'playlist-mine' }, { kind: 'user-playlists', id: 314096218 }
     ]) assert.deepEqual(parseMusicRoute(buildMusicHash(route)), route);
-    for (const hash of ['#music/album/-1', '#music/artist/NaN', '#music/album/9007199254740992', '#music/unknown']) assert.equal(parseMusicRoute(hash).kind, 'invalid');
+    for (const hash of ['#music/album/-1', '#music/artist/NaN', '#music/album/9007199254740992', '#music/user/0', '#music/user/NaN', '#music/unknown']) assert.equal(parseMusicRoute(hash).kind, 'invalid');
     assert.equal(parseMusicRoute('#other'), null);
 });
 

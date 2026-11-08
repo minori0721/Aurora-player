@@ -23,6 +23,7 @@ import { createApi } from './netease/api.js';
 import { createPlaylistView } from './playlist/view.js';
 import { createBrowser } from './netease/navigation.js';
 import { createMyPlaylists } from './netease/my-playlists.js';
+import { createPublicProfile } from './netease/public-profile.js';
 import { createContent } from './netease/content.js';
 import { createOnlinePlayback } from './audio/online.js';
 import { createPersistence } from './storage/playlist.js';
@@ -39,7 +40,7 @@ const ports = createPorts([
     'playback', 'download', 'onlinePlaylist', 'lyrics', 'auth', 'controls', 'debug',
     'resolver', 'prefetch', 'transfer', 'analysis', 'loop', 'queue', 'render', 'imports',
     'cache', 'dom', 'panels', 'localPlayback', 'covers', 'metadata', 'api',
-    'playlistView', 'browser', 'myPlaylists', 'content', 'onlinePlayback', 'persistence', 'songDetails', 'songActions', 'cloud'
+    'playlistView', 'browser', 'myPlaylists', 'publicProfile', 'content', 'onlinePlayback', 'persistence', 'songDetails', 'songActions', 'cloud'
 ]);
 installPort(ports.playback, createPlayback(ports));
 installPort(ports.download, createDownload(ports));
@@ -66,6 +67,7 @@ installPort(ports.api, createApi(ports));
 installPort(ports.playlistView, createPlaylistView(ports));
 installPort(ports.browser, createBrowser(ports));
 installPort(ports.myPlaylists, createMyPlaylists(ports));
+installPort(ports.publicProfile, createPublicProfile(ports));
 installPort(ports.content, createContent(ports));
 installPort(ports.onlinePlayback, createOnlinePlayback(ports));
 installPort(ports.persistence, createPersistence(ports));
@@ -86,6 +88,7 @@ ports.render.initialize();
 ports.controls.initialize();
 ports.queue.initialize();
 ports.loop.initialize();
+ports.publicProfile.initialize();
 ports.browser.initialize();
 ports.auth.initialize();
 ports.content.initialize();

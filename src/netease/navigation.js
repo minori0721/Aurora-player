@@ -6,6 +6,7 @@ export function createBrowser({
     content: contentService,
     dom: domService,
     myPlaylists: myPlaylistsService,
+    publicProfile: publicProfileService,
     panels: panelsService
 } = {}) {
     const musicBrowserState = {
@@ -66,7 +67,10 @@ export function createBrowser({
 
     function setMusicBrowserTab(tabName) {
         document.querySelectorAll('.netease-tab-content').forEach(content => { content.style.display = 'none'; });
-        domService.neteaseTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabName));
+        domService.neteaseTabs.forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+            if (tab.dataset.tab === 'mylist') tab.textContent = authService.neteaseUser || !publicProfileService?.currentUserId ? '我的歌单' : '公开歌单';
+        });
         const content = document.getElementById(`tab-${tabName}`);
         if (content) content.style.display = 'flex';
         contentService.resumeMusicImages();
@@ -144,11 +148,10 @@ export function createBrowser({
             } else if (route.kind === 'playlist-mine') {
                 setMusicBrowserTab('mylist');
                 if (authService.neteaseUser) await myPlaylistsService.loadMyPlaylists({ signal: controller.signal });
-                else if (!authService.neteaseUser) {
-                    const target = document.getElementById('mylist-content');
-                    contentService.clearMusicImages(target);
-                    target.innerHTML = '<div class="netease-empty">请先登录网易云账号</div>';
-                }
+                else await publicProfileService.renderPlaylistsPage(publicProfileService.currentUserId, { signal: controller.signal });
+            } else if (route.kind === 'user-playlists') {
+                setMusicBrowserTab('mylist');
+                await publicProfileService.renderPlaylistsPage(route.id, { signal: controller.signal });
             } else if (route.kind === 'album') {
                 setMusicBrowserTab('entity');
                 await contentService.renderMusicAlbumPage(route, token, controller.signal, options);

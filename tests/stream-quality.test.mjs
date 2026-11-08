@@ -145,7 +145,7 @@ function onlineFixture({ type = 'flac', header = async () => flacHeader(), prelo
         dom: { el: Object.fromEntries(['title', 'img', 'lyricBox'].map(key => [key, new FakeElement()])) },
         analysis: { resetLoopAnalysisWorkerAudio() {} }, loop: { resetLoopUI() {} }, covers: { setMainCover() {} },
         content: { setMainMusicEntityLinks() {} }, debug: { log(message) { logs.push(message); } },
-        lyrics: { resetTrackLyrics() {}, takePrefetchedLyric() {}, fetchLyricById: fetchLyrics, setArtistTag(source, label) { tags.push(label); } },
+        lyrics: { resetTrackLyrics() {}, showLyricStatus() {}, takePrefetchedLyric() {}, fetchLyricById: fetchLyrics, setArtistTag(source, label) { tags.push(label); } },
         resolver: { getNeteaseMatchStrategy() {}, resolveNeteaseAudioUrlWithTimeout: async () => resolved },
         transfer: { async fetchAudioHeader(url, request) { headerCalls++; return header(url, request); },
             fetchAudioDataWithFallback() { fullCalls++; throw new Error('Unexpected full download'); } }

@@ -146,6 +146,20 @@ test('completed prefetch renders translation, romanization and timed words only 
     assert.equal(box.querySelectorAll('.yrc-char')[1].dataset.start, 900);
 });
 
+test('audio and lyric loading statuses do not abort an adopted pending lyric request', async t => {
+    const { lyrics, state, calls, box } = controllerFixture(t), response = deferred();
+    state.handler = () => response.promise;
+    lyrics.prefetchLyricById(2); await settle();
+    const prefetched = lyrics.takePrefetchedLyric(2);
+    lyrics.showLyricStatus('加载音频...');
+    const load = lyrics.fetchLyricById(2, { prefetched });
+    assert.equal(calls[0].options.signal.aborted, false);
+    response.resolve(payload());
+    assert.equal(await load, true);
+    assert.equal(calls.length, 1);
+    assert.equal(box.querySelectorAll('.yrc-char').length, 2);
+});
+
 test('failed and invalid prefetch results fall back once to the ordinary foreground request', async t => {
     const { lyrics, calls, state } = controllerFixture(t);
     for (const mode of ['reject', 'invalid']) {

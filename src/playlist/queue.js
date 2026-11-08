@@ -8,6 +8,7 @@ export function createQueue({
     dom: domService,
     imports: importsService,
     localPlayback: localPlaybackService,
+    lyrics: lyricsService,
     onlinePlayback: onlinePlaybackService,
     onlinePlaylist: onlinePlaylistService,
     persistence: persistenceService,
@@ -190,7 +191,7 @@ export function createQueue({
                     return;
                 }
                 if (!track.songData) {
-                    domService.el.lyricBox.innerHTML = '<div class="lyric-line active" style="margin-top:100px">🔄 获取歌曲信息...</div>';
+                    lyricsService.showLyricStatus('获取歌曲信息...');
                     const controller = new AbortController();
                     playbackService.currentAbortController = controller;
                     let detail;

@@ -304,6 +304,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
         followTarget = followEnd = null; layoutSmooth = false; pendingReflow = false;
         scrolling = layoutDirty = refreshWrapping = returning = selecting = false; shownTime = null;
         shell.classList?.remove('lyrics-browsing');
+        shell.classList?.add('lyrics-static');
         content.style.paddingTop = content.style.paddingBottom = '0px';
         content.style.transform = '';
         returnButton.hidden = timeHint.hidden = true;
@@ -448,7 +449,7 @@ export function createLyricViewport(viewport, { content, returnButton, timeHint,
 
     return {
         reset, relayout(smooth = false) { refreshWrapping = true; relayout(smooth); }, syncPlayback, returnToCurrent,
-        setLines(next) { reset(); lines = [...next]; wrapping.refresh(lines); relayout(); },
+        setLines(next) { reset(); lines = [...next]; shell.classList?.toggle('lyrics-static', !lines.length); wrapping.refresh(lines); relayout(); },
         anticipate(index) {
             if (disposed || selecting || returning || browsing || blocked() || reduced.matches || !isPlaying() || active < 0 || index !== active + 1
                 || !Number.isFinite(centers[index])) return false;

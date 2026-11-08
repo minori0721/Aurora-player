@@ -140,7 +140,7 @@ export function createMyPlaylists({
         });
     }
 
-    function buildMyPlaylistsHtml(playlists, userId, status = {}) {
+    function buildMyPlaylistsHtml(playlists, userId, status = {}, owner = '我') {
         const list = Array.isArray(playlists) ? playlists : [];
         if (!list.length && !status.loading && !status.error) return '<div class="netease-empty">暂无歌单</div>';
 
@@ -171,11 +171,11 @@ export function createMyPlaylists({
         };
 
         if (created.length) {
-            html += '<div class="my-playlists-title">📁 我创建的歌单</div>';
+            html += `<div class="my-playlists-title">${escapeHtml(owner)}创建的歌单</div>`;
             html += created.map(p => renderPlaylist(p, false)).join('');
         }
         if (collected.length) {
-            html += '<div class="my-playlists-title" style="margin-top:15px">❤️ 我收藏的歌单</div>';
+            html += `<div class="my-playlists-title" style="margin-top:15px">${escapeHtml(owner)}收藏的歌单</div>`;
             html += collected.map(p => renderPlaylist(p, true)).join('');
         }
         return html || '<div class="netease-empty">暂无歌单</div>';
@@ -232,6 +232,7 @@ export function createMyPlaylists({
         get myPlaylistsLoading() { return loading; },
         get playlistsState() { currentIdentity(); return snapshot(); },
         ensurePlaylists,
+        buildPlaylistsHtml: buildMyPlaylistsHtml,
         reset,
         invalidateAfterSongWrite,
         loadMyPlaylists

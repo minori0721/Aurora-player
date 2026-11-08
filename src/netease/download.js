@@ -251,7 +251,7 @@ export function createDownload({
                                     const sampleRate = data.sr || fallbackDetail?.sr || 0;
                                     const parts = [realExt ? realExt.toUpperCase() : '格式未知'];
                                     const notes = [];
-                                    if (br > 0) parts.push(`${Math.round(br / 1000)}kbps`);
+                                    if (br > 0 && (realExt !== 'flac' || !sampleRate)) parts.push(`${Math.round(br / 1000)}kbps`);
                                     else if (data.mode === 'VBR') parts.push('VBR');
                                     if (sampleRate > 0) parts.push(`${formatSampleRate(sampleRate)}${realExt === 'flac' && data.bitsPerSample ? `/${data.bitsPerSample}bit` : ''}`);
                                     if (size > 0) parts.push(`${(size / 1024 / 1024).toFixed(1)}MB`);

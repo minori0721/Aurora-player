@@ -349,10 +349,15 @@ test('mini UI labels still update while repeated cover assignments are suppresse
         el: { title, artist: { textContent: 'Artist' }, playBtn } }, queue,
         covers: { mainCoverTrackIds: new WeakMap(), coverDisplayUrl: () => 'https://cover.test/same.jpg' } });
     content.updateMusicMiniPlayer();
+    assert.equal(elements.get('music-mini-play').dataset.playbackIcon, 'play');
+    assert.match(elements.get('music-mini-play').innerHTML, /<svg[^>]*aria-hidden="true"/);
     title.textContent = 'Second'; playBtn.setAttribute('aria-label', '暂停'); content.updateMusicMiniPlayer();
     assert.equal(f.httpRequests().length, 1);
     assert.equal(elements.get('music-mini-title').textContent, 'Second');
     assert.equal(elements.get('music-mini-play').getAttribute('aria-label'), '暂停');
+    assert.equal(elements.get('music-mini-play').title, '暂停');
+    assert.equal(elements.get('music-mini-play').dataset.playbackIcon, 'pause');
+    assert.match(elements.get('music-mini-play').innerHTML, /M9 4H6v16h3z/);
     queue.playlist = []; content.updateMusicMiniPlayer();
     assert.equal(image.getAttribute('src'), null);
 });

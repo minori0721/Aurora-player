@@ -57,12 +57,12 @@
             <div class="netease-header">
                 <div class="netease-header-main">
                     <div class="netease-nav-controls" aria-label="浏览历史">
-                        <button class="netease-nav-btn" id="netease-nav-back" title="返回" aria-label="返回">&#8592;</button>
-                        <button class="netease-nav-btn" id="netease-nav-forward" title="前进" aria-label="前进">&#8594;</button>
+                        <button class="netease-nav-btn" id="netease-nav-back" title="返回" aria-label="返回"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 19-7-7 7-7m-7 7h14"/></svg></button>
+                        <button class="netease-nav-btn" id="netease-nav-forward" title="前进" aria-label="前进"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 5 7 7-7 7m7-7H5"/></svg></button>
                     </div>
                     <h3 class="netease-page-title" id="netease-page-title">网易云音乐</h3>
                 </div>
-                <button class="netease-close" id="netease-close" title="关闭" aria-label="关闭网易云面板">&times;</button>
+                <button class="netease-close" id="netease-close" title="关闭" aria-label="关闭网易云面板"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
             </div>
 
             <div class="netease-browser-scroll" id="netease-browser-scroll">
@@ -70,30 +70,37 @@
                     <div id="netease-user-bar" class="netease-user-bar" style="display:none">
                         <img class="netease-avatar" id="netease-avatar" src="" alt="用户头像">
                         <div class="netease-user-info">
-                            <div class="netease-nickname" id="netease-nickname">用户名</div>
+                            <div class="netease-user-heading"><div class="netease-nickname" id="netease-nickname">用户名</div><span class="netease-user-type normal" id="netease-user-type">普通用户</span></div>
                             <small class="netease-user-id" id="netease-user-id">ID: </small>
-                            <span class="netease-user-type normal" id="netease-user-type">普通用户</span>
                         </div>
                         <button class="netease-logout-btn" data-action="logout">退出</button>
                     </div>
-                    <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
-                        <label for="netease-quality-select">音质</label>
-                        <select id="netease-quality-select" class="netease-quality-select">
-                            <option value="standard">标准 (128kbps)</option>
-                            <option value="higher">较高 (192kbps)</option>
-                            <option value="exhigh">极高 (320kbps)</option>
-                            <option value="lossless">无损 (FLAC)</option>
-                            <option value="hires">Hi-Res</option>
-                        </select>
+                    <button id="netease-login-btn" class="netease-login-btn" data-action="login" title="登录网易云账号" aria-label="登录网易云账号"><span class="netease-login-label"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg><span>登录</span></span></button>
+                    <div class="netease-preferences">
+                        <div id="netease-quality-bar" class="netease-quality-bar" style="display:none">
+                            <label for="netease-quality-select">音质</label>
+                            <span class="netease-select-wrap">
+                                <select id="netease-quality-select" class="netease-quality-select">
+                                    <option value="standard">标准 (128kbps)</option>
+                                    <option value="higher">较高 (192kbps)</option>
+                                    <option value="exhigh">极高 (320kbps)</option>
+                                    <option value="lossless">无损 (FLAC)</option>
+                                    <option value="hires">Hi-Res</option>
+                                </select>
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
+                            </span>
+                        </div>
+                        <div class="netease-quality-bar playback-preference">
+                            <label for="playback-mode">播放</label>
+                            <span class="netease-select-wrap">
+                                <select id="playback-mode" class="netease-quality-select" title="后续在线歌曲的默认播放方式">
+                                    <option value="stream" selected>流式优先</option>
+                                    <option value="complete">完整加载</option>
+                                </select>
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>
+                            </span>
+                        </div>
                     </div>
-                    <div class="netease-quality-bar playback-preference">
-                        <label for="playback-mode">播放</label>
-                        <select id="playback-mode" class="netease-quality-select" title="后续在线歌曲的默认播放方式">
-                            <option value="stream" selected>流式优先</option>
-                            <option value="complete">完整加载</option>
-                        </select>
-                    </div>
-                    <button id="netease-login-btn" class="netease-login-btn" data-action="login">登录网易云账号</button>
                 </div>
 
                 <div class="netease-tabs" role="tablist" aria-label="云音乐功能">
@@ -104,7 +111,7 @@
 
                 <div class="netease-tab-content" id="tab-search">
                     <div class="netease-search-box">
-                        <input type="search" class="netease-input" id="netease-search-input" placeholder="搜索歌曲、专辑或歌手" aria-label="搜索关键词" autocomplete="off">
+                        <label class="netease-search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" class="netease-input" id="netease-search-input" placeholder="搜索歌曲、专辑或歌手" aria-label="搜索关键词" autocomplete="off"></label>
                         <button class="netease-search-btn" id="netease-search-btn">搜索</button>
                     </div>
                     <div class="netease-search-kinds" id="netease-search-kinds" role="tablist" aria-label="搜索分类">
@@ -120,7 +127,7 @@
 
                 <div class="netease-tab-content" id="tab-playlist" style="display:none">
                     <div class="netease-search-box">
-                        <input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或 ID" aria-label="歌单链接或ID">
+                        <label class="netease-search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><input type="text" class="netease-input" id="netease-playlist-input" placeholder="粘贴歌单链接或 ID" aria-label="歌单链接或ID"></label>
                         <button class="netease-search-btn" id="netease-playlist-btn">获取</button>
                     </div>
                     <div id="netease-playlist-preview"></div>
@@ -144,6 +151,7 @@
                         <div class="login-modes" role="group" aria-label="登录方式">
                             <button type="button" id="login-mode-qr" aria-pressed="true" aria-controls="login-qr-view">扫码登录</button>
                             <button type="button" id="login-mode-sms" aria-pressed="false" aria-controls="login-sms-view">验证码登录</button>
+                            <button type="button" id="login-mode-public" aria-pressed="false" aria-controls="login-public-view">免登录浏览</button>
                         </div>
                         <div class="qrcode-container" id="login-qr-view">
                             <div id="qrcode-img-wrap"></div>
@@ -170,6 +178,16 @@
                                 <button type="submit" class="login-primary" id="login-submit" disabled>登录</button>
                             </form>
                         </div>
+                        <div id="login-public-view" hidden>
+                            <form id="public-profile-form">
+                                <label for="public-profile-query">昵称、用户 ID 或主页链接</label>
+                                <input id="public-profile-query" type="text" maxlength="500" autocomplete="off" placeholder="搜索昵称，或粘贴用户 ID / 链接" required>
+                                <label class="public-profile-remember"><input id="public-profile-remember" type="checkbox" checked>记住这个主页</label>
+                                <button type="submit" class="login-primary" id="public-profile-submit">查看歌单</button>
+                            </form>
+                            <div class="login-status" id="public-profile-status" role="status" aria-live="polite"></div>
+                            <div id="public-profile-results" class="public-profile-results"></div>
+                        </div>
                         <button type="button" class="login-secondary login-retry" id="login-retry" hidden>重试账号校验</button>
                     </div>
                 </div>
@@ -187,9 +205,9 @@
                     </span>
                 </button>
                 <div class="music-mini-controls">
-                    <button class="music-mini-btn" id="music-mini-artist" title="打开歌手" aria-label="打开歌手" style="display:none">&#9678;</button>
-                    <button class="music-mini-btn" id="music-mini-play" title="播放或暂停" aria-label="播放或暂停">&#9654;</button>
-                    <button class="music-mini-btn" id="music-mini-next" title="下一首" aria-label="下一首">&#9197;</button>
+                    <button class="music-mini-btn" id="music-mini-artist" title="打开歌手" aria-label="打开歌手" style="display:none"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></button>
+                    <button class="music-mini-btn" id="music-mini-play" title="播放或暂停" aria-label="播放或暂停"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 5 11 7-11 7Z"/></svg></button>
+                    <button class="music-mini-btn" id="music-mini-next" title="下一首" aria-label="下一首"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 4 10 8-10 8zM19 4v16"/></svg></button>
                 </div>
             </div>
         </div>
@@ -230,7 +248,7 @@
                     </div>
                 </details>
             </div>
-            <!-- Lucide Logs icon, toolbar folder-open/cloud/list/settings/search/repeat-2/sparkles/snowflake/audio-lines/waves-horizontal/chevron-down icons, and playlist locate-fixed/arrow-up icons (https://lucide.dev), ISC License.
+            <!-- Lucide Logs icon, toolbar, playlist and cloud-music navigation, search and playback controls (https://lucide.dev), ISC License.
             Copyright (c) 2026 Lucide Icons and Contributors
             Permission to use, copy, modify, and/or distribute this software for any
             purpose with or without fee is hereby granted, provided that the above
@@ -415,7 +433,7 @@
                 </div>
                 <div class="lyrics-area">
                     <div class="lyrics-box" id="lyrics-box" tabindex="0" role="region" aria-label="歌词" data-lyric-region>
-                        <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-line active" style="margin-top: 100px;">Ready.</div></div>
+                        <div class="lyrics-scroll" id="lyrics-content"><div class="lyric-message" role="status"><div class="lyric-message-title">准备就绪</div></div></div>
                     </div>
                     <output class="lyric-browse-time" id="lyric-browse-time" aria-label="浏览位置" hidden></output>
                     <button class="lyric-return" id="lyric-return-current" type="button" aria-label="回到当前歌词" title="回到当前歌词" data-direction="here" hidden>

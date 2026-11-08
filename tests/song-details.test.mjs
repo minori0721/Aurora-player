@@ -207,6 +207,7 @@ test('metadata load cancellation leaves the queue paused and cannot launch onlin
         content: { clearMusicQueueFeedback() {} },
         onlinePlaylist: { resolveSyncedSelection: index => index }, playlistView: { ensurePlaylistRenderedAndActive() {} },
         songDetails: { getSongDetail: (id, options) => transfer.awaitWithSignal(response.promise, options.signal) },
+        lyrics: { showLyricStatus() {} },
         dom: { el: { lyricBox: {}, img: { style: {} } } }, debug: { log() {} },
         covers: { setMainCover() {} },
         onlinePlayback: { playNeteaseSong() { played++; } }
@@ -241,6 +242,7 @@ test('playing a restored placeholder fetches details and updates its row before 
     });
     t.after(() => details.reset());
     queue = createQueue({ playback, content, playlistView, songDetails: details,
+        lyrics: { showLyricStatus() {} },
         prefetch: { prefetchUpcomingNeteaseDetails() {}, retargetNextPreload() {} },
         onlinePlaylist: { resolveSyncedSelection: index => index },
         dom: { el: { title: {}, lyricBox: {}, img: { style: {} } } }, covers: { setMainCover() {} }, debug: { log() {} },
